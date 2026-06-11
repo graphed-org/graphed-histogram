@@ -218,10 +218,20 @@ class Histogram(bh.Histogram):
         return session, -1, None
 
     def plan(
-        self, *, steps_per_file: int = 1, backend: Callable[[], Any] | None = None
+        self,
+        *,
+        steps_per_file: int = 1,
+        backend: Callable[[], Any] | str | None = None,
+        partitions: Sequence[Partition] | None = None,
     ) -> Plan[bh.Histogram]:
         """The compute-disabled task graph (R15.4): one fill task per partition, combined by
-        histogram addition. Run it later with any R7 executor."""
+        histogram addition. Run it later with any R7 executor.
+
+        ``backend`` is each worker's evaluation backend: a zero-arg factory/class or an
+        importable ``"module:attr"`` reference resolved IN the worker (required for
+        behavior-carrying backends — behavior dicts do not pickle). ``partitions`` lets the
+        caller shape partitioning itself (e.g. absolute entry-count chunks for a benchmark
+        sweep) instead of the source's ``steps_per_file`` split."""
         session, nid, data = self._session_and_source()
         if not isinstance(data, PartitionedSource):
             raise TypeError(
@@ -237,7 +247,8 @@ class Histogram(bh.Histogram):
             evaluators=tuple(self._evaluators.items()),
             spec=self._spec,
         )
-        partitions = data.partitions(steps_per_file)
+        if partitions is None:
+            partitions = data.partitions(steps_per_file)
         tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
         return Plan(process=process, combine=add_histograms, empty=_ZeroHist(self._spec), tasks=tasks)
 
