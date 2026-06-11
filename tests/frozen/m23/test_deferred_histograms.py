@@ -273,3 +273,21 @@ def test_evaluators_registry_merges_histograms() -> None:
     h2 = gh.boost.Histogram(bh.axis.Regular(8, 0.0, 10.0)).fill(x)
     reg = gh.evaluators(h1, h2)
     assert len(reg) == 2 and all(k.startswith("sha256:") for k in reg)
+
+
+def test_plan_accepts_explicit_partitions() -> None:
+    # the entry-target seam (ADL P2): a caller may shape partitioning itself — absolute
+    # entry-count chunks for a benchmark sweep — instead of steps_per_file's per-file split
+    s = Session(NumpyBackend())
+    x, src = _source(s, "x", DATA)
+    h = gh.boost.Histogram(bh.axis.Regular(10, 0.0, 10.0), storage=bh.storage.Int64()).fill(x)
+    explicit = tuple(
+        Partition("toy://chunks", "", lo, min(lo + 300, len(DATA))) for lo in range(0, len(DATA), 300)
+    )
+    plan = h.plan(partitions=explicit)
+    assert len(plan.tasks) == len(explicit)
+    got = SequentialRunner().run(plan).value
+    eager = bh.Histogram(bh.axis.Regular(10, 0.0, 10.0), storage=bh.storage.Int64())
+    eager.fill(DATA)
+    assert np.array_equal(got.values(flow=True), eager.values(flow=True))
+    assert src.whole_calls == []

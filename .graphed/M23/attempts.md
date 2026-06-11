@@ -53,3 +53,10 @@
   already-true behavior, including the loud failure); the import-ref test failed on the missing
   feature. CI + dev deps gain graphed-awkward so the ragged/behavior witnesses run in CI.
 - gates: frozen 18/18 · coverage >=90 · ruff/mypy/sphinx clean.
+
+## Iteration 4 — plan(partitions=) (ADL P2 entry-target seam) — 2026-06-11
+
+- Additive: plan() accepts explicit partitions (a caller-shaped partitioning — absolute
+  entry-count chunks for the benchmark sweep) instead of the source's steps_per_file split.
+  Frozen test added (explicit eager partitions tile the dataset; counts bit-for-bit; the
+  whole-dataset loader still never runs). 19/19 green.
