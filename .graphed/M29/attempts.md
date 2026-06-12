@@ -16,3 +16,11 @@
   consistently. Non-vacuous: weight=[w1,w2] crashed recording pre-impl.
 - Gates: 24 passed · coverage 95.71% · ruff/format/mypy/sphinx clean. Cross-repo: preserve
   frozen m30 pins the bundle replay; the full 11-repo + 3-fork sweep ran green pre-commit.
+
+## Iteration 1 — 2026-06-12
+
+- CI exposed a test-dependency gap invisible to the local cross-repo sweep: the frozen m29
+  plan-path test builds its partitioned source with ak.to_parquet -> pyarrow, present locally
+  but not in this repo's CI install. pyarrow added to the dev extra (the frozen test is
+  untouched). Lesson: a green local sweep validates code, not CI environments — new frozen
+  tests must declare their dependencies in the repo they land in.
