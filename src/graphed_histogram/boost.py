@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import boost_histogram as bh
 import numpy as np
@@ -56,12 +56,17 @@ class FillEvaluator:
     n_axes: int
     has_weight: bool
     has_sample: bool
+    n_weights: int = 1  # M29: multiple multiplicative weight inputs (default keeps old pickles valid)
 
     def __call__(self, *values: object) -> bh.Histogram:
         h = zero_of(self.spec)
         axes = [_flat(v) for v in values[: self.n_axes]]
         rest = list(values[self.n_axes :])
-        weight = _flat(rest.pop(0)) if self.has_weight else None
+        weight: Any = None
+        if self.has_weight:
+            weight = _flat(rest.pop(0))
+            for _ in range(self.n_weights - 1):
+                weight = weight * _flat(rest.pop(0))  # elementwise product of the weight factors
         sample = _flat(rest.pop(0)) if self.has_sample else None
         h.fill(*axes, weight=weight, sample=sample)
         return h
@@ -141,7 +146,7 @@ class Histogram(bh.Histogram):
     def fill(
         self,
         *args: Array,
-        weight: Array | None = None,
+        weight: Array | Sequence[Array] | None = None,
         sample: Array | None = None,
         threads: int | None = None,
     ) -> Histogram:
@@ -150,17 +155,27 @@ class Histogram(bh.Histogram):
         if not all(isinstance(a, Array) for a in args):
             raise TypeError("deferred fills take graphed Arrays; use boost_histogram for eager data")
         del threads  # parallelism belongs to the executor, not the fill
+        # M29: weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
+        # a real graph input and evaluation multiplies them elementwise
+        if weight is None:
+            weights: list[Array] = []
+        elif isinstance(weight, (list, tuple)):
+            weights = list(weight)
+        else:
+            weights = [cast("Array", weight)]
+        if not all(isinstance(w, Array) for w in weights):
+            raise TypeError("weights must be graphed Arrays")
         inputs: list[Array] = list(args)
-        if weight is not None:
-            inputs.append(weight)
+        inputs.extend(weights)
         if sample is not None:
             inputs.append(sample)
         session = inputs[0].session
         evaluator = FillEvaluator(
             spec=self._spec,
             n_axes=len(args),
-            has_weight=weight is not None,
+            has_weight=bool(weights),
             has_sample=sample is not None,
+            n_weights=max(len(weights), 1),
         )
         chash = content_hash(self._spec)
         descriptor = PayloadDescriptor(
@@ -178,8 +193,10 @@ class Histogram(bh.Histogram):
             {
                 "spec": self._spec,
                 "n_axes": len(args),
-                "weighted": weight is not None,
+                "weighted": bool(weights),
                 "sampled": sample is not None,
+                # only multi-weight fills carry the param: single-weight node identity unchanged
+                **({"n_weights": len(weights)} if len(weights) > 1 else {}),
             },
             descriptor=descriptor,
             form=HistogramForm(chash),
