@@ -37,3 +37,10 @@
   failure modes are now ENCODED in graphed-orchestrator's new pre-commit gate
   (python -m graphed_orchestrator.precommit, commit 4f0abf5), which gated THIS commit:
   toml-valid ok, integrity-scan REFREEZE:tests/frozen/m29/... (loud, sanctioned), full suite ok.
+
+## Iteration 3 — 2026-06-12
+
+- CI round 3: the pandas dependency is in awkward ITSELF (arrow form derivation calls
+  pyarrow's to_pandas_dtype on every from_parquet schema read) — the fixture's write side was
+  never the whole story. graphed-awkward's dev extra carries pyarrow+pandas for exactly this
+  reason (the established precedent); this repo's dev extra now matches. No test changes.

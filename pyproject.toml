@@ -33,7 +33,10 @@ dev = [
   "awkward>=2.6",
   "graphed-exec-local",
   "hist>=2.7",
+  # parquet-reading tests: awkward's arrow->form conversion calls to_pandas_dtype (the
+  # graphed-awkward dev-extra precedent)
   "pyarrow",
+  "pandas",
 ]
 docs = ["sphinx", "furo"]
 
