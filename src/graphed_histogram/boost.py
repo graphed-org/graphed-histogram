@@ -19,7 +19,7 @@ from typing import Any, cast
 
 import boost_histogram as bh
 import numpy as np
-from graphed import Array, compile_ir, evaluate_ir
+from graphed import Array, compile_ir, evaluate_ir, read_columns
 from graphed.write import PartitionedSource
 from graphed_core import Partition, PayloadDescriptor
 from graphed_core.execution import Plan, Task, WorkerResources
@@ -108,9 +108,10 @@ class _FillPartition:
     reader: PartitionedSource
     evaluators: tuple[tuple[str, FillEvaluator], ...]
     spec: str
+    columns: tuple[str, ...] | None = None  # projected read set; None reads the source's full selection
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> bh.Histogram:
-        chunk = self.reader.read_partition(partition, None, resources)
+        chunk = self.reader.read_partition(partition, self.columns, resources)
         fills = evaluate_ir(
             self.ir,
             _resolve_backend(self.backend_factory),
@@ -256,6 +257,10 @@ class Histogram(bh.Histogram):
                 "reference session.materialize on each fill node"
             )
         compiled = compile_ir(session, *self._fill_nodes)
+        # Column projection (M5): read only the source columns the staged fills syntactically touch
+        # (e.g. one MET_pt branch, not all 86), the way dask-awkward's necessary_columns does. None
+        # (whole-record/opaque consumption, or an in-memory source) widens to the full selection.
+        columns = read_columns(self._fill_nodes, nid)  # nid >= 0 here (plan needs a partitioned source)
         process = _FillPartition(
             ir=bytes(compiled.ir),
             source_name=session.source_name(nid),
@@ -263,6 +268,7 @@ class Histogram(bh.Histogram):
             reader=data,
             evaluators=tuple(self._evaluators.items()),
             spec=self._spec,
+            columns=columns,
         )
         if partitions is None:
             partitions = data.partitions(steps_per_file)
