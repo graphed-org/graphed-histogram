@@ -19,10 +19,9 @@ from typing import Any, cast
 
 import boost_histogram as bh
 import numpy as np
-from graphed import Array, compile_ir, evaluate_ir, read_columns
-from graphed.write import PartitionedSource
+from graphed import Array, aggregate_plan
 from graphed_core import Partition, PayloadDescriptor
-from graphed_core.execution import Plan, Task, WorkerResources
+from graphed_core.execution import Plan
 
 from ._spec import content_hash, spec_of, zero_of
 
@@ -85,68 +84,28 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     return a + b
 
 
-def _resolve_backend(ref: Callable[[], Any] | str) -> Any:
-    """A worker's evaluation backend: a zero-arg factory/class, or an importable "module:attr"
-    reference resolved HERE in the worker — behavior-carrying backends travel by import ref,
-    never by pickling (behavior dicts contain lambdas; losing them must be loud, not silent)."""
-    if isinstance(ref, str):
-        import importlib  # noqa: PLC0415
-
-        mod_name, _, attr = ref.partition(":")
-        target = getattr(importlib.import_module(mod_name), attr)
-        return target() if callable(target) else target
-    return ref()
-
-
 @dataclass(frozen=True)
-class _FillPartition:
-    """One partition's work: read, evaluate every staged fill through the compiled IR, sum."""
+class _SumFills:
+    """Reduce one partition's evaluated fills to a single histogram (the single-histogram case): the
+    partition result is the sum of that histogram's own fills."""
 
-    ir: bytes
-    source_name: str
-    backend_factory: Callable[[], Any] | str
-    reader: PartitionedSource
-    evaluators: tuple[tuple[str, FillEvaluator], ...]
     spec: str
-    columns: tuple[str, ...] | None = None  # projected read set; None reads the source's full selection
 
-    def __call__(self, partition: Partition, resources: WorkerResources) -> bh.Histogram:
-        chunk = self.reader.read_partition(partition, self.columns, resources)
-        fills = evaluate_ir(
-            self.ir,
-            _resolve_backend(self.backend_factory),
-            {self.source_name: chunk},
-            externals=dict(self.evaluators),
-        )
+    def __call__(self, fills: list[object]) -> bh.Histogram:
         total = zero_of(self.spec)
-        for h in fills:
-            total = total + h
+        for f in fills:
+            total = total + f
         return total
 
 
 @dataclass(frozen=True)
-class _FillGroup:
-    """One partition's work for a GROUP of histograms sharing a source: read once, evaluate every
-    fill of every histogram through the ONE compiled IR, sum each histogram's own fills. Returns the
-    ``{label: histogram}`` mapping the combine adds key-wise — so a sub-graph feeding several
-    histograms is read+evaluated once, not once per histogram."""
+class _GroupReduce:
+    """Reduce one partition's evaluated fills to ``{label: histogram}`` — each histogram is the sum of
+    its OWN fills, sliced out of the single shared one-pass evaluation by ``layout``."""
 
-    ir: bytes
-    source_name: str
-    backend_factory: Callable[[], Any] | str
-    reader: PartitionedSource
-    evaluators: tuple[tuple[str, FillEvaluator], ...]
     layout: tuple[tuple[str, int, str], ...]  # (label, n_fills, spec), in compiled-fill order
-    columns: tuple[str, ...] | None = None
 
-    def __call__(self, partition: Partition, resources: WorkerResources) -> dict[str, bh.Histogram]:
-        chunk = self.reader.read_partition(partition, self.columns, resources)
-        fills = evaluate_ir(
-            self.ir,
-            _resolve_backend(self.backend_factory),
-            {self.source_name: chunk},
-            externals=dict(self.evaluators),
-        )
+    def __call__(self, fills: list[object]) -> dict[str, bh.Histogram]:
         out: dict[str, bh.Histogram] = {}
         i = 0
         for label, k, spec in self.layout:
@@ -264,24 +223,6 @@ class Histogram(bh.Histogram):
         return dict(self._evaluators)
 
     # ---- aggregation -----------------------------------------------------------------------
-    def _session_and_source(self) -> tuple[Any, int, object]:
-        if not self._fill_nodes:
-            raise ValueError("nothing staged: call .fill(...) before computing")
-        session = self._fill_nodes[0].session
-        if any(n.session is not session for n in self._fill_nodes):
-            raise TypeError("all fills of one histogram must record into one session")
-        sources = session.sources()
-        partitioned = {nid: d for nid, d in sources.items() if isinstance(d, PartitionedSource)}
-        if len(partitioned) > 1:
-            raise TypeError(
-                f"deferred histogram aggregation supports exactly one partitioned source; "
-                f"this session has {len(partitioned)}"
-            )
-        if partitioned:
-            ((nid, data),) = partitioned.items()
-            return session, nid, data
-        return session, -1, None
-
     def plan(
         self,
         *,
@@ -292,35 +233,24 @@ class Histogram(bh.Histogram):
         """The compute-disabled task graph (R15.4): one fill task per partition, combined by
         histogram addition. Run it later with any R7 executor.
 
-        ``backend`` is each worker's evaluation backend: a zero-arg factory/class or an
-        importable ``"module:attr"`` reference resolved IN the worker (required for
-        behavior-carrying backends — behavior dicts do not pickle). ``partitions`` lets the
-        caller shape partitioning itself (e.g. absolute entry-count chunks for a benchmark
-        sweep) instead of the source's ``steps_per_file`` split."""
-        session, nid, data = self._session_and_source()
-        if not isinstance(data, PartitionedSource):
-            raise TypeError(
-                "plan() needs a partitioned source; evaluate in-memory sources with the "
-                "reference session.materialize on each fill node"
-            )
-        compiled = compile_ir(session, *self._fill_nodes)
-        # Column projection (M5): read only the source columns the staged fills syntactically touch
-        # (e.g. one MET_pt branch, not all 86), the way dask-awkward's necessary_columns does. None
-        # (whole-record/opaque consumption, or an in-memory source) widens to the full selection.
-        columns = read_columns(self._fill_nodes, nid)  # nid >= 0 here (plan needs a partitioned source)
-        process = _FillPartition(
-            ir=bytes(compiled.ir),
-            source_name=session.source_name(nid),
-            backend_factory=backend if backend is not None else type(session.backend),
-            reader=data,
-            evaluators=tuple(self._evaluators.items()),
-            spec=self._spec,
-            columns=columns,
+        Thin specialization of :func:`graphed.aggregate_plan` — this histogram's fills are the
+        outputs, summed per partition and added across them; ``backend`` is each worker's evaluation
+        backend (factory/class or ``"module:attr"`` import ref for behavior-carrying backends, which
+        do not pickle); ``partitions`` lets the caller shape partitioning itself. For several
+        histograms that share a sub-graph, plan them together with :func:`plan` so the shared work
+        runs ONCE."""
+        if not self._fill_nodes:
+            raise ValueError("nothing staged: call .fill(...) before computing")
+        return aggregate_plan(
+            *self._fill_nodes,
+            reduce=_SumFills(self._spec),
+            combine=add_histograms,
+            empty=_ZeroHist(self._spec),
+            externals=self._evaluators,
+            backend=backend,
+            steps_per_file=steps_per_file,
+            partitions=partitions,
         )
-        if partitions is None:
-            partitions = data.partitions(steps_per_file)
-        tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
-        return Plan(process=process, combine=add_histograms, empty=_ZeroHist(self._spec), tasks=tasks)
 
 
 def plan(
@@ -348,34 +278,21 @@ def plan(
     hists = [h for _, h in items]
     if any(not h._fill_nodes for h in hists):
         raise ValueError("every histogram must have at least one staged fill before planning")
-    session = hists[0]._fill_nodes[0].session
-    if any(n.session is not session for h in hists for n in h._fill_nodes):
-        raise TypeError("all histograms in one plan must record into one session")
-    partitioned = {nid: d for nid, d in session.sources().items() if isinstance(d, PartitionedSource)}
-    if len(partitioned) != 1:
-        raise TypeError(
-            f"plan() aggregates exactly one partitioned source; this session has {len(partitioned)}"
-        )
-    ((nid, data),) = partitioned.items()
     fill_nodes = [n for h in hists for n in h._fill_nodes]
     layout = tuple((label, len(h._fill_nodes), h._spec) for label, h in items)
-    compiled = compile_ir(session, *fill_nodes)
     evaluators: dict[str, FillEvaluator] = {}
     for h in hists:
         evaluators.update(h._evaluators)
-    process = _FillGroup(
-        ir=bytes(compiled.ir),
-        source_name=session.source_name(nid),
-        backend_factory=backend if backend is not None else type(session.backend),
-        reader=data,
-        evaluators=tuple(evaluators.items()),
-        layout=layout,
-        columns=read_columns(fill_nodes, nid),  # union projection across all fills
+    return aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per histogram
+        *fill_nodes,
+        reduce=_GroupReduce(layout),
+        combine=_add_groups,
+        empty=_GroupZero(layout),
+        externals=evaluators,
+        backend=backend,
+        steps_per_file=steps_per_file,
+        partitions=partitions,
     )
-    if partitions is None:
-        partitions = data.partitions(steps_per_file)
-    tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
-    return Plan(process=process, combine=_add_groups, empty=_GroupZero(layout), tasks=tasks)
 
 
 def factory(
