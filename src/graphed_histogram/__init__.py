@@ -12,7 +12,16 @@ from __future__ import annotations
 from . import boost
 from ._spec import content_hash, zero_of
 from ._spec import spec_of as _spec_of_hist
-from .boost import FillEvaluator, Histogram, add_histograms, factory, histogram, histogram2d, histogramdd
+from .boost import (
+    FillEvaluator,
+    Histogram,
+    add_histograms,
+    factory,
+    histogram,
+    histogram2d,
+    histogramdd,
+    plan,
+)
 
 
 def spec_of(hist: object) -> str:
@@ -42,6 +51,7 @@ __all__ = [
     "histogram",
     "histogram2d",
     "histogramdd",
+    "plan",
     "spec_of",
     "zero_of",
 ]

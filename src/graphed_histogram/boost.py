@@ -13,7 +13,7 @@ fixed-tree executor configuration.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -122,6 +122,53 @@ class _FillPartition:
         for h in fills:
             total = total + h
         return total
+
+
+@dataclass(frozen=True)
+class _FillGroup:
+    """One partition's work for a GROUP of histograms sharing a source: read once, evaluate every
+    fill of every histogram through the ONE compiled IR, sum each histogram's own fills. Returns the
+    ``{label: histogram}`` mapping the combine adds key-wise — so a sub-graph feeding several
+    histograms is read+evaluated once, not once per histogram."""
+
+    ir: bytes
+    source_name: str
+    backend_factory: Callable[[], Any] | str
+    reader: PartitionedSource
+    evaluators: tuple[tuple[str, FillEvaluator], ...]
+    layout: tuple[tuple[str, int, str], ...]  # (label, n_fills, spec), in compiled-fill order
+    columns: tuple[str, ...] | None = None
+
+    def __call__(self, partition: Partition, resources: WorkerResources) -> dict[str, bh.Histogram]:
+        chunk = self.reader.read_partition(partition, self.columns, resources)
+        fills = evaluate_ir(
+            self.ir,
+            _resolve_backend(self.backend_factory),
+            {self.source_name: chunk},
+            externals=dict(self.evaluators),
+        )
+        out: dict[str, bh.Histogram] = {}
+        i = 0
+        for label, k, spec in self.layout:
+            total = zero_of(spec)
+            for j in range(i, i + k):
+                total = total + fills[j]
+            out[label] = total
+            i += k
+        return out
+
+
+def _add_groups(a: dict[str, bh.Histogram], b: dict[str, bh.Histogram]) -> dict[str, bh.Histogram]:
+    """Combine: histogram groups add key-wise (each histogram is a monoid under native +)."""
+    return {label: a[label] + b[label] for label in a}
+
+
+@dataclass(frozen=True)
+class _GroupZero:
+    layout: tuple[tuple[str, int, str], ...]
+
+    def __call__(self) -> dict[str, bh.Histogram]:
+        return {label: zero_of(spec) for label, _k, spec in self.layout}
 
 
 class Histogram(bh.Histogram):
@@ -274,6 +321,61 @@ class Histogram(bh.Histogram):
             partitions = data.partitions(steps_per_file)
         tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
         return Plan(process=process, combine=add_histograms, empty=_ZeroHist(self._spec), tasks=tasks)
+
+
+def plan(
+    histograms: Mapping[str, Histogram] | Sequence[Histogram],
+    *,
+    steps_per_file: int = 1,
+    backend: Callable[[], Any] | str | None = None,
+    partitions: Sequence[Partition] | None = None,
+) -> Plan[dict[str, bh.Histogram]]:
+    """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
+
+    All their fills compile into ONE IR, so a sub-graph feeding multiple histograms (e.g. a trijet
+    selection feeding both a pT and a b-tag histogram) is read and evaluated ONCE — not once per
+    histogram as separate ``Histogram.plan()`` calls would. The dask-histogram
+    ``compute(dict_of_hists)`` analogue; ``run(plan).value`` is the matching ``{label: histogram}``
+    mapping (string keys for a Mapping input, ``"0"``,``"1"``,... for a plain sequence). Column
+    projection covers the union of all histograms' fills."""
+    items = (
+        [(str(k), v) for k, v in histograms.items()]
+        if isinstance(histograms, Mapping)
+        else [(str(i), h) for i, h in enumerate(histograms)]
+    )
+    if not items:
+        raise ValueError("plan() needs at least one histogram")
+    hists = [h for _, h in items]
+    if any(not h._fill_nodes for h in hists):
+        raise ValueError("every histogram must have at least one staged fill before planning")
+    session = hists[0]._fill_nodes[0].session
+    if any(n.session is not session for h in hists for n in h._fill_nodes):
+        raise TypeError("all histograms in one plan must record into one session")
+    partitioned = {nid: d for nid, d in session.sources().items() if isinstance(d, PartitionedSource)}
+    if len(partitioned) != 1:
+        raise TypeError(
+            f"plan() aggregates exactly one partitioned source; this session has {len(partitioned)}"
+        )
+    ((nid, data),) = partitioned.items()
+    fill_nodes = [n for h in hists for n in h._fill_nodes]
+    layout = tuple((label, len(h._fill_nodes), h._spec) for label, h in items)
+    compiled = compile_ir(session, *fill_nodes)
+    evaluators: dict[str, FillEvaluator] = {}
+    for h in hists:
+        evaluators.update(h._evaluators)
+    process = _FillGroup(
+        ir=bytes(compiled.ir),
+        source_name=session.source_name(nid),
+        backend_factory=backend if backend is not None else type(session.backend),
+        reader=data,
+        evaluators=tuple(evaluators.items()),
+        layout=layout,
+        columns=read_columns(fill_nodes, nid),  # union projection across all fills
+    )
+    if partitions is None:
+        partitions = data.partitions(steps_per_file)
+    tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
+    return Plan(process=process, combine=_add_groups, empty=_GroupZero(layout), tasks=tasks)
 
 
 def factory(
