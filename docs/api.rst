@@ -1,30 +1,12 @@
 API reference
 =============
 
-Deferred histograms
--------------------
+This page is generated automatically from the package source by
+:mod:`sphinx.ext.autosummary`, so it always reflects the current public API. Follow a module link
+for its functions and classes.
 
-.. autoclass:: graphed_histogram.boost.Histogram
-   :members:
+.. autosummary::
+   :toctree: generated
+   :recursive:
 
-.. autofunction:: graphed_histogram.factory
-
-numpy-like entry points
------------------------
-
-.. autofunction:: graphed_histogram.histogram
-
-.. autofunction:: graphed_histogram.histogram2d
-
-.. autofunction:: graphed_histogram.histogramdd
-
-Canonical spec + evaluators
----------------------------
-
-.. autofunction:: graphed_histogram.spec_of
-
-.. autofunction:: graphed_histogram.zero_of
-
-.. autofunction:: graphed_histogram.evaluators
-
-.. autofunction:: graphed_histogram.add_histograms
+   graphed_histogram

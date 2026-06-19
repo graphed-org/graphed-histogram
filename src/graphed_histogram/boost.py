@@ -37,7 +37,7 @@ class HistogramForm:
 
 
 def _flat(values: object) -> object:
-    """Fill values flattened to 1-D: ragged arrays flatten completely (the corpus `stable`
+    """Fill values flattened to 1-D: ragged arrays flatten completely (the corpus ``stable``
     semantics); rectilinear arrays ravel; scalars pass through for boost broadcasting."""
     if hasattr(values, "layout"):  # an awkward array, ragged or not (lazy import boundary)
         import awkward as ak  # noqa: PLC0415
@@ -266,7 +266,7 @@ def plan(
     selection feeding both a pT and a b-tag histogram) is read and evaluated ONCE — not once per
     histogram as separate ``Histogram.plan()`` calls would. The dask-histogram
     ``compute(dict_of_hists)`` analogue; ``run(plan).value`` is the matching ``{label: histogram}``
-    mapping (string keys for a Mapping input, ``"0"``,``"1"``,... for a plain sequence). Column
+    mapping (string keys for a Mapping input, ``"0"``, ``"1"``, ... for a plain sequence). Column
     projection covers the union of all histograms' fills."""
     items = (
         [(str(k), v) for k, v in histograms.items()]

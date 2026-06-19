@@ -1,6 +1,6 @@
 """The canonical, versioned axes/storage spec — the content-addressed IDENTITY of a fill.
 
-A deferred fill's `PayloadDescriptor.content_hash` is the SHA-256 of this encoding, so two fills
+A deferred fill's ``PayloadDescriptor.content_hash`` is the SHA-256 of this encoding, so two fills
 with the same axes/storage (and inputs) intern to ONE graph node, and a plan re-run resolves its
 evaluator by the same hash on any machine. The encoding is declarative JSON (sorted keys, fixed
 float formatting via repr of Python floats) — never pickle; rebuilding axes from it round-trips
