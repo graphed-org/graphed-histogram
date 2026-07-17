@@ -20,8 +20,8 @@ import boost_histogram as bh
 import numpy as np
 import pytest
 from graphed import Session
-from graphed_core import Partition
-from graphed_core.execution import SequentialRunner
+from graphed.core import Partition
+from graphed.core.execution import SequentialRunner
 
 import graphed_histogram as gh
 
@@ -51,9 +51,9 @@ class ChunkedSource:
 
 
 def test_weighted_fill_survives_the_process_boundary_exactly() -> None:
-    pytest.importorskip("graphed_numpy")
-    from graphed_numpy import NumpyBackend  # noqa: PLC0415  (importorskip-gated)
-    from graphed_numpy.forms import NumpyForm  # noqa: PLC0415
+    pytest.importorskip("graphed.numpy")
+    from graphed.numpy import NumpyBackend  # noqa: PLC0415  (importorskip-gated)
+    from graphed.numpy.forms import NumpyForm  # noqa: PLC0415
 
     s = Session(NumpyBackend())
     src = ChunkedSource(np.stack([DATA, WEIGHTS], axis=1))
@@ -78,8 +78,8 @@ def test_weighted_fill_survives_the_process_boundary_exactly() -> None:
 
 def test_ragged_awkward_fill_survives_the_process_boundary() -> None:
     ak = pytest.importorskip("awkward")
-    pytest.importorskip("graphed_awkward")
-    from graphed_awkward import AwkwardBackend, AwkwardForm  # noqa: PLC0415  (importorskip-gated)
+    pytest.importorskip("graphed.awkward")
+    from graphed.awkward import AwkwardBackend, AwkwardForm  # noqa: PLC0415  (importorskip-gated)
 
     events = ak.Array({"Jet_pt": [[50.0, 30.0], [], [70.0, 20.0, 10.0], [5.0]] * 40})
     s = Session(AwkwardBackend())
@@ -99,9 +99,9 @@ def test_ragged_awkward_fill_survives_the_process_boundary() -> None:
 
 def _behavior_session():  # type: ignore[no-untyped-def]
     ak = pytest.importorskip("awkward")
-    pytest.importorskip("graphed_awkward")
+    pytest.importorskip("graphed.awkward")
     from behavior_toy import BEHAVIOR, make_backend  # noqa: PLC0415
-    from graphed_awkward import AwkwardForm, gak  # noqa: PLC0415
+    from graphed.awkward import AwkwardForm, gak  # noqa: PLC0415
 
     events = ak.Array({"x": [3.0, 0.0, 6.0, 8.0] * 50, "y": [4.0, 1.0, 8.0, 15.0] * 50})
     s = Session(make_backend())

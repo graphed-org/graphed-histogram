@@ -21,12 +21,8 @@ under test. Dispute a frozen test via `.graphed/<Mx>/disputes/<test_id>.md`.
 ## Local gates
 
 ```bash
-pip install "graphed-core @ git+https://github.com/graphed-org/graphed-core-mvp@main"   # needs Rust
-pip install "graphed-debug @ git+https://github.com/graphed-org/graphed-debug-mvp@main"
-pip install "graphed @ git+https://github.com/graphed-org/graphed-mvp@main"
-pip install "graphed-numpy @ git+https://github.com/graphed-org/graphed-numpy-mvp@main"
-pip install "graphed-awkward @ git+https://github.com/graphed-org/graphed-awkward-mvp@main"
-pip install "graphed-corpus @ git+https://github.com/graphed-org/graphed-corpus-mvp@main"
+pip install "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@main"   # needs Rust
+pip install "graphed-exec-local @ git+https://github.com/graphed-org/graphed-exec-local-mvp@main"
 pip install -e ".[dev,docs]"
 ruff check . && ruff format --check . && mypy
 pytest tests/frozen --cov=graphed_histogram --cov-branch

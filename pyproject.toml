@@ -18,7 +18,7 @@ classifiers = [
 ]
 # graphed-core: the DurablePlan + content-addressed task_id (from git). cloudpickle: resolve opaque
 # OpSpecs at execution time (the only non-IR-expressible callables a plan can carry).
-dependencies = ["graphed-core", "graphed", "boost-histogram>=1.4", "numpy>=1.24"]
+dependencies = ["graphed", "boost-histogram>=1.4", "numpy>=1.24"]
 
 [project.optional-dependencies]
 # the backends + corpus + exec-local exercise resume on a realistic HEP analysis end-to-end.
@@ -28,8 +28,7 @@ dev = [
   "hypothesis",
   "mypy",
   "ruff",
-  "graphed-numpy",
-  "graphed-awkward",
+  "graphed[awkward,numpy]",
   "awkward>=2.6",
   "graphed-exec-local",
   "hist>=2.7",
@@ -41,7 +40,7 @@ dev = [
 docs = ["sphinx", "furo"]
 
 [project.urls]
-Homepage = "https://github.com/graphed-org/graphed-checkpoint-mvp"
+Homepage = "https://github.com/graphed-org/graphed-histogram-mvp"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/graphed_histogram"]
@@ -76,6 +75,6 @@ files = ["src"]
 disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
-module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed_numpy.*", "graphed_exec_local.*", "hist.*"]
+module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "hist.*"]
 ignore_missing_imports = true
 follow_imports = "skip"

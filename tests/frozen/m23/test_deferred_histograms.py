@@ -18,10 +18,10 @@ import boost_histogram as bh
 import numpy as np
 import pytest
 from graphed import Array, Session
-from graphed_core import Partition
-from graphed_core.execution import SequentialRunner
-from graphed_numpy import NumpyBackend
-from graphed_numpy.forms import NumpyForm
+from graphed.core import Partition
+from graphed.core.execution import SequentialRunner
+from graphed.numpy import NumpyBackend
+from graphed.numpy.forms import NumpyForm
 
 import graphed_histogram as gh
 
@@ -193,7 +193,7 @@ def test_numpy_like_entry_points() -> None:
 
 
 def test_ir_is_deterministic_and_carries_the_descriptor() -> None:
-    import graphed_core  # noqa: PLC0415
+    import graphed.core  # noqa: PLC0415
     from graphed import compile_ir  # noqa: PLC0415
 
     def build() -> tuple[bytes, dict]:
@@ -201,7 +201,7 @@ def test_ir_is_deterministic_and_carries_the_descriptor() -> None:
         x, _ = _source(s, "x", DATA)
         h = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0)).fill(x)
         compiled = compile_ir(s, *h.fill_nodes())
-        nodes = graphed_core.GraphStore.deserialize(compiled.ir).nodes()
+        nodes = graphed.core.GraphStore.deserialize(compiled.ir).nodes()
         ext = next(n for n in nodes if n["kind"] == "external")
         return bytes(compiled.ir), ext["descriptor"]
 

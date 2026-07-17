@@ -16,10 +16,10 @@ import boost_histogram as bh
 import numpy as np
 import pytest
 from graphed import Array, Session
-from graphed_core import Partition
-from graphed_core.execution import SequentialRunner
-from graphed_numpy import NumpyBackend
-from graphed_numpy.forms import NumpyForm
+from graphed.core import Partition
+from graphed.core.execution import SequentialRunner
+from graphed.numpy import NumpyBackend
+from graphed.numpy.forms import NumpyForm
 
 import graphed_histogram as gh
 

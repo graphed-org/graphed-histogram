@@ -15,8 +15,8 @@ import awkward as ak
 import boost_histogram as bh
 import numpy as np
 from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward
-from graphed_core.execution import SequentialRunner
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.core.execution import SequentialRunner
 
 import graphed_histogram as gh
 
@@ -57,7 +57,7 @@ def test_two_weights_multiply_via_materialize() -> None:
 
 def test_two_weights_multiply_through_the_plan_path(tmp_path) -> None:  # type: ignore[no-untyped-def]
     # the executor path needs a PARTITIONED source: fill from a parquet dataset
-    import graphed_awkward as gha  # noqa: PLC0415
+    import graphed.awkward as gha  # noqa: PLC0415
     import pyarrow as pa  # noqa: PLC0415
     import pyarrow.parquet as pq  # noqa: PLC0415
 

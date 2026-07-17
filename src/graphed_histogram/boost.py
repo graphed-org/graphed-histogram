@@ -20,8 +20,8 @@ from typing import Any, cast
 import boost_histogram as bh
 import numpy as np
 from graphed import Array, aggregate_plan
-from graphed_core import Partition, PayloadDescriptor
-from graphed_core.execution import Plan
+from graphed.core import Partition, PayloadDescriptor
+from graphed.core.execution import Plan
 
 from ._spec import content_hash, spec_of, zero_of
 

@@ -29,6 +29,6 @@ BEHAVIOR: dict[Any, Any] = {"planar": PlanarRecord, ("*", "planar"): PlanarArray
 
 def make_backend() -> Any:
     """Zero-arg factory a worker imports and calls (the supported behavior-forwarding path)."""
-    from graphed_awkward import AwkwardBackend  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend  # noqa: PLC0415
 
     return AwkwardBackend(behavior=BEHAVIOR)
