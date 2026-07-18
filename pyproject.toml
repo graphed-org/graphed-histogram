@@ -30,7 +30,7 @@ dev = [
   "ruff",
   "graphed[awkward,numpy]",
   "awkward>=2.6",
-  "graphed-exec-local",
+  "graphed-executors",
   "hist>=2.7",
   # parquet-reading tests: awkward's arrow->form conversion calls to_pandas_dtype (the
   # graphed-awkward dev-extra precedent)
@@ -40,7 +40,7 @@ dev = [
 docs = ["sphinx", "furo"]
 
 [project.urls]
-Homepage = "https://github.com/graphed-org/graphed-histogram-mvp"
+Homepage = "https://github.com/graphed-org/graphed-histogram"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/graphed_histogram"]

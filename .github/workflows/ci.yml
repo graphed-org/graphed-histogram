@@ -14,7 +14,7 @@ env:
   # the former core/debug/frontend/numpy/awkward siblings are now one consolidated package
   GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@main"
   # exec-local stays a separate package (used by the M23 process-executor integration tests)
-  EXECLOCAL: "graphed-exec-local @ git+https://github.com/graphed-org/graphed-exec-local-mvp@main"
+  EXECLOCAL: "graphed-executors @ git+https://github.com/graphed-org/graphed-executors@main"
 
 jobs:
   test:

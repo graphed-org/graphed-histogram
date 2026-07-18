@@ -22,7 +22,7 @@ under test. Dispute a frozen test via `.graphed/<Mx>/disputes/<test_id>.md`.
 
 ```bash
 pip install "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@main"   # needs Rust
-pip install "graphed-exec-local @ git+https://github.com/graphed-org/graphed-exec-local-mvp@main"
+pip install "graphed-executors @ git+https://github.com/graphed-org/graphed-executors@main"
 pip install -e ".[dev,docs]"
 ruff check . && ruff format --check . && mypy
 pytest tests/frozen --cov=graphed_histogram --cov-branch
