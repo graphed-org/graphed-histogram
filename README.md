@@ -12,6 +12,13 @@ Backends know nothing about histograms — fills record through the frontend's
 `record_external(descriptor=, form=)` seam and resolve through `evaluate_ir`'s `externals=`
 registry.
 
+## Install
+
+```bash
+pip install graphed-histogram          # from PyPI (pulls graphed + boost-histogram)
+pip install graphed-executors          # to run the recorded fills through a local executor
+```
+
 ## The deferred histogram in one example
 
 ```python
