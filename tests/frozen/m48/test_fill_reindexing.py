@@ -74,10 +74,11 @@ def _eager_mask(label: str) -> ak.Array:
 
 def test_an_ancestor_value_is_re_indexed_per_label_by_that_labels_own_mask() -> None:
     session, root = in_memory_events()
-    sel = _derived(gnano.events(root))
+    events = gnano.events(root)
+    sel = _derived(events)
 
     h = sampled_2d()
-    h.fill(root.MET.pt, sel.MET.pt, sample=root.MET.phi)  # axis 0 and the sample are ANCESTORS
+    h.fill(events.MET.pt, sel.MET.pt, sample=events.MET.phi)  # axis 0 and the sample are ANCESTORS
     per_label = gh.fill_nodes_by_label(h)
     assert set(per_label) == set(JES)
 
