@@ -84,10 +84,33 @@ def sampled_2d(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> gh.boost.H
     return gh.boost.Histogram(*axes, storage=bh.storage.WeightedMean())
 
 
+def weighted_2d(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> gh.boost.Histogram:
+    axes = (bh.axis.Regular(bins, lo, hi), bh.axis.Regular(bins, lo, hi))
+    return gh.boost.Histogram(*axes, storage=bh.storage.Weight())
+
+
 # ---- eager reference builders ----------------------------------------------------------------
-def eager(events: ak.Array = EVENTS) -> ak.Array:
-    """The same rows the deferred program reads, for building references by hand."""
-    return events
+def eager_weighted(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> bh.Histogram:
+    """A plain boost histogram matching `weighted()` — the oracle side of every comparison."""
+    return bh.Histogram(bh.axis.Regular(bins, lo, hi), storage=bh.storage.Weight())
+
+
+def eager_counts(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> bh.Histogram:
+    return bh.Histogram(bh.axis.Regular(bins, lo, hi), storage=bh.storage.Int64())
+
+
+def eager_sampled(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> bh.Histogram:
+    return bh.Histogram(bh.axis.Regular(bins, lo, hi), storage=bh.storage.WeightedMean())
+
+
+def eager_sampled_2d(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> bh.Histogram:
+    axes = (bh.axis.Regular(bins, lo, hi), bh.axis.Regular(bins, lo, hi))
+    return bh.Histogram(*axes, storage=bh.storage.WeightedMean())
+
+
+def eager_weighted_2d(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> bh.Histogram:
+    axes = (bh.axis.Regular(bins, lo, hi), bh.axis.Regular(bins, lo, hi))
+    return bh.Histogram(*axes, storage=bh.storage.Weight())
 
 
 def flat(values: Any) -> np.ndarray:

@@ -35,6 +35,25 @@ Authority: `systematics-vary-plan.md` r33. Section references in the files are t
 | H5 | §7.2 the merge is real (the guard's instrument) | `test_optimizer_merge_guard.py::test_the_optimizer_merge_is_real_before_the_guard_is_asserted` |
 | H5 | §7.2 scope: an unmerged varied program plans normally | `test_optimizer_merge_guard.py::test_a_varied_program_the_optimizer_does_not_merge_plans_normally` |
 | H5 | §1.2/§7.2 record-time dedup — both keys off ONE evaluated fill | `test_optimizer_merge_guard.py::test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill` |
+| H6 | §6.1d ambient fill on a per-object value: value labels ∪ ambient labels | `test_ambient_object_fills.py::test_a_per_object_fill_carries_the_value_labels_UNION_the_ambient_labels` |
+| H6 | §6.1d manual-broadcast reference, ambient AND explicit factor | `test_ambient_object_fills.py::test_every_labels_contents_equal_the_manual_broadcast_reference` |
+| H6 | §6.3(2) contexted-but-unvaried fill + seam-recorded witness | `test_ambient_object_fills.py::test_a_contexted_but_unvaried_fill_broadcasts_and_records_the_seam` |
+| H6 | §2.2 fill-label superset (context-borne half only) — relocated from A8(b) | `test_ambient_object_fills.py::test_the_contexts_labels_are_the_CONTEXT_BORNE_half_of_a_fills_label_set` |
+| H6 | §2.6b pre-`vary` fill carries no new label — relocated from A7 | `test_ambient_object_fills.py::test_a_fill_from_the_pre_vary_context_carries_no_new_label` |
+| H6 | §2.3e origination pair: one node id, two fill label sets — relocated from A7 | `test_ambient_object_fills.py::test_the_origination_pair_has_one_node_id_and_two_fill_label_sets` |
+| H7 | §6.1d execution-time refusal naming the AMBIENT factor | `test_fill_flatten_refusals.py::test_an_already_flattened_value_against_the_ambient_weight_names_the_ambient_factor` |
+| H7 | §6.1d no record-time raise | `test_fill_flatten_refusals.py::test_the_refusal_is_not_raised_at_record_time` |
+| H7 | §6.1d offending EXPLICIT factor named by position | `test_fill_flatten_refusals.py::test_an_offending_explicit_factor_is_named_by_its_position_in_the_weight_list` |
+| H7 | §6.1d loose-VALUE case, DISTINCT message | `test_fill_flatten_refusals.py::test_a_loose_VALUE_at_the_wrong_row_space_gets_its_own_message` |
+| H8 | §6.1d divergent lineage at the fill, naming both contexts | `test_fill_divergence.py::test_two_divergent_axis_values_are_refused_naming_both_contexts` |
+| H8 | §6.1d `sample=` is a first-class operand of the divergence check | `test_fill_divergence.py::test_a_divergent_sample_is_refused_by_the_same_check` |
+| H9 | §6.1d link kind (1): ancestor VALUE re-indexed per label | `test_fill_reindexing.py::test_an_ancestor_value_is_re_indexed_per_label_by_that_labels_own_mask` |
+| H9 | §6.1d link kind (3): projected fill is UNVARIED, result a BARE hist | `test_fill_reindexing.py::test_a_projection_link_yields_an_unvaried_fill_whose_result_is_a_BARE_hist` |
+| H10 | §6.1d four-way fold order (RECORD-TIME) | `test_fill_fold_order.py::test_the_four_operand_kinds_fold_in_the_bound_order` |
+| H10 | §6.1d varied `sample=` accepted/expanded, not an `AttributeError` | `test_fill_fold_order.py::test_a_varied_sample_is_accepted_and_expanded_rather_than_raising` |
+| H11 | §6.1d `unweighted=True` counts equal an unweighted eager reference | `test_fill_unweighted.py::test_an_unweighted_fill_equals_an_unweighted_eager_reference` |
+| H11 | §6.1a the suppressed weight contributes NO labels — a BARE hist | `test_fill_unweighted.py::test_the_suppressed_ambient_weight_contributes_NO_labels` |
+| H11 | §2.5 `weight=` with `unweighted=True` is a record-time error naming both | `test_fill_unweighted.py::test_unweighted_together_with_an_explicit_weight_is_a_record_time_error` |
 
 ## Spellings pinned at this freeze (§9.1, §4.4 of the decomposition)
 
@@ -44,6 +63,8 @@ Authority: `systematics-vary-plan.md` r33. Section references in the files are t
 | `graphed_histogram.fill_nodes_by_label(h)` | `dict[str, Array]`, label order per §2.4 (nominal first) |
 | `graphed_histogram.plan(...)` value | flat `{output: hist}` for an output no variation reaches, `{(output, label): hist}` for a varied sibling output |
 | `Histogram.fill(..., unweighted=True)` | suppresses the ambient weight AND every explicit `weight=[…]` factor |
+| the `.plan()` and merge-shortfall refusals | `graphed.GraphedError`; `.plan()`'s message names `graphed_histogram.plan`, the shortfall's names the output, the labels and `variations=` |
+| §6.1d's execution-time length messages | ambient offender: contains `ambient` + `pass the value unflattened`; explicit offender: contains `weight[<i>]` for the offending index + `pass the value unflattened`; loose-value offender: contains `value[<i>]` and NEITHER of the other two |
 
 ## Fixtures
 
