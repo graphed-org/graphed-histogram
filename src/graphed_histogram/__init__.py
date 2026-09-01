@@ -9,6 +9,8 @@ evaluates a fill eagerly.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from . import boost
 from ._spec import content_hash, zero_of
 from ._spec import spec_of as _spec_of_hist
@@ -17,6 +19,7 @@ from .boost import (
     Histogram,
     add_histograms,
     factory,
+    fill_nodes_by_label,
     histogram,
     histogram2d,
     histogramdd,
@@ -32,9 +35,9 @@ def spec_of(hist: object) -> str:
     return _spec_of_hist(hist)
 
 
-def evaluators(*histograms: Histogram) -> dict[str, FillEvaluator]:
+def evaluators(*histograms: Histogram) -> dict[str, Callable[..., object]]:
     """Merged content-hash -> evaluator registry for ``evaluate_ir(externals=...)``."""
-    out: dict[str, FillEvaluator] = {}
+    out: dict[str, Callable[..., object]] = {}
     for h in histograms:
         out.update(h.evaluators())
     return out
@@ -48,6 +51,7 @@ __all__ = [
     "content_hash",
     "evaluators",
     "factory",
+    "fill_nodes_by_label",
     "histogram",
     "histogram2d",
     "histogramdd",
