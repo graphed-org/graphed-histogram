@@ -21,9 +21,10 @@ from typing import Any
 import boost_histogram as bh
 import graphed
 import numpy as np
-from graphed import Array, GraphedError, Varied, aggregate_plan, compile_ir
+from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan, compile_ir
 from graphed.core import GraphStore, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
+from graphed.execute import Key
 
 from ._spec import content_hash, spec_of, zero_of
 
@@ -206,14 +207,21 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
 @dataclass(frozen=True)
 class _SumFills:
     """Reduce one partition's evaluated fills to a single histogram (the single-histogram case): the
-    partition result is the sum of that histogram's own fills."""
+    partition result is the sum of that histogram's own fills.
+
+    It sums by OUTPUT INDEX, like `_GroupReduce`'s layout and for the same reason: two staged fills
+    that record identically intern to ONE node (§1.2), `evaluate_ir` returns one value per DISTINCT
+    output, and iterating the values would count that fill once — a plausible, physically wrong
+    histogram at half strength. Repeating the index replicates it, which is what filling twice means.
+    """
 
     spec: str
+    indices: tuple[int, ...]
 
     def __call__(self, fills: list[object]) -> bh.Histogram:
         total = zero_of(self.spec)
-        for f in fills:
-            total = total + f
+        for i in self.indices:
+            total = total + fills[i]
         return total
 
 
@@ -444,15 +452,22 @@ class Histogram(bh.Histogram):
                 "into one histogram — which would merge the universes; plan it through "
                 "graphed_histogram.plan({name: hist}), whose per-slot results keep them apart"
             )
+        # the same rank the group builder slices with: staged fill -> its output index
+        rank = {nid: i for i, nid in enumerate(dict.fromkeys(n.node_id for n in self._fill_nodes))}
+        marked = len(rank)
         return aggregate_plan(
             *self._fill_nodes,
-            reduce=_SumFills(self._spec),
+            reduce=_SumFills(self._spec, tuple(rank[n.node_id] for n in self._fill_nodes)),
             combine=add_histograms,
             empty=_ZeroHist(self._spec),
             externals=self._evaluators,
             backend=backend,
             steps_per_file=steps_per_file,
             partitions=partitions,
+            # §7.2's shortfall refusal is a CLASS, and `_SumFills` is its silent member: an
+            # OPTIMIZER merge of distinct record ids leaves it summing fewer values than slots,
+            # under-summing into a plausible, physically wrong histogram rather than raising.
+            on_compiled=_on_compiled((("this histogram", self),), marked),
         )
 
 
@@ -519,7 +534,6 @@ def plan(
     evaluators: dict[str, Callable[..., object]] = {}
     for h in hists:
         evaluators.update(h._evaluators)
-    varied = any(len(_output_labels(h)) > 1 for _name, h in items)
     return aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
         *fill_nodes,
         reduce=_GroupReduce(layout),
@@ -529,49 +543,112 @@ def plan(
         backend=backend,
         steps_per_file=steps_per_file,
         partitions=partitions,
-        on_compiled=_merge_guard(items, len(rank)) if varied else None,
+        on_compiled=_on_compiled(items, len(rank)),
     )
 
 
-def _merge_guard(items: Sequence[tuple[str, Histogram]], marked: int) -> Callable[[Any], None]:
-    """§7.2's optimizer-merge refusal, at the group-plan builder — the only site holding both the
-    marked record ids and the compiled artifact.
+def _on_compiled(items: Sequence[tuple[str, Histogram]], marked: int) -> Callable[[CompiledGraph], Any]:
+    """§7.2's compiled-artifact hook, supplied on EVERY program by both builders.
+
+    It refuses a merge shortfall first — the refusal is what makes the artifact needed at all — and
+    otherwise returns §8.2(i)'s label payload for the shipped closure."""
+
+    def hook(compiled: CompiledGraph) -> Any:
+        _refuse_shortfall(items, marked, compiled)
+        return _variation_labels(items, compiled)
+
+    return hook
+
+
+def _refuse_shortfall(items: Sequence[tuple[str, Histogram]], marked: int, compiled: CompiledGraph) -> None:
+    """§7.2's optimizer-merge refusal, at the builders — the only site holding both the marked
+    record ids and the compiled artifact.
 
     The M4 reducer merges DISTINCT record ids too (``x * 1.0`` is an identity token), so two fills
     differing only in ``weight=[w]`` versus ``weight=[w * 1.0]`` compile to ONE output while the
-    slot layout still expects two. The sound key — the record-to-reduced map — does not exist until
-    m49, so a shortfall is refused rather than mis-sliced (a mis-slice surfaces as an opaque
-    worker-side ``IndexError``). Scoped to varied programs: an unvaried one whose fills the same
-    rules merge must keep running exactly as it did."""
+    consumer still expects two. Both consumers are wrong on a shortfall and wrong differently: the
+    group builder mis-slices into an opaque worker-side ``IndexError``, ``Histogram.plan``'s
+    ``_SumFills`` silently under-sums. Neither slices; both refuse.
+    """
+    outputs = len(GraphStore.deserialize(compiled.ir).outputs())
+    if outputs >= marked:
+        return
 
     def shrinks(hist: Histogram) -> bool:
         """Does THIS output's own compile lose fills? The refusal must name the histogram whose
         fills merged, which in a mixed plan need not be a varied one."""
         ids = dict.fromkeys(node.node_id for node in hist._fill_nodes)
-        compiled = compile_ir(hist._fill_nodes[0].session, *hist._fill_nodes)
-        return len(GraphStore.deserialize(compiled.ir).outputs()) < len(ids)
+        compiled_one = compile_ir(hist._fill_nodes[0].session, *hist._fill_nodes)
+        return len(GraphStore.deserialize(compiled_one.ir).outputs()) < len(ids)
 
-    def check(compiled: Any) -> None:
-        outputs = len(GraphStore.deserialize(compiled.ir).outputs())
-        if outputs >= marked:
-            return
-        # the shortfall is real; re-compiling per output to attribute it costs nothing on a path
-        # that is about to raise. No single output shrinking means the merge crossed two of them.
-        culprits = [(name, hist) for name, hist in items if shrinks(hist)] or list(items)
-        detail = "; ".join(f"{name} carries {list(_output_labels(hist))}" for name, hist in culprits)
-        workaround = (
-            " Spell a label whose value equals another's with the SAME expression "
-            '(variations={"1": w}, not w * 1.0), which routes it through the supported '
-            "record-time dedup instead."
-            if any(len(_output_labels(hist)) > 1 for _name, hist in culprits)
-            else ""
-        )
-        raise GraphedError(
-            f"the optimizer merged fills that record as distinct nodes ({marked} marked, {outputs} "
-            f"compiled), so this plan's slots can no longer be told apart: {detail}.{workaround}"
-        )
+    # the shortfall is real; re-compiling per output to attribute it costs nothing on a path that
+    # is about to raise. No single output shrinking means the merge crossed two of them.
+    culprits = [(name, hist, _output_labels(hist)) for name, hist in items if shrinks(hist)]
+    culprits = culprits or [(name, hist, _output_labels(hist)) for name, hist in items]
+    # an unvaried program has no labels to name: `("nominal",)` is the absence of variation, and
+    # printing it would read as one
+    detail = "; ".join(
+        f"{name} carries {list(labels)}" if len(labels) > 1 else name for name, _hist, labels in culprits
+    )
+    workaround = (
+        " Spell a label whose value equals another's with the SAME expression "
+        '(variations={"1": w}, not w * 1.0), which routes it through the supported '
+        "record-time dedup instead."
+        if any(len(labels) > 1 for _name, _hist, labels in culprits)
+        else ""
+    )
+    raise GraphedError(
+        f"the optimizer merged fills that record as distinct nodes ({marked} marked, {outputs} "
+        f"compiled), so this plan's slots can no longer be told apart: {detail}.{workaround}"
+    )
 
-    return check
+
+def _cone(node: Array) -> set[int]:
+    """Every record node id reachable from `node`, via §8.2(i)'s named walk, `session.walk`.
+
+    Spelled here rather than imported from `graphed.by_label`: that name is not on `graphed`'s
+    exported surface, so nothing in graphed's frozen suite holds its spelling for this repo.
+    """
+    seen: set[int] = set()
+
+    def note(nid: int, *_rest: object) -> None:
+        seen.add(nid)
+
+    node.session.walk(node, source=note, op=note, external=note)
+    return seen
+
+
+def _variation_labels(
+    items: Sequence[tuple[str, Histogram]], compiled: CompiledGraph
+) -> tuple[tuple[Key, tuple[tuple[str, ...], Any]], ...] | None:
+    """§8.2(i)'s payload: which labels' universes reach each node of the compiled reduced store.
+
+    Per label, the WHOLE record cone of that label's marked fill nodes (§2.4's fallback included) —
+    not §3.4's reachability difference, because the shared prefix is exactly where a fused failure
+    raises — folded onto the artifact's own record→reduced keys and UNIONED, which is what makes
+    the map set-valued. ``"nominal"`` never enters that union: a key no varied universe reaches
+    keeps its entry with an EMPTY tuple, which is §8.1's single encoding of nominal/unvaried and
+    still carries the user's line.
+
+    The artifact's ``frames`` is already one entry per key of the map's image in §8.2(i)'s bound
+    order, so it is both the key enumeration and the frame source; nothing here computes either.
+    """
+    node_map = compiled.correspondence.node_map
+    reached: dict[Key, set[str]] = {}
+    for _name, hist in items:
+        for label in _output_labels(hist):
+            if label == "nominal":
+                continue
+            for per_label in hist._label_maps:
+                node = per_label.get(label, per_label["nominal"])
+                for nid in _cone(node):
+                    # total on this cone: every node feeding a MARKED fill survives DCE
+                    reached.setdefault(node_map[nid], set()).add(label)
+    if not reached:  # the predicate is over the LABELS, hence over the compiled program
+        return None
+    return tuple(
+        (key, (tuple(sorted(reached.get(key, ()))), frame)) for key, frame in compiled.correspondence.frames
+    )
 
 
 def unpack(value: Mapping[SlotKey, bh.Histogram]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
