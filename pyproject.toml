@@ -47,7 +47,7 @@ packages = ["src/graphed_histogram"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tests/frozen/m23"]
+pythonpath = ["src", "tests/frozen/m23", "tests/_corpus"]
 addopts = "-q"
 
 [tool.coverage.run]
