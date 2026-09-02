@@ -208,11 +208,35 @@ def _blame(
     return ambient + tuple((f"weight[{i}]", _FACTOR_ROWS.format(index=i)) for i in range(n_factors))
 
 
-def _axis_chash(spec: str, variation: Sequence[str]) -> str:
-    """§6.2's per-fill carrier: an axis-mode fill node's content hash folds its ordered variation
-    payload into the spec hash, so the `1 + |S|` nodes of one histogram — which share a spec —
-    resolve to their OWN evaluators instead of all keying on `content_hash(spec)`."""
-    return content_hash(spec + "\x00variation:" + json.dumps(list(variation)))
+def _fill_chash(
+    spec: str,
+    *,
+    has_weight: bool,
+    n_weights: int,
+    variation: Sequence[str] | None = None,
+) -> str:
+    """The fill node's descriptor content hash — also its External evaluator's registry key
+    (`evaluate_ir` resolves `externals[content_hash]`, and the group plan merges every histogram's
+    evaluators into ONE dict keyed that way). Two same-spec fills whose evaluators DIFFER must get
+    distinct hashes, or both distinct nodes resolve to whichever evaluator registered last (a
+    weighted fill silently evaluated unweighted — the four-output plan's `plain`/`sib` collision).
+
+    Within one spec the evaluator can differ in three ways: unweighted vs weighted, the weight-
+    factor count, and §6.2's axis loop. `has_sample` and `n_axes` cannot — `sample=` is only valid
+    on Mean/WeightedMean storage and the axis count is in the spec, both already spec-borne. The
+    CANONICAL single-weight sibling fill keeps `content_hash(spec)` verbatim (the pre-m48 identity a
+    committed golden pins, `tests/frozen/m48/test_variation_goldens`); any deviation folds a
+    discriminator suffix in."""
+    disc: list[str] = []
+    if not has_weight:
+        disc.append("unweighted")
+    if n_weights != 1:
+        disc.append(f"n_weights={n_weights}")
+    if variation is not None:
+        disc.append("variation=" + json.dumps(list(variation)))
+    if not disc:
+        return content_hash(spec)
+    return content_hash(spec + "\x00" + "\x00".join(disc))
 
 
 def _declare_axis_spec(hist: bh.Histogram, sorted_labels: Sequence[str]) -> str:
@@ -425,7 +449,7 @@ class Histogram(bh.Histogram):
             has_sample=sample is not None,
             n_weights=max(len(applied), 1),
         )
-        chash = content_hash(self._spec)
+        chash = _fill_chash(self._spec, has_weight=bool(applied), n_weights=max(len(applied), 1))
         descriptor = PayloadDescriptor(
             kind="histogram",
             content_hash=chash,
@@ -586,7 +610,6 @@ class Histogram(bh.Histogram):
                     guarded = self._guard(session, narrowed, value, coordinate, message)
                     narrowed = graphed.broadcast_like(value, guarded)
                 inputs.append(narrowed)
-        chash = _axis_chash(axis_spec, node_labels)
         evaluator = FillEvaluator(
             spec=axis_spec,
             n_axes=len(axes),
@@ -594,6 +617,12 @@ class Histogram(bh.Histogram):
             has_sample=sampled is not None,
             n_weights=max(len(applied), 1),
             variation=tuple(node_labels),
+        )
+        chash = _fill_chash(
+            axis_spec,
+            has_weight=bool(applied),
+            n_weights=max(len(applied), 1),
+            variation=node_labels,
         )
         descriptor = PayloadDescriptor(
             kind="histogram",
@@ -695,9 +724,14 @@ def _slots(name: str, hist: Histogram, rank: Mapping[int, int]) -> Layout:
     """§6.1a/§6.1c's keying for ONE output: a bare `name` when no variation reaches it — which is
     what keeps unvaried programs' plan values exactly as they were — and one `(name, label)` slot
     per label otherwise, each gathering that label's node from every fill call (§2.4's fallback:
-    a fill that does not carry the label contributes its central one)."""
-    labels = _output_labels(hist)
+    a fill that does not carry the label contributes its central one). §6.2 axis mode is the third
+    key form: ONE `(name, None)` slot gathering every fill-node index, whatever the label count —
+    the MODE decides the key (the bare-name rule is sibling-scoped), the value is the bare
+    variation-axis histogram, the combine stays a plain `+`."""
     spec = hist._fill_specs[0]  # §6.1c: the FILL node's spec (m50's §6.2(i) forces one per output)
+    if hist._axis_mode:
+        return (((name, None), tuple(rank[node.node_id] for node in hist._fill_nodes), spec),)
+    labels = _output_labels(hist)
     if len(labels) == 1:
         return ((name, tuple(rank[node.node_id] for node in hist._fill_nodes), spec),)
     return tuple(
@@ -882,6 +916,18 @@ def unpack(value: Mapping[SlotKey, bh.Histogram]) -> dict[str, bh.Histogram | di
         else:
             out.setdefault(name, {})[label] = hist
     return out
+
+
+def label_listing(histograms: Mapping[str, Histogram]) -> dict[str, list[str]]:
+    """§9.1's plan-level ``{output: [labels]}`` listing: each output → its variation labels in §2.4
+    FOLD order (nominal first, then vary-tag insertion order); an unvaried output → ``["nominal"]``.
+
+    MODE-INDEPENDENT: an axis-mode output lists the SAME labels as its sibling twin, because both
+    modes populate ``_label_maps`` with the same fold-ordered set. The labels come from the fill's
+    DECLARED label set the builder holds (``_output_labels``), NOT from the ``(output, None)`` slot
+    key — which carries no label, so a key-reading listing would answer ``[None]``/``[]`` for an
+    axis-mode output."""
+    return {name: list(_output_labels(hist)) for name, hist in histograms.items()}
 
 
 def factory(
