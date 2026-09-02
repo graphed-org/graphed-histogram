@@ -13,6 +13,7 @@ fixed-tree executor configuration.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
@@ -65,25 +66,47 @@ def _flat(values: object) -> object:
 
 @dataclass(frozen=True)
 class FillEvaluator:
-    """The External evaluator: fill ONE chunk into a fresh zero histogram (picklable)."""
+    """The External evaluator: fill ONE chunk into a fresh zero histogram (picklable).
+
+    Sibling mode (``variation is None``, the default — old pickles restore into it) fills once. In
+    §6.2's AXIS mode ``variation`` is the ordered tuple of labels this node writes: the value and
+    ``sample=`` columns are FIXED for the node and only the weight block varies across the loop, so
+    the evaluator fills each label's own weight block against that label's scalar category value on
+    the pre-declared ``"variation"`` axis. That is how the weight-only labels (``W``) collapse into
+    ONE node while each shift/sample label (``S``) is its own 1-label node.
+    """
 
     spec: str
     n_axes: int
     has_weight: bool
     has_sample: bool
     n_weights: int = 1  # M29: multiple multiplicative weight inputs (default keeps old pickles valid)
+    variation: tuple[str, ...] | None = None  # m50: axis-mode label loop (None keeps old pickles valid)
 
     def __call__(self, *values: object) -> bh.Histogram:
         h = zero_of(self.spec)
-        axes = [_flat(v) for v in values[: self.n_axes]]
-        rest = list(values[self.n_axes :])
         weight: Any = None
-        if self.has_weight:
-            weight = _flat(rest.pop(0))
-            for _ in range(self.n_weights - 1):
-                weight = weight * _flat(rest.pop(0))  # elementwise product of the weight factors
+        if self.variation is None:
+            axes = [_flat(v) for v in values[: self.n_axes]]
+            rest = list(values[self.n_axes :])
+            if self.has_weight:
+                weight = _flat(rest.pop(0))
+                for _ in range(self.n_weights - 1):
+                    weight = weight * _flat(rest.pop(0))  # elementwise product of the weight factors
+            sample = _flat(rest.pop(0)) if self.has_sample else None
+            h.fill(*axes, weight=weight, sample=sample)
+            return h
+        # §6.2 axis mode: [*value_axes, sample?, *per-label weight blocks]; value/sample fixed
+        rest = list(values)
+        axes = [_flat(rest.pop(0)) for _ in range(self.n_axes)]
         sample = _flat(rest.pop(0)) if self.has_sample else None
-        h.fill(*axes, weight=weight, sample=sample)
+        for label in self.variation:
+            weight = None
+            if self.has_weight:
+                weight = _flat(rest.pop(0))
+                for _ in range(self.n_weights - 1):
+                    weight = weight * _flat(rest.pop(0))
+            h.fill(*axes, label, weight=weight, sample=sample)  # scalar category broadcasts (probe-verified)
         return h
 
 
@@ -183,6 +206,23 @@ def _blame(
         return (("value[0]", _LOOSE_ROWS.format(index=0)),) * (int(has_ambient) + n_factors)
     ambient = (("ambient", _AMBIENT_ROWS),) if has_ambient else ()
     return ambient + tuple((f"weight[{i}]", _FACTOR_ROWS.format(index=i)) for i in range(n_factors))
+
+
+def _axis_chash(spec: str, variation: Sequence[str]) -> str:
+    """§6.2's per-fill carrier: an axis-mode fill node's content hash folds its ordered variation
+    payload into the spec hash, so the `1 + |S|` nodes of one histogram — which share a spec —
+    resolve to their OWN evaluators instead of all keying on `content_hash(spec)`."""
+    return content_hash(spec + "\x00variation:" + json.dumps(list(variation)))
+
+
+def _declare_axis_spec(hist: bh.Histogram, sorted_labels: Sequence[str]) -> str:
+    """§6.2(ii): the frontend declares a non-growth, sorted `"variation"` StrCategory axis at FILL
+    time from the §6.1d inferred label set, appended after the value axes. Returns the fill node's
+    spec — identity-bearing, hence byte-stable per partition (so `+` combine stays safe)."""
+    var = bh.axis.StrCategory(list(sorted_labels))  # non-growth by default; stored order = as given
+    var.__dict__["name"] = "variation"  # the `hist` name convention the spec codec round-trips
+    declared = bh.Histogram(*hist.axes, var, storage=hist.storage_type())
+    return spec_of(declared)
 
 
 def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
@@ -288,6 +328,12 @@ class Histogram(bh.Histogram):
         #: is fixed in `__init__` and under m50's fill-time axis declaration would lack the
         #: variation axis the fill results carry
         self._fill_specs: list[str] = []
+        #: §6.2: the MODE is a property of the HISTOGRAM, fixed by the first fill and remembered —
+        #: a later fill in the OTHER mode is a hard error. `False` until any fill records.
+        self._axis_mode: bool = False
+        #: §6.2(i): the axis-mode inferred label set of the FIRST axis fill; a later axis fill whose
+        #: set differs is refused (the declared axis, hence the spec, would disagree)
+        self._axis_labels: tuple[str, ...] | None = None
 
     # ---- recording -------------------------------------------------------------------------
     def fill(
@@ -297,14 +343,22 @@ class Histogram(bh.Histogram):
         sample: Operand | None = None,
         threads: int | None = None,
         unweighted: bool = False,
+        variation_axis: bool = False,
     ) -> Histogram:
-        """Record this fill — one SIBLING node per §2.4 label (§6.1d), and return ``self``.
+        """Record this fill and return ``self``.
 
         The fill is the first place independent axis, weight and ``sample=`` handles meet, so it
         runs the §2.3e unification itself, re-indexes every ancestor-context input into the
         winning context's row space, and auto-applies that context's ambient weight (§2.6's
         register-then-forget, completed here). ``unweighted=True`` opts out of BOTH weight sources
         and, applying no factor, carries none of their labels.
+
+        Default lowering is one SIBLING node per §2.4 label (§6.1d). ``variation_axis=True`` opts
+        into §6.2's AXIS mode: weight-only labels collapse into ONE evaluator-loop node over a
+        frontend-declared ``"variation"`` StrCategory axis, while shift/``sample=`` labels stay
+        sibling nodes targeting that same axis (`1 + |S|` nodes). The MODE is a property of the
+        histogram — fixed by the first fill and remembered; a later fill in the OTHER mode is a
+        hard error.
         """
         if len(args) != len(self.axes):
             raise TypeError(f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays")
@@ -324,6 +378,21 @@ class Histogram(bh.Histogram):
         if sample is not None and not isinstance(sample, Array | Varied):
             raise TypeError("sample= must be a graphed Array")
 
+        established = bool(self._fill_specs)  # any prior fill has fixed the mode
+        if established and variation_axis != self._axis_mode:
+            prior, now = ("axis", "sibling") if self._axis_mode else ("sibling", "axis")
+            raise GraphedError(
+                f"this histogram's mode is fixed to {prior}-fill by its first fill; this fill is "
+                f"{now}-mode — the variation-axis MODE is a property of the histogram, not one "
+                "fill() call (mixing them would give one output two §6.1c key forms). Use one mode."
+            )
+        if variation_axis and any(ax.__dict__.get("name") == "variation" for ax in self.axes):
+            raise GraphedError(
+                "this histogram already carries an axis named 'variation'; the variation-axis fill "
+                "mode declares that axis itself, so passing variation_axis=True would collide — "
+                "drop the pre-existing 'variation' axis or use sibling fills"
+            )
+
         given = [*args, *weights, *([] if sample is None else [sample])]
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
@@ -338,6 +407,16 @@ class Histogram(bh.Histogram):
         seam = ctx is not None or any(isinstance(value, Varied) for value in given)
         blame = _blame(args, ctx, ambient is not None, len(factors))
         session = _member(axes[0], "nominal").session
+
+        if variation_axis:
+            if established and self._axis_labels is not None and set(labels) != set(self._axis_labels):
+                raise GraphedError(
+                    f"this axis-mode histogram's first fill declared variations "
+                    f"{sorted(self._axis_labels)}; this fill declares {sorted(labels)} — the "
+                    "variation axis (hence the spec) would disagree across fills. Match them."
+                )
+            self._record_axis_fill(session, axes, applied, sampled, blame, seam, labels)
+            return self
 
         evaluator = FillEvaluator(
             spec=self._spec,
@@ -414,6 +493,135 @@ class Histogram(bh.Histogram):
             form=session.form(factor),
         )
 
+    def _record_axis_fill(
+        self,
+        session: Any,
+        axes: Sequence[Operand],
+        applied: Sequence[Operand],
+        sampled: Operand | None,
+        blame: Sequence[tuple[str, str]],
+        seam: bool,
+        labels: tuple[str, ...],
+    ) -> None:
+        """§6.2 axis-mode lowering. Split the fold labels into `W` — borne ONLY by weights, which
+        collapse into ONE evaluator-loop node — and `S` — borne by an axis VALUE or a `Varied`
+        `sample=`, each its own sibling node writing its scalar category. Declare the sorted
+        ``"variation"`` axis from the label set and record `1 + |S|` fill nodes, each with a
+        DISTINCT `content_hash((spec, variation))` so it resolves to its own evaluator (§6.2)."""
+        self._axis_mode = True
+        self._axis_labels = labels
+        carried: set[str] = set()
+        for operand in [*axes, *([] if sampled is None else [sampled])]:
+            if isinstance(operand, Varied):
+                carried.update(graphed.labels(operand))
+        carried.discard("nominal")
+        w_labels = tuple(lab for lab in labels if lab != "nominal" and lab not in carried)
+        s_labels = tuple(lab for lab in labels if lab != "nominal" and lab in carried)
+
+        axis_spec = _declare_axis_spec(self, sorted(labels))
+        # the loop node carries nominal + every weight-only label; value/sample stay at nominal and
+        # only the weight block varies across the loop (§6.1b's `W` collapse)
+        loop_node = self._record_axis_node(
+            session,
+            axis_spec,
+            axes,
+            applied,
+            sampled,
+            blame,
+            seam,
+            carrier="nominal",
+            node_labels=("nominal", *w_labels),
+        )
+        s_nodes = {
+            lab: self._record_axis_node(
+                session,
+                axis_spec,
+                axes,
+                applied,
+                sampled,
+                blame,
+                seam,
+                carrier=lab,
+                node_labels=(lab,),
+            )
+            for lab in s_labels
+        }
+        # §2.4 fold order, nominal first — H2's listing and `_output_labels` read these keys
+        per_label: dict[str, Array] = {"nominal": loop_node}
+        for lab in labels:
+            if lab == "nominal":
+                continue
+            per_label[lab] = s_nodes[lab] if lab in s_labels else loop_node
+        self._fill_nodes.append(loop_node)
+        self._fill_nodes.extend(s_nodes[lab] for lab in s_labels)
+        self._label_maps.append(per_label)
+        self._fill_specs.append(axis_spec)
+
+    def _record_axis_node(
+        self,
+        session: Any,
+        axis_spec: str,
+        axes: Sequence[Operand],
+        applied: Sequence[Operand],
+        sampled: Operand | None,
+        blame: Sequence[tuple[str, str]],
+        seam: bool,
+        *,
+        carrier: str,
+        node_labels: tuple[str, ...],
+    ) -> Array:
+        """One axis-mode fill node: value + `sample=` from `carrier` (fixed), one guarded and
+        broadcast weight block per label in `node_labels` (§6.1d's seam recorded per COLUMN,
+        upstream of the loop). The evaluator writes each label's scalar category on the variation
+        axis; its content hash folds `node_labels` in so the node owns its evaluator (§6.2)."""
+        value_members = [_member(operand, carrier) for operand in axes]
+        value = value_members[0]
+        inputs: list[Array] = list(value_members)
+        if sampled is not None:
+            inputs.append(_member(sampled, carrier))
+        for label in node_labels:
+            for (coordinate, message), factor in zip(blame, applied, strict=True):
+                narrowed = _member(factor, label)
+                if seam:
+                    guarded = self._guard(session, narrowed, value, coordinate, message)
+                    narrowed = graphed.broadcast_like(value, guarded)
+                inputs.append(narrowed)
+        chash = _axis_chash(axis_spec, node_labels)
+        evaluator = FillEvaluator(
+            spec=axis_spec,
+            n_axes=len(axes),
+            has_weight=bool(applied),
+            has_sample=sampled is not None,
+            n_weights=max(len(applied), 1),
+            variation=tuple(node_labels),
+        )
+        descriptor = PayloadDescriptor(
+            kind="histogram",
+            content_hash=chash,
+            framework="boost_histogram",
+            version=bh.__version__,
+            io_schema="uhi",
+            preprocessing_ref=None,
+        )
+        params: dict[str, Any] = {
+            "spec": axis_spec,
+            "n_axes": len(axes),
+            "weighted": bool(applied),
+            "sampled": sampled is not None,
+            "variation": json.dumps(list(node_labels)),  # store params are scalars; JSON-encode
+            **({"n_weights": len(applied)} if len(applied) > 1 else {}),
+        }
+        node: Array = session.record_external(
+            "histogram.fill",
+            evaluator,
+            inputs,
+            params,
+            descriptor=descriptor,
+            form=HistogramForm(chash),
+        )
+        self._evaluators[chash] = evaluator
+        return node
+
     def staged_fills(self) -> int:
         return len(self._fill_nodes)
 
@@ -443,14 +651,17 @@ class Histogram(bh.Histogram):
         runs ONCE."""
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
-        # §6.1c: `_SumFills` adds every staged fill into ONE histogram, which for a varied
-        # histogram would silently merge the universes into a plausible, physically wrong answer.
-        # The trigger is the merge hazard, not a fill COUNT — a single varied fill refuses too.
-        if any(len(labels) > 1 for labels in self._label_maps):
+        # §6.1c: `.plan()` starts from `self._spec` (fixed in __init__, no variation axis) and
+        # `_SumFills` adds every staged fill into ONE histogram — merging a varied histogram's
+        # universes, and unable to render an axis-mode result at all. The refusal is GENERAL over
+        # the MODE (an unvaried AXIS-mode histogram still declares the 1-bin axis, §6.2(ii)), so it
+        # cannot fall through into an opaque bh error. Not a fill COUNT — one varied fill refuses.
+        if self._axis_mode or any(len(labels) > 1 for labels in self._label_maps):
             raise GraphedError(
-                "this histogram's fills carry variation labels, and .plan() sums every staged fill "
-                "into one histogram — which would merge the universes; plan it through "
-                "graphed_histogram.plan({name: hist}), whose per-slot results keep them apart"
+                "this histogram's fills carry variations (a variation axis or sibling labels), and "
+                ".plan() sums every staged fill into one histogram — which would merge the "
+                "universes; plan it through graphed_histogram.plan({name: hist}), whose per-slot "
+                "results keep them apart"
             )
         # the same rank the group builder slices with: staged fill -> its output index
         rank = {nid: i for i, nid in enumerate(dict.fromkeys(n.node_id for n in self._fill_nodes))}
