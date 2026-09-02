@@ -23,6 +23,7 @@ from .boost import (
     histogram,
     histogram2d,
     histogramdd,
+    label_listing,
     plan,
     unpack,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "histogram",
     "histogram2d",
     "histogramdd",
+    "label_listing",
     "plan",
     "spec_of",
     "unpack",
