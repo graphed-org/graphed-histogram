@@ -24,6 +24,7 @@ from .boost import (
     histogram2d,
     histogramdd,
     plan,
+    unpack,
 )
 
 
@@ -57,5 +58,6 @@ __all__ = [
     "histogramdd",
     "plan",
     "spec_of",
+    "unpack",
     "zero_of",
 ]

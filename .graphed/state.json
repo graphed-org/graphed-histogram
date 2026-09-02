@@ -77,16 +77,32 @@
       "freeze_tag": "freeze-m48-fixup",
       "gates": {
         "benchmark": null,
-        "coverage": null,
-        "determinism": null,
-        "frozen_tests": false,
-        "integrity_scan": null,
+        "coverage": true,
+        "determinism": true,
+        "frozen_tests": true,
+        "integrity_scan": true,
         "lint": true,
         "types": true
       },
       "incident": null,
       "l0_count": 0,
-      "metrics_history": [],
+      "metrics_history": [
+        {
+          "benchmark_ok": null,
+          "coverage_ok": true,
+          "determinism_ok": true,
+          "diff_lines": 0,
+          "fail_set_hash": "e3b0c44298fc1c14",
+          "integrity_ok": true,
+          "iteration_index": 1,
+          "lint_ok": true,
+          "pass_count": 93,
+          "tokens_spent": 0,
+          "tree_hash": "local",
+          "types_ok": true,
+          "wall_clock_s": 0.0
+        }
+      ],
       "phase": "IMPLEMENTING",
       "reject_count": 0
     }

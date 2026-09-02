@@ -31,3 +31,31 @@ Frozen suite: `tests/frozen/m48/**` (66 items). Baseline at `freeze-m48` (40f9b4
 - Gates: frozen m48 **42 passed / 24 failed** (all 24 are H-I2's `plan()`/`unpack` surface, absent
   by construction at this commit); the rest of `tests/frozen` green with no regression; `ruff
   check`/`ruff format --check`/`mypy --strict` clean.
+
+## Iteration 1 — 2026-09-01 — H-I2 group/plan surface
+
+- `_GroupReduce`'s layout is now slot-keyed and carries per-slot output INDICES, not counts: the
+  rank of each fill node's id in the DEDUPLICATED id list, which matches `evaluate_ir`'s
+  one-value-per-distinct-output list element for element. Two labels whose members intern to one
+  node therefore replicate off one evaluated fill instead of overrunning the value list.
+- `plan()`'s value is §6.1c's flat slot keying — a bare output name for an output no variation
+  reaches (what keeps the frozen m23 indexing idiom working), `(output, label)` for a varied one —
+  and its declared type widened to `Plan[dict[str | tuple[str, str | None], bh.Histogram]]` whole,
+  `_add_groups`/`_GroupZero` included. `unpack` reads the per-output shape off the KEY FORM alone.
+- `Histogram.plan()` refuses a varied histogram — `_SumFills` would merge the universes into a
+  plausible wrong answer — and points at the group API. The trigger is the merge hazard, so a
+  single varied fill refuses too.
+- §7.2's optimizer-merge shortfall is refused at the group-plan builder through
+  `aggregate_plan(on_compiled=...)`, comparing distinct compiled outputs against distinct marked
+  record ids, over varied programs only. Measured: **1** `compile_ir` call per `gh.plan({…})` call,
+  varied or unvaried (`graphed.aggregate.compile_ir` counted through a wrapper) — §7.2's
+  anti-quadratic rule holds because the guard rides the seam rather than compiling again.
+- `tests/extra/m48/test_lowering_edges.py` covers what no frozen anchor reaches: the guard's scalar
+  pass-through (with the mismatched-array leg as its discriminator), the accessor's several-fills
+  refusal, `fill`'s operand type checks, and `unpack`'s `(output, None)` key form.
+- Gates: **93/93 frozen** (66 m48 + 27 m23/m29) and 97/97 including `tests/extra`; coverage on the
+  CI gate (`pytest tests/frozen --cov=graphed_histogram --cov-branch`) **96.16%**, `boost.py` 97%;
+  `ruff check`, `ruff format --check`, `mypy --strict`, toml and the integrity scan all clean;
+  determinism measured on a VARIED program — byte-identical `compile_ir` output and identical label
+  order across `PYTHONHASHSEED` 1 and 424242, with `hash('graphed')` differing across the two, so
+  the instrument was live. `sphinx -W` cannot run here: no sphinx in the interpreter (environmental).
