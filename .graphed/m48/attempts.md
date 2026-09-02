@@ -90,3 +90,7 @@ Frozen suite: `tests/frozen/m48/**` (66 items). Baseline at `freeze-m48` (40f9b4
   `graphed_orchestrator.precommit .` **ok** end to end — sphinx -W now green, the lead having
   installed it. Determinism re-measured after the identity change: byte-identical IR and label
   order across `PYTHONHASHSEED` 1/424242 with `hash('graphed')` differing.
+- L1 fold-in: `_VERSION` reads the dist version under `try/except PackageNotFoundError`
+  (`graphed preserve/bundle.py`'s pattern), falling back to `""` — a src-only `PYTHONPATH` run now
+  degrades the descriptor field instead of killing the import. Probed with `metadata.version` made
+  to raise: import survives, `_VERSION == ''`.

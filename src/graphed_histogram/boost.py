@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import boost_histogram as bh
@@ -35,7 +35,10 @@ Operand = Any  # an `Array` or a `Varied` of them (§2.2's container carries `Ar
 
 #: this package's own version, recorded on the payloads it descriptors (the fill nodes carry
 #: boost-histogram's, being boost payloads; the row-space guard is ours)
-_VERSION = version("graphed-histogram")
+try:
+    _VERSION = version("graphed-histogram")
+except PackageNotFoundError:  # a src-only PYTHONPATH run: degrade the field, never the import
+    _VERSION = ""
 
 
 @dataclass(frozen=True)
