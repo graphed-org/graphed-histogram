@@ -3,6 +3,7 @@
 ## Contents
 - [H1 — axis-mode fill lowering](#h1)
 - [H2 — axis slot + label listing](#h2)
+- [D1 — docs (how variations work)](#d1)
 
 <a id="h1"></a>
 ## H1 — axis-mode fill lowering (boost.py)
@@ -64,3 +65,30 @@ Results:
   sibling path).
 - Determinism: slot keys, axis histogram bytes, label_listing, and the 5 mixed-program chashes all
   byte-identical across two runs.
+
+<a id="d1"></a>
+## D1 — docs (how variations work: axis-mode fills)
+Changed:
+- docs/design.rst: new "Systematic variations: the variation axis" section —
+  `Histogram.fill(..., variation_axis=True)`, the `StrCategory("variation")` axis, the S/W split
+  (weight labels collapse into the evaluator loop; shift/`Varied` sample= stay sibling fills at
+  `1 + |S|` arity), the four refusals, recognition via `axis.__dict__["name"]=="variation"`,
+  `graphed.labels/universe/nominal` over the result, and `graphed_histogram.label_listing`
+  (mode-independent `{output:[labels]}` without executing).
+
+Executed examples (docs-sweep rule; run against the shared venv, editable graphed_histogram @ H1/H2):
+- axis-mode fill over a per-event varied weight → result axes `['Regular','StrCategory']`, axis
+  name `'variation'`, stored bins `['nominal','sf_down','sf_up']` (sorted), `graphed.labels` =
+  `('nominal','sf_down','sf_up')`, nominal slice `[3.1 3.2 0. 0.]`, sf_up slice
+  `[3.72 3.84 0. 0.]` (exact reprs pasted).
+- sibling mode → dict per label, `sib["nominal"]` bit-for-bit equal to the axis nominal slice.
+- `label_listing({axis, sib, plain})` → `{'axis':['nominal','sf_up','sf_down'],
+  'sib':[...same...], 'plain':['nominal']}` — axis entry == sibling entry (mode-independent).
+- Update-updated the doc's numpy reprs to match `repr()` exactly after a first-pass spacing miss.
+
+Update-added the Contents anchor `[D1 — docs](#d1)`.
+
+Gates:
+- sphinx -W (docs/ → docs/_build/html): EXIT 0, zero warnings (`grep -c WARNING` = 0).
+- precommit --fast: toml/workflows/integrity/prek(ruff check + ruff format) → all ok.
+- Docs-only change: pytest suite unaffected by an .rst edit (not re-run).
