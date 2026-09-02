@@ -1,7 +1,8 @@
 # Test Dispute — `tests/frozen/m49/test_blame_parity.py` vs review finding A-1
 
-Filed by: m49 fix-cycle-1 implementer. Status: **OPEN — A-1 NOT implemented**, code left at
-freeze-m49 behaviour. §A.7: not routed around, not weakened, no `xfail`.
+Filed by: m49 fix-cycle-1 implementer. Status: **CLOSED** by the plan-r42 adjudication — see the
+Resolution at the end of this file. (As filed: **OPEN — A-1 NOT implemented**, code left at
+freeze-m49 behaviour.) §A.7: not routed around, not weakened, no `xfail`.
 
 ## The test
 
@@ -74,3 +75,27 @@ with pytest.raises(Boom):
 
 (An External node carries no `name` in the IR — its identity is the descriptor — so an attributed
 External failure has to name the payload `kind`; that spelling is part of what (1) would freeze.)
+
+---
+
+## Resolution — ADJUDICATED, 2026-09-02 (fix cycle 1b)
+
+Status: **CLOSED — proposed correction (2), amended.** The adjudicator ruled in plan r42
+(`df68e3e`, §8.2(ii)): the external arm IS a dispatch point (A-1 stands), but
+
+> a `GraphedError` re-raises untouched on EVERY arm regardless of entry — it is already an
+> attributed error, and §6.1d's blame parity (the plan path re-raises the guard's message verbatim)
+> binds it
+
+so the wrap attributes RAW failures only. That dissolves the conflict: the §6.1d row-space guard
+raises a `GraphedError`, which now passes through `_PartitionReduce._attribute` untouched, and this
+anchor's four cases stay green with the external arm dispatched.
+
+Shipped in `graphed` (`m49-vary`): the carve-out guard in `aggregate.py::_attribute`, and
+`execute.py`'s external arm routed through `_dispatch` (op name = `external:<payload kind>`).
+Witness `tests/extra/frontend/m49/test_external_attribution.py`: raw external failure + entry ->
+labelled `StageError`; raw failure, hook declines -> original untouched; `GraphedError` + the SAME
+entry -> verbatim, non-`StageError`. Measured here: `pytest tests/frozen/m49/test_blame_parity.py`
+EXIT=0 (5 passed); whole `tests/frozen` 154 passed / 0 failed.
+
+No frozen test was edited, skipped, or weakened at any point in this dispute.
