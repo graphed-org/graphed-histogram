@@ -2,4 +2,4 @@
 # package published only to GitHub. Install it from git@main, mirroring the CI docs job's env.GRAPHED.
 # The [awkward,numpy] extras supply the backends that graphed-histogram's autosummary imports at
 # doc-build time; the Rust toolchain declared in ../.readthedocs.yaml builds the extension.
-graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@main
+graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@m49-vary
