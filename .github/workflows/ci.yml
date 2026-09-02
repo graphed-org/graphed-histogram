@@ -12,10 +12,7 @@ concurrency:
 
 env:
   # the former core/debug/frontend/numpy/awkward siblings are now one consolidated package
-  # TEMPORARY (PR #2): pinned to the m48-vary branch — this PR's fill lowering needs the m48
-  # vary frontend, which graphed@main gains only when graphed-org/graphed#3 merges. Revert to
-  # @main as part of merging this PR, after #3 lands.
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@m48-vary"
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@main"
   # exec-local stays a separate package (used by the M23 process-executor integration tests)
   EXECLOCAL: "graphed-executors"
 
