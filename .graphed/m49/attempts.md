@@ -56,3 +56,9 @@ Gates: `pytest tests/frozen` 154 passed / 0 failed, coverage 96.16% (fail_under 
 tree green; `graphed-exec-local tests/frozen/m49` 31 passed (read-only cross-check); ruff check +
 format clean; `mypy` (strict, `files = ["src"]`) clean; `precommit . --fast` ok with
 `workflows-valid` now LIVE.
+
+## post-1b correction (re-review RR-1)
+The cycle-1 note "the graphed change was not shipped" is superseded: fix cycle 1b (graphed
+4364beb) shipped the A-1 repair under the adjudicated plan-r42 §8.2(ii) carve-out; the dispute
+in .graphed/m49/disputes/test_blame_parity.md is CLOSED and the four blame-parity anchors are
+green with the external arm dispatched.
