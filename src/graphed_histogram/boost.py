@@ -15,12 +15,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from importlib.metadata import version
 from typing import Any
 
 import boost_histogram as bh
 import graphed
 import numpy as np
-from graphed import Array, GraphedError, Varied, aggregate_plan
+from graphed import Array, GraphedError, Varied, aggregate_plan, compile_ir
 from graphed.core import GraphStore, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 
@@ -31,6 +32,10 @@ from ._spec import content_hash, spec_of, zero_of
 SlotKey = str | tuple[str, str | None]
 
 Operand = Any  # an `Array` or a `Varied` of them (§2.2's container carries `Array`'s surface)
+
+#: this package's own version, recorded on the payloads it descriptors (the fill nodes carry
+#: boost-histogram's, being boost payloads; the row-space guard is ours)
+_VERSION = version("graphed-histogram")
 
 
 @dataclass(frozen=True)
@@ -156,21 +161,24 @@ def _fold_labels(operands: Sequence[Operand]) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _blame(args: Sequence[Operand], ctx: object, has_ambient: bool, n_factors: int) -> tuple[str, ...]:
-    """One §6.1d length message per APPLIED factor, in fold order.
+def _blame(
+    args: Sequence[Operand], ctx: object, has_ambient: bool, n_factors: int
+) -> tuple[tuple[str, str], ...]:
+    """One ``(coordinate, message)`` per APPLIED factor, in fold order.
+
+    The COORDINATE — ``ambient``, ``weight[i]``, ``value[0]`` — is the guard's identity: it enters
+    the node's params and payload hash, so the diagnostic's wording can be improved without moving
+    any recorded graph, while two different offenders stay two different nodes. The message is the
+    evaluator's alone.
 
     A loose value adopts the unified context for label alignment only — its row space is never
-    adjusted, no mask being known — so when one is present it, not a factor, is what the reader
-    must fix, and the message says so instead of pointing at the flatten."""
-    loose = (
-        None
-        if ctx is None
-        else next((i for i, value in enumerate(args) if graphed.context_of(value) is None), None)
-    )
-    if loose is not None:
-        return (_LOOSE_ROWS.format(index=loose),) * (int(has_ambient) + n_factors)
-    ambient = (_AMBIENT_ROWS,) if has_ambient else ()
-    return ambient + tuple(_FACTOR_ROWS.format(index=i) for i in range(n_factors))
+    adjusted, no mask being known — so it is what the reader must fix. Only ``args[0]`` can take
+    that blame: the guard compares each factor against the fill's FIRST value, so a loose value at
+    any other axis position is not what the comparison is about."""
+    if ctx is not None and graphed.context_of(args[0]) is None:
+        return (("value[0]", _LOOSE_ROWS.format(index=0)),) * (int(has_ambient) + n_factors)
+    ambient = (("ambient", _AMBIENT_ROWS),) if has_ambient else ()
+    return ambient + tuple((f"weight[{i}]", _FACTOR_ROWS.format(index=i)) for i in range(n_factors))
 
 
 def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
@@ -265,6 +273,10 @@ class Histogram(bh.Histogram):
         #: one ``{label: node}`` per `fill` call, in §6.1d's fold order — the label attribution
         #: `_fill_nodes` (a flat list) cannot carry
         self._label_maps: list[dict[str, Array]] = []
+        #: the spec each `fill` call RECORDED. §6.1c keys the layout on this, not on `_spec`, which
+        #: is fixed in `__init__` and under m50's fill-time axis declaration would lack the
+        #: variation axis the fill results carry
+        self._fill_specs: list[str] = []
 
     # ---- recording -------------------------------------------------------------------------
     def fill(
@@ -344,10 +356,10 @@ class Histogram(bh.Histogram):
         for label in labels:
             inputs: list[Array] = [_member(value, label) for value in axes]
             value = inputs[0]
-            for message, factor in zip(blame, applied, strict=True):
+            for (coordinate, message), factor in zip(blame, applied, strict=True):
                 narrowed = _member(factor, label)
                 if seam:
-                    guarded = self._guard(session, narrowed, value, message)
+                    guarded = self._guard(session, narrowed, value, coordinate, message)
                     narrowed = graphed.broadcast_like(value, guarded)
                 inputs.append(narrowed)
             if sampled is not None:
@@ -362,24 +374,29 @@ class Histogram(bh.Histogram):
             )
         self._fill_nodes.extend(per_label.values())
         self._label_maps.append(per_label)
+        self._fill_specs.append(evaluator.spec)
         self._evaluators[chash] = evaluator
         return self
 
-    def _guard(self, session: Any, factor: Array, value: Array, message: str) -> Array:
-        """Record §6.1d's row-space guard for one factor (see :class:`_WeightGuard`)."""
+    def _guard(self, session: Any, factor: Array, value: Array, coordinate: str, message: str) -> Array:
+        """Record §6.1d's row-space guard for one factor (see :class:`_WeightGuard`).
+
+        Identity is the blame COORDINATE, carried in the params and hashed into the payload, so
+        the node is derivable from what the graph records — a preservation plugin can rebuild the
+        evaluator from `params["blame"]`, and rewording the diagnostic moves no bytes."""
         guard = _WeightGuard(message)
-        chash = content_hash("weight-guard:" + message)
+        chash = content_hash("weight-guard:" + coordinate)
         self._evaluators[chash] = guard
         return session.record_external(  # type: ignore[no-any-return]
             "histogram.weight_guard",
             guard,
             [factor, value],
-            {},
+            {"blame": coordinate},
             descriptor=PayloadDescriptor(
                 kind="histogram.weight_guard",
                 content_hash=chash,
                 framework="graphed_histogram",
-                version="",
+                version=_VERSION,
                 io_schema="array",
                 preprocessing_ref=None,
             ),
@@ -451,13 +468,14 @@ def _slots(name: str, hist: Histogram, rank: Mapping[int, int]) -> Layout:
     per label otherwise, each gathering that label's node from every fill call (§2.4's fallback:
     a fill that does not carry the label contributes its central one)."""
     labels = _output_labels(hist)
+    spec = hist._fill_specs[0]  # §6.1c: the FILL node's spec (m50's §6.2(i) forces one per output)
     if len(labels) == 1:
-        return ((name, tuple(rank[node.node_id] for node in hist._fill_nodes), hist._spec),)
+        return ((name, tuple(rank[node.node_id] for node in hist._fill_nodes), spec),)
     return tuple(
         (
             (name, label),
             tuple(rank[per_label.get(label, per_label["nominal"]).node_id] for per_label in hist._label_maps),
-            hist._spec,
+            spec,
         )
         for label in labels
     )
@@ -498,7 +516,7 @@ def plan(
     evaluators: dict[str, Callable[..., object]] = {}
     for h in hists:
         evaluators.update(h._evaluators)
-    varied = [(name, _output_labels(h)) for name, h in items if len(_output_labels(h)) > 1]
+    varied = any(len(_output_labels(h)) > 1 for _name, h in items)
     return aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
         *fill_nodes,
         reduce=_GroupReduce(layout),
@@ -508,11 +526,11 @@ def plan(
         backend=backend,
         steps_per_file=steps_per_file,
         partitions=partitions,
-        on_compiled=None if not varied else _merge_guard(varied, len(rank)),
+        on_compiled=_merge_guard(items, len(rank)) if varied else None,
     )
 
 
-def _merge_guard(varied: Sequence[tuple[str, tuple[str, ...]]], marked: int) -> Callable[[Any], None]:
+def _merge_guard(items: Sequence[tuple[str, Histogram]], marked: int) -> Callable[[Any], None]:
     """§7.2's optimizer-merge refusal, at the group-plan builder — the only site holding both the
     marked record ids and the compiled artifact.
 
@@ -523,16 +541,31 @@ def _merge_guard(varied: Sequence[tuple[str, tuple[str, ...]]], marked: int) -> 
     worker-side ``IndexError``). Scoped to varied programs: an unvaried one whose fills the same
     rules merge must keep running exactly as it did."""
 
+    def shrinks(hist: Histogram) -> bool:
+        """Does THIS output's own compile lose fills? The refusal must name the histogram whose
+        fills merged, which in a mixed plan need not be a varied one."""
+        ids = dict.fromkeys(node.node_id for node in hist._fill_nodes)
+        compiled = compile_ir(hist._fill_nodes[0].session, *hist._fill_nodes)
+        return len(GraphStore.deserialize(compiled.ir).outputs()) < len(ids)
+
     def check(compiled: Any) -> None:
         outputs = len(GraphStore.deserialize(compiled.ir).outputs())
         if outputs >= marked:
             return
-        detail = "; ".join(f"{name} carries {list(labels)}" for name, labels in varied)
+        # the shortfall is real; re-compiling per output to attribute it costs nothing on a path
+        # that is about to raise. No single output shrinking means the merge crossed two of them.
+        culprits = [(name, hist) for name, hist in items if shrinks(hist)] or list(items)
+        detail = "; ".join(f"{name} carries {list(_output_labels(hist))}" for name, hist in culprits)
+        workaround = (
+            " Spell a label whose value equals another's with the SAME expression "
+            '(variations={"1": w}, not w * 1.0), which routes it through the supported '
+            "record-time dedup instead."
+            if any(len(_output_labels(hist)) > 1 for _name, hist in culprits)
+            else ""
+        )
         raise GraphedError(
             f"the optimizer merged fills that record as distinct nodes ({marked} marked, {outputs} "
-            f"compiled), so these labels can no longer be told apart: {detail}. Spell a label whose "
-            'value equals another\'s with the SAME expression (variations={"1": w}, not w * 1.0), '
-            "which routes it through the supported record-time dedup instead"
+            f"compiled), so this plan's slots can no longer be told apart: {detail}.{workaround}"
         )
 
     return check

@@ -59,3 +59,34 @@ Frozen suite: `tests/frozen/m48/**` (66 items). Baseline at `freeze-m48` (40f9b4
   determinism measured on a VARIED program — byte-identical `compile_ir` output and identical label
   order across `PYTHONHASHSEED` 1 and 424242, with `hash('graphed')` differing across the two, so
   the instrument was live. `sphinx -W` cannot run here: no sphinx in the interpreter (environmental).
+
+## Iteration 2 — 2026-09-01 — review repairs (5 MED)
+
+- **A1/A6/A7 (one edit at `_guard`)**: the guard's identity is now the blame COORDINATE
+  (`ambient` / `weight[i]` / `value[0]`), carried in `params["blame"]` and hashed into the payload;
+  the sentence stays evaluator-side and the descriptor records this package's real version. So the
+  node is derivable from what the graph records (a preservation plugin can rebuild the evaluator),
+  two offenders stay two nodes on the plan path, and rewording a diagnostic moves no bytes.
+- **A2**: the loose branch fires only when `args[0]` is the loose one — the guard compares each
+  factor against the fill's FIRST value, so a loose value at another axis position was never what
+  the comparison was about, and blaming it named an innocent operand.
+- **A4**: the merge refusal now attributes the shortfall by re-compiling per output (free: that
+  path is about to raise) and names the histogram whose own fills merged, which in a mixed plan
+  need not be a varied one; the `variations=` workaround is offered only when a named output is
+  varied. No single output shrinking means the merge crossed two, and all are named.
+- **A8**: the layout's third element reads the FILL's recorded spec (`_fill_specs`), not the
+  histogram object's. **No discriminating witness is possible at m48** — the two are equal until
+  m50's §6.2 fill-time axis declaration makes them diverge — so none was written; mutating the read
+  back to `hist._spec` leaves all 106 tests green, measured.
+- **A5/A9 + the A6/A7 witnesses** live in `tests/extra/m48/test_review_witnesses.py`. The compile
+  spy patches every module binding of `graphed.execute.compile_ir`, since it is imported by name in
+  several modules and patching one re-export would miss calls made through another.
+- Mutation table (each mutation applied to `boost.py`, target test run, source restored):
+  hash on the prose → A7 witness FAILS; guard identity collapsed → A6 plan-path parity FAILS;
+  loose-on-any-arg → A2 witness FAILS; blame-only-varied-outputs → A4 witness FAILS;
+  `factors = list(weights)` → A5 witness FAILS; a second `compile_ir` in `plan()` → A9 witness
+  FAILS; `_fill_specs[0]` → `_spec` → nothing fails (A8, as stated above).
+- Gates: **93/93 frozen** (66 m48), 106/106 with `tests/extra`; coverage 96.25% (`boost.py` 97%);
+  `graphed_orchestrator.precommit .` **ok** end to end — sphinx -W now green, the lead having
+  installed it. Determinism re-measured after the identity change: byte-identical IR and label
+  order across `PYTHONHASHSEED` 1/424242 with `hash('graphed')` differing.
