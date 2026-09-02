@@ -25,3 +25,34 @@ R0.11 (import-site spy on `graphed.aggregate.compile_ir` + `graphed_histogram.bo
 one `gh.plan({…})` = **1** compile on both a varied toy program and the 15-reference matrix; the
 definition-site spy on `graphed.execute.compile_ir` sees **0**, confirming §7.2's claim that it
 measures nothing. The refusal path is 2 (one re-compile per output, on a path about to raise).
+
+## Fix cycle 1 — review wf_fa3d406b (A-2, A-9, A-10; A-1 disputed)
+
+**A-2 (MED)** — the member §7.2's refusal admits: two fills that intern to ONE record node left
+`marked == outputs`, nothing refused, and `_SumFills` ITERATED the evaluated values, answering at
+half strength (`[0, 4, 12, 8, 17.6]` against `[0, 8, 24, 16, 35.2]`, the adjudicator's 0.500). The
+repair is the group builder's own shape rather than a wider refusal: `Histogram.plan` builds the
+same `rank` map `plan()` slices with and hands `_SumFills` the per-staged-fill OUTPUT INDICES, so a
+repeated index replicates — which is what filling twice means, and is the supported record-time
+dedup path §7.2 names. `marked` still comes from that map, so the optimizer-merge refusal (distinct
+ids merged) is unchanged and still fires before any mis-index. Witness
+`tests/extra/m49/test_duplicate_fill_multiplicity.py`: RED at 0.5x before, green after, with the
+one-node instrument asserted and the non-interning pair (`w` vs `w2`) as the control against
+"multiply by the staged count".
+
+**A-9 (NIT)** — the `if key is not None` guard in `_variation_labels` is gone; every node in a
+marked fill's cone survives DCE, so `node_map[nid]` is total there and a miss should say so.
+
+**A-10 (NIT)** — `graphed.by_label.cone` is no longer imported across the repo boundary (it is not
+on `graphed`'s exported surface, so nothing in graphed's frozen suite holds its spelling for us).
+Chose the plan's own spelling over exporting it: a four-line local `_cone` over `session.walk`,
+which §8.2(i) names as the producer's walk and which `cone` was a wrapper for.
+
+**A-1 (HIGH, graphed-side)** — the repair reds this repo's `tests/frozen/m49/test_blame_parity.py`
+(4 cases). Dispute filed at `.graphed/m49/disputes/test_blame_parity.md`; the graphed change was
+not shipped and nothing here was weakened.
+
+Gates: `pytest tests/frozen` 154 passed / 0 failed, coverage 96.16% (fail_under 90); whole `tests/`
+tree green; `graphed-exec-local tests/frozen/m49` 31 passed (read-only cross-check); ruff check +
+format clean; `mypy` (strict, `files = ["src"]`) clean; `precommit . --fast` ok with
+`workflows-valid` now LIVE.

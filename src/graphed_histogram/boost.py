@@ -22,7 +22,6 @@ import boost_histogram as bh
 import graphed
 import numpy as np
 from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan, compile_ir
-from graphed.by_label import cone
 from graphed.core import GraphStore, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key
@@ -208,14 +207,21 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
 @dataclass(frozen=True)
 class _SumFills:
     """Reduce one partition's evaluated fills to a single histogram (the single-histogram case): the
-    partition result is the sum of that histogram's own fills."""
+    partition result is the sum of that histogram's own fills.
+
+    It sums by OUTPUT INDEX, like `_GroupReduce`'s layout and for the same reason: two staged fills
+    that record identically intern to ONE node (§1.2), `evaluate_ir` returns one value per DISTINCT
+    output, and iterating the values would count that fill once — a plausible, physically wrong
+    histogram at half strength. Repeating the index replicates it, which is what filling twice means.
+    """
 
     spec: str
+    indices: tuple[int, ...]
 
     def __call__(self, fills: list[object]) -> bh.Histogram:
         total = zero_of(self.spec)
-        for f in fills:
-            total = total + f
+        for i in self.indices:
+            total = total + fills[i]
         return total
 
 
@@ -446,19 +452,21 @@ class Histogram(bh.Histogram):
                 "into one histogram — which would merge the universes; plan it through "
                 "graphed_histogram.plan({name: hist}), whose per-slot results keep them apart"
             )
-        marked = len(dict.fromkeys(node.node_id for node in self._fill_nodes))
+        # the same rank the group builder slices with: staged fill -> its output index
+        rank = {nid: i for i, nid in enumerate(dict.fromkeys(n.node_id for n in self._fill_nodes))}
+        marked = len(rank)
         return aggregate_plan(
             *self._fill_nodes,
-            reduce=_SumFills(self._spec),
+            reduce=_SumFills(self._spec, tuple(rank[n.node_id] for n in self._fill_nodes)),
             combine=add_histograms,
             empty=_ZeroHist(self._spec),
             externals=self._evaluators,
             backend=backend,
             steps_per_file=steps_per_file,
             partitions=partitions,
-            # §7.2's shortfall refusal is a CLASS, and `_SumFills` is its silent member: it
-            # ITERATES the evaluated fills, so a compile that dropped one under-sums and returns a
-            # plausible, physically wrong histogram rather than raising anything at all.
+            # §7.2's shortfall refusal is a CLASS, and `_SumFills` is its silent member: an
+            # OPTIMIZER merge of distinct record ids leaves it summing fewer values than slots,
+            # under-summing into a plausible, physically wrong histogram rather than raising.
             on_compiled=_on_compiled((("this histogram", self),), marked),
         )
 
@@ -595,6 +603,21 @@ def _refuse_shortfall(items: Sequence[tuple[str, Histogram]], marked: int, compi
     )
 
 
+def _cone(node: Array) -> set[int]:
+    """Every record node id reachable from `node`, via §8.2(i)'s named walk, `session.walk`.
+
+    Spelled here rather than imported from `graphed.by_label`: that name is not on `graphed`'s
+    exported surface, so nothing in graphed's frozen suite holds its spelling for this repo.
+    """
+    seen: set[int] = set()
+
+    def note(nid: int, *_rest: object) -> None:
+        seen.add(nid)
+
+    node.session.walk(node, source=note, op=note, external=note)
+    return seen
+
+
 def _variation_labels(
     items: Sequence[tuple[str, Histogram]], compiled: CompiledGraph
 ) -> tuple[tuple[Key, tuple[tuple[str, ...], Any]], ...] | None:
@@ -618,10 +641,9 @@ def _variation_labels(
                 continue
             for per_label in hist._label_maps:
                 node = per_label.get(label, per_label["nominal"])
-                for nid in cone(node.session, node.node_id):
-                    key = node_map.get(nid)  # absent for a record id the reduction dropped
-                    if key is not None:
-                        reached.setdefault(key, set()).add(label)
+                for nid in _cone(node):
+                    # total on this cone: every node feeding a MARKED fill survives DCE
+                    reached.setdefault(node_map[nid], set()).add(label)
     if not reached:  # the predicate is over the LABELS, hence over the compiled program
         return None
     return tuple(
