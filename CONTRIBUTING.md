@@ -1,30 +1,59 @@
 # Contributing to graphed-histogram
 
-Part of the `graphed` project, governed by the gated three-role pipeline. The root
-[`graphed-project/CLAUDE.md`](https://github.com/graphed-org/graphed-project-mvp) and the project plan
-are authoritative; the plan always wins.
+Thanks for pitching in. This package is pure Python, but its `graphed` dependency is a
+compiled extension: **installing `graphed` from source requires a Rust toolchain**
+(https://rustup.rs). That install is the only place the toolchain is used — everything else
+here is Python.
 
-## Guardrails (M8)
+## Set up a dev environment
 
-- **Local filesystem store only** (no distributed store in MVP); **single machine**.
-- M8 is checkpoint/resume — analysis **preservation** is M9, not here.
-- The canonical durable form is the **serializable IR** (`graphed_core.DurablePlan`), never
-  cloudpickle except for genuinely opaque callables (flagged `opaque=True`).
-- Resume must be correct under interruption: **no double-count, no lost partition**; a resumed run
-  matches an uninterrupted one bit-for-bit. `task_id` must stay content-addressed (cache-poisoning-safe).
-
-## Integrity rules — NON-NEGOTIABLE (plan A.7 / B.6)
-
-Never edit/skip/weaken `tests/frozen/**`; never lower a threshold or relax CI; never stub the thing
-under test. Dispute a frozen test via `.graphed/<Mx>/disputes/<test_id>.md`.
-
-## Local gates
+From a clone of this repository:
 
 ```bash
-pip install "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@main"   # needs Rust
-pip install graphed-executors
+python -m venv .venv && source .venv/bin/activate
+pip install "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@main" graphed-executors
 pip install -e ".[dev,docs]"
-ruff check . && ruff format --check . && mypy
+```
+
+Install `graphed` from git **first**, exactly as CI does. A name-only `graphed[awkward,numpy]`
+— which is what the `dev` extra asks for — resolves to the PyPI release, and these tests are
+written against the git tip. Getting it from git first pins the version the later editable
+install then leaves alone. (This is also the step that compiles, hence the Rust toolchain.)
+
+The `dev` extra pulls in the rest of what the test suite uses: `hist`, `pyarrow`, `pandas`,
+and the test/lint/type tools.
+
+The `hist.graphed` builder lives in a fork of `hist`; the PyPI `hist` the `dev` extra installs
+does not carry it. To work on that path:
+
+```bash
+pip install "hist @ git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"
+```
+
+## Run the checks
+
+These are the same checks CI runs on a pull request:
+
+```bash
+ruff check . && ruff format --check .
+mypy
 pytest tests/frozen --cov=graphed_histogram --cov-branch
 sphinx-build -W -b html docs docs/_build/html
 ```
+
+Notes:
+
+- `mypy` runs in strict mode over `src/` (configured in `pyproject.toml`).
+- Coverage must stay at or above 90% branch coverage on `graphed_histogram`.
+- A bare `pytest` also collects `tests/extra`, which needs the optional backends installed;
+  CI runs the acceptance suite under `tests/frozen`, which is what the command above does.
+- The docs build treats warnings as errors (`-W`); a broken cross-reference or a
+  mismatched section underline fails the build.
+
+## Propose a change
+
+1. Open an issue or a draft PR describing the change first if it touches public API.
+2. Add tests under `tests/` for new behaviour — a test should fail without your change.
+3. Make the four checks above pass locally.
+4. Open a pull request. Keep it to one logical change; docs updates ride along with the
+   code they describe.

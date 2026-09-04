@@ -1,128 +1,191 @@
 # graphed-histogram
 
 Deferred [boost-histogram](https://github.com/scikit-hep/boost-histogram) /
-[hist](https://github.com/scikit-hep/hist) filling on [graphed](https://github.com/graphed-org)
-task graphs — the [dask-histogram](https://github.com/dask-contrib/dask-histogram) analogue, built
-on graphed's own evaluation idiom (milestone **M23**; P0.1 of the ADL-benchmarks port).
+[hist](https://github.com/scikit-hep/hist) filling for
+[graphed](https://github.com/graphed-org) — the
+[dask-histogram](https://github.com/dask-contrib/dask-histogram) shape, without a
+`.compute()`: **`.fill()` records, a runner computes.**
 
-A `.fill(...)` **records** instead of executing. Each fill becomes an **External node** in the
-graphed IR (the same M3 family as correctionlib and ONNX nodes): a call into foreign machinery,
-carried in the IR with reproducibility metadata, evaluated later by a registered evaluator.
-Backends know nothing about histograms — fills record through the frontend's
-`record_external(descriptor=, form=)` seam and resolve through `evaluate_ir`'s `externals=`
-registry.
+- Fill with the boost-histogram API you already use; nothing runs until you hand a plan to a
+  runner, so a thousand-file fill costs nothing to describe.
+- Several histograms sharing a selection run in **one pass** over the data — a shared
+  sub-expression is read and evaluated once, not once per histogram.
+- Histograms add, so partial results merge in any order: the total is the same on 1 worker
+  or 100, and integer counts are exact under any combine order.
 
 ## Install
 
 ```bash
-pip install graphed-histogram          # from PyPI (pulls graphed + boost-histogram)
-pip install graphed-executors          # to run the recorded fills through a local executor
+pip install "graphed[awkward]" graphed-histogram   # awkward events + deferred fills
+pip install graphed-executors                      # process-pool runners
+pip install "graphed-executors[dask]"              # or [parsl] for a cluster
 ```
 
-## The deferred histogram in one example
+Building `graphed` from source (no wheel for your platform) needs a Rust toolchain.
+
+## Your first deferred histogram
+
+A complete program: awkward events in, a filled `boost_histogram.Histogram` out. The only
+new ingredient over eager boost-histogram is a *source* — the object that hands your dataset
+out in chunks, so workers each fill their piece. Here it is a parquet file; ROOT files work
+the same way.
 
 ```python
+import awkward as ak
 import boost_histogram as bh
 import graphed_histogram as gh
-from graphed_core.execution import SequentialRunner
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_parquet
+from graphed.core.execution import SequentialRunner
 
-h = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0), storage=bh.storage.Int64())
-h.fill(x)                 # x is a graphed Array: RECORDS a fill node, returns h
-h.fill(x * 0.5 + 1.0)     # fills accumulate — more nodes, same histogram
+events = ak.Array({
+    "Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
+                                   [80.0], [15.0, 45.0], [70.0, 10.0]])}),
+    "MET": ak.zip({"pt": [10.0, 40.0, 70.0, 120.0, 30.0, 90.0]}),
+    "genweight": [1.0, 1.0, -1.0, 1.0, 1.0, 1.0],
+    "pu_sf": [0.9, 1.1, 1.0, 0.95, 1.05, 1.0],
+})
+ak.to_parquet(events, "events.parquet")    # stand in for your dataset
 
-plan   = h.plan(steps_per_file=4)            # the deferred task graph
-result = SequentialRunner().run(plan).value  # a CONCRETE boost histogram
-# any R7 executor accepts the same plan:
-#   ProcessExecutor(max_workers=4, persistent=True).run(plan).value
+s = Session(AwkwardBackend())
+evt = from_parquet(s, "events", "events.parquet", steps_per_file=2)
+
+h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
+h.fill(evt.Jet.pt)                         # records the fill; nothing is read yet
+
+plan = h.plan(steps_per_file=2)            # 2 chunks -> 2 fill tasks + a combine
+result = SequentialRunner().run(plan).value
+print(result.values())
+# [3 4 3 1]
 ```
 
-The eager boost API stays available on `h` (axes, storage, views of the empty state); what
-changes is that filling stages graph nodes and evaluation belongs to executors.
+`h` keeps the eager boost API (axes, storage, views of the empty state); what changed is
+that `.fill()` stages work and evaluation belongs to a runner. Ragged values flatten at fill
+time, exactly as an eager `fill(ak.flatten(...))` would.
 
-## Why it is built this way
+## The one thing that's different
 
-- **Fills are External nodes.** The package supplies a `PayloadDescriptor`
-  (`kind="histogram"`, `content_hash=sha256(spec)`, `io_schema="uhi"`) and an opaque histogram
-  form; the backend is never consulted. Nothing in graphed-core, graphed, or any backend mentions
-  histograms.
-- **The canonical spec is the identity.** A histogram's identity is the SHA-256 of its
-  **canonical, versioned axes/storage spec** — key-sorted JSON covering every supported axis and
-  storage (declarative params, never cloudpickle; UHI in, UHI out, no invented formats). Identical
-  fills intern to one graph node; the spec string is the fill's preservation payload; a plan
-  re-run on another machine resolves its evaluator by the same hash. `spec_of(h)` reads it;
-  `zero_of(spec)` rebuilds the empty histogram anywhere.
-- **Aggregation is plans and executors, not `compute()`.** There is deliberately no `compute()`
-  method — evaluation is graphed's machinery. `h.plan(...)` builds a
-  `Plan(process=fill-partition-through-the-compiled-IR, combine=native +, empty=zero)`, and any R7
-  executor's `run(plan).value` **is** the aggregated histogram. Histograms form a monoid under
-  native `+` for every standard storage, so the executor's fixed combine tree applies unchanged:
-  Int64 counts are exact under any tree, float storages are deterministic per fixed-tree executor
-  configuration. The reference path for in-memory sources is `session.materialize(fill_node)`.
-
-## Public surface
-
-| | |
-|---|---|
-| `graphed_histogram.boost.Histogram` | deferred `boost_histogram.Histogram`; `.fill()` records and returns self (fills accumulate), `.plan()` exports the task graph |
-| `factory(*arrays, histref=, weight=, sample=)` | a deferred histogram from a reference histogram's axes/storage plus one staged fill (the dask-histogram `factory` shape) |
-| `histogram` / `histogram2d` / `histogramdd` | numpy-like deferred entry points (explicit bins + range) |
-| `plan(histograms, ...)` | one plan aggregating **several** deferred histograms that share a source in a **single pass** (the `compute(dict_of_hists)` analogue) |
-| `spec_of` / `zero_of` / `content_hash` | the canonical-spec helpers |
-| `evaluators(*histograms)` | merged content-hash -> evaluator registry for `evaluate_ir(externals=...)` |
-| `add_histograms` | native-`+` combine helper for multi-fill sums |
-
-All standard boost storages (combine is native `+`); axes
-Regular/Variable/Integer/IntCategory/StrCategory/Boolean. Sources implementing
-`graphed.write.PartitionedSource` are filled partition by partition — their whole-dataset loader is
-never invoked. One source family per histogram (PartitionedSource or in-memory; mixtures rejected).
-Ragged fill values flatten completely at fill time.
-
-### Multiplicative weights (M29)
-
-HEP event weights arrive as several factors (generator weight x pileup x trigger SFs ...).
-`fill(weight=...)` accepts `weight=` as a **sequence** of graphed Arrays, a first-class fill
-signature: each weight is recorded as a real graph input and evaluation multiplies them
-elementwise into the single fill weight.
+There is **no `.compute()`**. You export a plan and run it — and every runner accepts the
+same plan:
 
 ```python
-h.fill(g.pt, weight=[g.genweight, g.pileup_sf, g.trigger_sf])
+# keep the imports and `events` from the program above, and replace everything after
+# them with this — needs graphed-executors. A process pool spawns its workers and each
+# re-imports your file, so anything with an effect goes under a __main__ guard: writing
+# the file, staging the fill, running. Otherwise a re-importing worker rewrites the very
+# file the run is reading.
+from graphed_executors.local import ProcessPoolExecutor
+
+if __name__ == "__main__":
+    ak.to_parquet(events, "events.parquet")
+
+    s = Session(AwkwardBackend())
+    evt = from_parquet(s, "events", "events.parquet", steps_per_file=2)
+
+    h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
+    h.fill(evt.Jet.pt)
+
+    result = ProcessPoolExecutor(max_workers=2).run(h.plan(steps_per_file=2)).value
+    print(result.values())
+    # [3 4 3 1]
 ```
 
-A single weight records exactly as before — no `n_weights` param — so pre-M29 node identities,
-specs, and preservation bundles are untouched.
+Same numbers, on two processes.
 
-### One pass over several histograms
+The dask and parsl runners in `graphed-executors` take the identical plan onto a cluster;
+they come with the `[dask]` and `[parsl]` extras.
 
-`plan(histograms, ...)` compiles all the fills of several histograms into **one** multi-output IR,
-so a sub-graph feeding multiple histograms (e.g. a trijet selection feeding both a pT and a b-tag
-histogram) is read and evaluated **once** — not once per histogram. `run(plan).value` is the
-matching `{label: histogram}` mapping (string keys for a `Mapping`, `"0"`, `"1"`, ... for a plain
-sequence). Column projection covers the union of all the histograms' fills.
+## Weights come in factors
 
-### Worker backends
+HEP event weights arrive as several factors. `weight=` takes a **list** of per-event arrays
+and multiplies them elementwise — no pre-multiplying in your own code:
 
-`plan(backend=...)` accepts a zero-arg factory/class or an importable `"module:attr"` string
-resolved **in the worker** — the required form for behavior-carrying backends, because behavior
-dicts contain lambdas and do not pickle. A worker built without required behaviors fails loudly; it
-never silently fills the wrong thing.
+```python
+# continuing from the first example (same evt)
+hmet = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Weight())
+hmet.fill(evt.MET.pt, weight=[evt.genweight, evt.pu_sf])
+```
 
-## The hist integration
+A single array (`weight=w`) works as before.
 
-`hist.graphed` (in the `hist` fork) supplies `Hist`/`NamedHist` as thin MRO sandwiches over this
-package's `Histogram`: the familiar QuickConstruct
-(`Hist.new.Reg(100, 0, 200, name="met").Double()`) and named-axis fills record deferred; executor
-results wrap back into in-memory `hist.Hist` objects with names and labels intact (they ride the
-canonical spec). The eight ADL benchmark queries run on exactly this surface.
+## Several histograms, one pass
 
-## Phase 2 (deliberately not built)
+`gh.plan({...})` is the `compute(dict_of_hists)` analogue: all the fills compile into one
+graph, so a selection feeding several histograms is read and evaluated once, and only the
+columns any fill touches are read off disk.
 
-Growth axes (combining grown category axes across partitions needs a category-union merge,
-rejected at spec time for now); dask-style collection protocols (`persist`, `to_delayed`) — the
-durable artifact is the compiled IR / `Plan`; behavior-reference forwarding by default.
+```python
+plan = gh.plan({"met": hmet, "jet_pt": h}, steps_per_file=2)
+out = gh.unpack(SequentialRunner().run(plan).value)   # {name: histogram}
+print(out["jet_pt"].values())
+# [3 4 3 1]
+```
 
-## Status and gates
+If your fills carry systematic variations (via `graphed.vary`), each name maps to
+`{label: histogram}` instead — or pass `variation_axis=True` to `fill()` to get one
+histogram with a `variation` axis rather than one histogram per label.
+`gh.label_listing(...)` shows which labels reach which histogram before you run anything.
+The [variations walkthrough](docs/design.rst) covers the choice.
 
-Frozen tests under `tests/frozen/m23/` and `tests/frozen/m29/` — never weakened. Gates: ruff +
-ruff format · `mypy --strict` · pytest (>= 90% branch coverage) · `sphinx -W`. See `CLAUDE.md`
-for the milestone digest, `docs/design.rst` for the engineering walkthrough, and
-`.graphed/state.json` for current status.
+## Which entry point do I want?
+
+| You write | You get |
+|---|---|
+| `gh.boost.Histogram(*axes, storage=...)` | a deferred `boost_histogram.Histogram`: `.fill()` records and returns self, fills accumulate, `.plan()` exports the plan |
+| `Hist.new.Reg(100, 0, 200, name="met").Double()` | the same, through the `hist` integration — QuickConstruct and named-axis fills |
+| `gh.factory(*arrays, histref=...)` | dask-histogram's `factory`: a reference histogram's axes plus one staged fill |
+| `gh.histogram` / `histogram2d` / `histogramdd` | numpy-like one-liners (explicit `bins=` and `range=`) |
+| `gh.plan({name: hist, ...})` | one plan for several histograms in a single pass |
+
+Whichever you build with, a run hands back `boost_histogram.Histogram` objects with your
+axis names and labels intact. Wrap one in `hist.Hist(result)` to get `.plot()` and
+name-based indexing back.
+
+The `hist` builder lives in a fork of `hist` that carries the `hist.graphed` module; upstream
+`hist` does not ship it yet:
+
+```bash
+pip install "hist @ git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"
+```
+
+All standard boost storages and the Regular / Variable / Integer / IntCategory /
+StrCategory / Boolean axes are supported.
+
+Beyond those, the toolbox splits by task:
+
+- **run**: `h.plan(...)`, `gh.plan(...)`, `gh.unpack(...)`, `gh.add_histograms(a, b)`
+- **inspect variations**: `gh.label_listing(...)`, `gh.fill_nodes_by_label(h)`
+- **identity and reproducibility** (advanced): `gh.spec_of(h)` — the canonical axes/storage
+  description that doubles as the histogram's fingerprint; `gh.zero_of(spec)` rebuilds the
+  empty histogram anywhere; `gh.content_hash`, `gh.evaluators` wire fills into a graph you
+  evaluate yourself. That fingerprint is why a plan re-run on another machine fills the
+  same histogram.
+
+## What you can count on
+
+- Fills read partition by partition; a source's whole-dataset loader is never invoked.
+- Integer-count storages are exact for any worker count; float storages are reproducible
+  for a fixed runner configuration (floating-point addition is order-sensitive, and the
+  combine order is fixed up front).
+- Worker backends are passed as a factory/class or an importable `"module:attr"` string and
+  built **in the worker**; a worker missing a required behavior fails loudly rather than
+  filling the wrong thing.
+
+## Not supported yet
+
+- **Growth axes.** Declare the categories you expect with an explicit `StrCategory` /
+  `IntCategory` instead.
+- **dask-style `persist` / `to_delayed`.** A plan is a live object your script builds, not
+  a file format — rebuild it from the script and hand it to whichever runner you have.
+- **Two datasets in one plan.** A plan reads one chunked dataset: every fill in it records
+  into the same session, and that session has exactly one partitioned source. Run a plan
+  per dataset and add the results — histograms add.
+
+## Next
+
+- [How graphed-histogram works](docs/design.rst) — why filling is free until you run, how
+  many histograms share one pass, and the variations walkthrough.
+- [API reference](docs/api.rst).
+- Siblings: [graphed](https://github.com/graphed-org) (the frontend your arrays come from)
+  and [graphed-executors](https://github.com/graphed-org) (process-pool, dask and parsl
+  runners).
