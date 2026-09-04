@@ -8,10 +8,6 @@ writing the same fill twice costs once, why twenty histograms cost one pass over
 your numbers come out the same on one core and on a hundred, and how a systematic variation
 becomes an axis instead of a directory of files.
 
-.. contents::
-   :local:
-   :depth: 2
-
 
 One complete run
 ----------------
