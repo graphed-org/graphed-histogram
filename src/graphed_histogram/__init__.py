@@ -1,10 +1,11 @@
-"""graphed-histogram: deferred boost-histogram/hist filling on graphed task graphs (M23).
+"""Deferred boost-histogram/hist filling for graphed: a fill records, a runner computes.
 
-The dask-histogram analogue with graphed's own evaluation idiom: ``.fill(...)`` records an
-External node (content-addressed canonical axes/storage spec; backends know nothing about
-histograms); ``plan()`` exports the R15.4 task graph an R7 executor aggregates (partition-wise
-through the compiled IR, native ``+`` tree-combine); the reference ``session.materialize``
-evaluates a fill eagerly.
+The dask-histogram analogue, with graphed's own evaluation idiom. ``.fill(...)`` records a step
+the runner performs later, identified by the content hash of a canonical axes/storage
+description — so identical fills collapse to one, and nothing in graphed or in any array backend
+needs an opinion about histograms. ``plan()`` exports the plan any runner aggregates, one fill
+task per chunk combined by histogram addition. ``session.materialize(node)`` evaluates a single
+fill on the spot, for a source that has no chunks to hand out.
 """
 
 from __future__ import annotations
@@ -38,7 +39,8 @@ def spec_of(hist: object) -> str:
 
 
 def evaluators(*histograms: Histogram) -> dict[str, Callable[..., object]]:
-    """Merged content-hash -> evaluator registry for ``evaluate_ir(externals=...)``."""
+    """Merged ``{content hash: evaluator}`` registry, for wiring these fills into a graph you
+    evaluate yourself."""
     out: dict[str, Callable[..., object]] = {}
     for h in histograms:
         out.update(h.evaluators())

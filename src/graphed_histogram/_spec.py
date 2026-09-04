@@ -1,10 +1,10 @@
-"""The canonical, versioned axes/storage spec — the content-addressed IDENTITY of a fill.
+"""The canonical, versioned axes/storage spec — the content identity of a fill.
 
 A deferred fill's ``PayloadDescriptor.content_hash`` is the SHA-256 of this encoding, so two fills
-with the same axes/storage (and inputs) intern to ONE graph node, and a plan re-run resolves its
+with the same axes/storage (and inputs) collapse to ONE graph node, and a plan re-run resolves its
 evaluator by the same hash on any machine. The encoding is declarative JSON (sorted keys, fixed
 float formatting via repr of Python floats) — never pickle; rebuilding axes from it round-trips
-exactly (UHI-compatible boost-histogram objects; no invented formats).
+exactly, back into ordinary UHI-compatible boost-histogram objects.
 """
 
 from __future__ import annotations
@@ -67,11 +67,17 @@ def _axis_spec(axis: Any) -> dict[str, Any]:
         }
     if isinstance(axis, bh.axis.IntCategory):
         if axis.traits.growth:
-            raise TypeError("growth axes are not supported (Phase 2)")
+            raise TypeError(
+                "growth axes are not supported; declare the categories up front, "
+                'e.g. bh.axis.StrCategory(["ee", "emu", "mumu"])'
+            )
         return {"type": "IntCategory", "categories": [int(c) for c in axis], "metadata": _metadata_of(axis)}
     if isinstance(axis, bh.axis.StrCategory):
         if axis.traits.growth:
-            raise TypeError("growth axes are not supported (Phase 2)")
+            raise TypeError(
+                "growth axes are not supported; declare the categories up front, "
+                'e.g. bh.axis.StrCategory(["ee", "emu", "mumu"])'
+            )
         return {"type": "StrCategory", "categories": [str(c) for c in axis], "metadata": _metadata_of(axis)}
     if isinstance(axis, bh.axis.Boolean):
         return {"type": "Boolean", "metadata": _metadata_of(axis)}
