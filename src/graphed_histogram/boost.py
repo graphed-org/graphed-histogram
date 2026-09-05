@@ -72,8 +72,9 @@ class FillEvaluator:
     variation-axis mode ``variation`` is the ordered tuple of labels this node writes: the value and
     ``sample=`` columns are FIXED for the node and only the weight block varies across the loop, so
     the evaluator fills each label's own weight block against that label's scalar category value on
-    the pre-declared ``"variation"`` axis. That is how the weight-only labels (``W``) collapse into
-    ONE node while each shift/sample label (``S``) is its own 1-label node.
+    the pre-declared ``"variation"`` axis. That is how every label resolving to the SAME value and
+    ``sample=`` members collapses into ONE node — the weight-only labels onto nominal's, a joint
+    label onto the shifted member its point names.
     """
 
     spec: str
@@ -165,14 +166,6 @@ def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
     if weight is None:
         return []
     return list(weight) if isinstance(weight, (list, tuple)) else [weight]
-
-
-def _member(value: Operand, label: str) -> Any:
-    """Per-label narrowing: the container's own member for ``label``, else its central one."""
-    if isinstance(value, Varied):
-        members = graphed.labels(value)
-        return graphed.universe(value, label) if label in members else graphed.nominal(value)
-    return value
 
 
 def _fold_labels(operands: Sequence[Operand]) -> tuple[str, ...]:
@@ -428,7 +421,7 @@ class Histogram(bh.Histogram):
         # before variations existed: no broadcast step, one node, the same graph as before
         broadcast = ctx is not None or any(isinstance(value, Varied) for value in given)
         blame = _blame(args, ctx, ambient is not None, len(factors))
-        session = _member(axes[0], "nominal").session
+        session = graphed.member_of(axes[0], "nominal").session
 
         if variation_axis:
             if established and self._axis_labels is not None and set(labels) != set(self._axis_labels):
@@ -466,16 +459,16 @@ class Histogram(bh.Histogram):
         }
         per_label: dict[str, Array] = {}
         for label in labels:
-            inputs: list[Array] = [_member(value, label) for value in axes]
+            inputs: list[Array] = [graphed.member_of(value, label) for value in axes]
             value = inputs[0]
             for (coordinate, message), factor in zip(blame, applied, strict=True):
-                narrowed = _member(factor, label)
+                narrowed = graphed.member_of(factor, label)
                 if broadcast:
                     guarded = self._guard(session, narrowed, value, coordinate, message)
                     narrowed = graphed.broadcast_like(value, guarded)
                 inputs.append(narrowed)
             if sampled is not None:
-                inputs.append(_member(sampled, label))
+                inputs.append(graphed.member_of(sampled, label))
             per_label[label] = session.record_external(
                 "histogram.fill",
                 evaluator,
@@ -525,37 +518,27 @@ class Histogram(bh.Histogram):
         broadcast: bool,
         labels: tuple[str, ...],
     ) -> None:
-        """Axis-mode lowering. Split the fold labels into `W` — borne ONLY by weights, which
-        collapse into ONE evaluator-loop node — and `S` — borne by an axis VALUE or a `Varied`
-        `sample=`, each its own sibling node writing its scalar category. Declare the sorted
-        ``"variation"`` axis from the label set and record `1 + |S|` fill nodes, each with a
-        DISTINCT `content_hash((spec, variation))` so it resolves to its own evaluator."""
+        """Axis-mode lowering. A node's value and ``sample=`` columns are FIXED and only its weight
+        block loops, so the fold labels group by the value/`sample=` MEMBERS they resolve to: labels
+        sharing them share one evaluator-loop node, and the group whose members are nominal's is the
+        `W` collapse. Grouping on the RESOLVED member rather than on label membership is what lets a
+        joint label — one whose point names a shifted axis coordinate its own name does not — leave
+        the nominal loop and carry its own kinematics; on default points every label resolves to its
+        own member or to nominal, which is the `1 + |S|` split unchanged. Declare the sorted
+        ``"variation"`` axis from the label set; each node's `content_hash((spec, variation))` is
+        DISTINCT, so it resolves to its own evaluator."""
         self._axis_mode = True
         self._axis_labels = labels
-        carried: set[str] = set()
-        for operand in [*axes, *([] if sampled is None else [sampled])]:
-            if isinstance(operand, Varied):
-                carried.update(graphed.labels(operand))
-        carried.discard("nominal")
-        w_labels = tuple(lab for lab in labels if lab != "nominal" and lab not in carried)
-        s_labels = tuple(lab for lab in labels if lab != "nominal" and lab in carried)
+        fixed = [*axes, *([] if sampled is None else [sampled])]
+        groups: dict[tuple[int, ...], list[str]] = {}
+        for label in labels:
+            key = tuple(graphed.member_of(operand, label).node_id for operand in fixed)
+            groups.setdefault(key, []).append(label)
 
         axis_spec = _declare_axis_spec(self, sorted(labels))
-        # the loop node carries nominal + every weight-only label; value/sample stay at nominal and
-        # only the weight block varies across the loop (the `W` collapse)
-        loop_node = self._record_axis_node(
-            session,
-            axis_spec,
-            axes,
-            applied,
-            sampled,
-            blame,
-            broadcast,
-            carrier="nominal",
-            node_labels=("nominal", *w_labels),
-        )
-        s_nodes = {
-            lab: self._record_axis_node(
+        by_label: dict[str, Array] = {}
+        for group in groups.values():  # first-appearance order: nominal's group leads
+            node = self._record_axis_node(
                 session,
                 axis_spec,
                 axes,
@@ -563,20 +546,13 @@ class Histogram(bh.Histogram):
                 sampled,
                 blame,
                 broadcast,
-                carrier=lab,
-                node_labels=(lab,),
+                carrier=group[0],
+                node_labels=tuple(group),
             )
-            for lab in s_labels
-        }
+            self._fill_nodes.append(node)
+            by_label.update(dict.fromkeys(group, node))
         # fold order, nominal first — the label listing and `_output_labels` read these keys
-        per_label: dict[str, Array] = {"nominal": loop_node}
-        for lab in labels:
-            if lab == "nominal":
-                continue
-            per_label[lab] = s_nodes[lab] if lab in s_labels else loop_node
-        self._fill_nodes.append(loop_node)
-        self._fill_nodes.extend(s_nodes[lab] for lab in s_labels)
-        self._label_maps.append(per_label)
+        self._label_maps.append({label: by_label[label] for label in labels})
         self._fill_specs.append(axis_spec)
 
     def _record_axis_node(
@@ -596,14 +572,14 @@ class Histogram(bh.Histogram):
         broadcast weight block per label in `node_labels` (guard and broadcast recorded per COLUMN,
         upstream of the loop). The evaluator writes each label's scalar category on the variation
         axis; its content hash folds `node_labels` in so the node owns its evaluator."""
-        value_members = [_member(operand, carrier) for operand in axes]
+        value_members = [graphed.member_of(operand, carrier) for operand in axes]
         value = value_members[0]
         inputs: list[Array] = list(value_members)
         if sampled is not None:
-            inputs.append(_member(sampled, carrier))
+            inputs.append(graphed.member_of(sampled, carrier))
         for label in node_labels:
             for (coordinate, message), factor in zip(blame, applied, strict=True):
-                narrowed = _member(factor, label)
+                narrowed = graphed.member_of(factor, label)
                 if broadcast:
                     guarded = self._guard(session, narrowed, value, coordinate, message)
                     narrowed = graphed.broadcast_like(value, guarded)
