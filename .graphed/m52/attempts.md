@@ -61,3 +61,10 @@ side was stuck at nominal, identically in both modes, which is why parity held w
   `m52/test_joint_axis_mode_parity.py::test_both_fill_modes_resolve_the_joint_label_alike` and
   nothing else, so the grouping change is necessary and m50's `1 + |S|` arity is preserved by both
   rules.
+
+## Iteration (REVIEW repair) — R1-B2
+REVIEW R1-B2: boost.Histogram.fill()'s public docstring still stated the pre-C5 axis-mode rule
+("weight-only labels collapse ... shift/sample= stay sibling"), which C5 falsified (grouping is now
+by RESOLVED member; a weight-only joint label leaves the nominal loop). The two sibling docstrings
+were already correct; this user-facing one (rendered into the autosummary API ref) was missed.
+Rewrote it to match. Comment-only: tests/frozen -q 187 passed, frozen diff vs freeze-m52 empty.

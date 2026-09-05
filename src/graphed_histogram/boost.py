@@ -369,11 +369,12 @@ class Histogram(bh.Histogram):
         weight sources and, applying no factor, carries none of their labels.
 
         Default lowering is one SIBLING node per label. ``variation_axis=True`` opts
-        into AXIS mode: weight-only labels collapse into ONE evaluator-loop node over a
-        frontend-declared ``"variation"`` StrCategory axis, while shift/``sample=`` labels stay
-        sibling nodes targeting that same axis (`1 + |S|` nodes). The MODE is a property of the
-        histogram — fixed by the first fill and remembered; a later fill in the OTHER mode is a
-        hard error.
+        into AXIS mode: labels group by the value/``sample=`` member they RESOLVE to, and each group
+        folds into ONE evaluator-loop node over a frontend-declared ``"variation"`` StrCategory axis.
+        The group resolving to nominal's member is the weight-only collapse; a label whose point
+        names a shifted axis coordinate its own name does not leaves that group and joins the node of
+        the member it names (still `1 + |S|` nodes). The MODE is a property of the histogram — fixed
+        by the first fill and remembered; a later fill in the OTHER mode is a hard error.
         """
         if len(args) != len(self.axes):
             raise TypeError(f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays")
