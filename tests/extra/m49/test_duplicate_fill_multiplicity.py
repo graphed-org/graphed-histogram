@@ -49,7 +49,8 @@ def _hist(fills: int) -> Any:
 
 
 def _values(hist: bh.Histogram) -> np.ndarray:
-    return np.asarray(hist.view(flow=True)["value"])
+    view: np.ndarray = np.asarray(hist.view(flow=True)["value"])
+    return view
 
 
 def _run(hist: Any) -> np.ndarray:
