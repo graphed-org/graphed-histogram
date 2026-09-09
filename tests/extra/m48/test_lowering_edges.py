@@ -6,7 +6,7 @@ from __future__ import annotations
 import boost_histogram as bh
 import numpy as np
 import pytest
-from graphed import GraphedError, Session
+from graphed import Array, GraphedError, Session
 from graphed.numpy import NumpyBackend, NumpyForm
 
 import graphed_histogram as gh
@@ -15,7 +15,7 @@ from graphed_histogram.boost import _WeightGuard
 DATA = np.linspace(0.0, 9.0, 40)
 
 
-def _source() -> tuple[Session, object]:
+def _source() -> tuple[Session, Array]:
     session = Session(NumpyBackend())
     return session, session.source("x", form=NumpyForm(DATA.dtype, shape=(None,)), data=DATA)
 

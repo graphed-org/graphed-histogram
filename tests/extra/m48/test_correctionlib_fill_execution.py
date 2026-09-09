@@ -100,7 +100,9 @@ class CorpusEvents:
 
 def _record() -> tuple[Session, CorpusEvents, gh.boost.Histogram, Array, graphed.Varied]:
     """One session: HT observable, an njet-binned correctionlib SF as a varied event weight."""
-    session = Session(AwkwardBackend())
+    # AwkwardBackend narrows op_form's params to AwkwardForm where Backend needs Form, so it
+    # fails the protocol check (contravariance). Upstream graphed issue, not a fault here.
+    session = Session(AwkwardBackend())  # type: ignore[arg-type]
     source = CorpusEvents(EVENTS)
     form = AwkwardForm(ak.Array(EVENTS.layout.to_typetracer(forget_length=True)))
     events = session.source("events", form=form, data=source)
@@ -144,7 +146,8 @@ def _eager_reference() -> dict[str, np.ndarray]:
 
 
 def _values(h: gh.boost.Histogram) -> np.ndarray:
-    return np.asarray(h.view(), dtype="float64")
+    view: np.ndarray = np.asarray(h.view(), dtype="float64")
+    return view
 
 
 def test_the_plan_runs_and_yields_all_three_universes() -> None:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import boost_histogram as bh
@@ -133,7 +133,8 @@ def test_the_same_program_with_a_matching_factor_runs() -> None:
     """The positive control: same shape, factor at the fill's row space."""
     session, root = in_memory_events()
     h = _two_axis((session, root), lambda sel: sel.MET.pt * 0.01)
-    assert session.materialize(h.fill_nodes()[0]).sum(flow=True).value > 0
+    got = cast(bh.Histogram, session.materialize(h.fill_nodes()[0]))
+    assert got.sum(flow=True).value > 0
 
 
 # --- A4: the merge refusal names the output whose fills actually merged ------------------------
@@ -169,7 +170,7 @@ def test_an_ancestor_context_weight_factor_is_re_indexed_to_the_fill() -> None:
 
     h = weighted()
     h.fill(sel.MET.pt, weight=[parent_factor])
-    got = session.materialize(h.fill_nodes()[0])
+    got = cast(bh.Histogram, session.materialize(h.fill_nodes()[0]))
 
     mask = ak.to_numpy(EVENTS.MET.pt) > 20.0
     want = bh.Histogram(*weighted().axes, storage=bh.storage.Weight())

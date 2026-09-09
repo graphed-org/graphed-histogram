@@ -70,11 +70,62 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src"]
+files = ["src", "tests"]
 # boost_histogram ships no py.typed: the deferred Histogram subclasses an Any base deliberately
 disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
-module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "hist.*"]
+module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "hist.*", "pyarrow.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
+
+# tests/frozen/** is read-only, so its residual errors are disabled here rather than annotated
+# away. The test tree has no __init__.py (pytest's prepend import mode), so mypy names these
+# modules by bare basename and its override patterns cannot glob a single component -- hence the
+# explicit list instead of `tests.frozen.*`. Regenerate:
+#   python -c "import pathlib;print(sorted(p.stem for p in pathlib.Path('tests/frozen').rglob('*.py')))"
+[[tool.mypy.overrides]]
+module = [
+  "behavior_toy",
+  "m49_hist_fixtures",
+  "m50_axis_fixtures",
+  "m52_joint_fill_fixtures",
+  "test_ambient_object_fills",
+  "test_axis_declaration",
+  "test_axis_mode_equality",
+  "test_axis_result_shape",
+  "test_axis_slot_scaling",
+  "test_blame_parity",
+  "test_broadcast_seam_row_spaces",
+  "test_corpus_weight_matrix",
+  "test_deferred_histograms",
+  "test_fill_arity",
+  "test_fill_divergence",
+  "test_fill_flatten_refusals",
+  "test_fill_fold_order",
+  "test_fill_reindexing",
+  "test_fill_unweighted",
+  "test_golden_side_strip",
+  "test_group_plan",
+  "test_jer_stochastic",
+  "test_joint_axis_mode_parity",
+  "test_joint_fill_resolution",
+  "test_merge_shortfall",
+  "test_mixed_mode_plan",
+  "test_multi_weight_fills",
+  "test_optimizer_merge_guard",
+  "test_output_label_listing",
+  "test_points_bare_histogram",
+  "test_process_executor_witnesses",
+  "test_reference_matrix",
+  "test_selection_invariance",
+  "test_shift_ordering",
+  "test_single_fallback_rule",
+  "test_variation_goldens",
+  "test_variation_labels_payload",
+  "test_varied_plan_refusal",
+  "test_varied_result_shapes",
+  "test_weight_factor_reindex",
+  "vary_hist_fixtures",
+]
+disable_error_code = ["attr-defined", "arg-type", "no-any-return", "no-untyped-call", "type-arg", "unused-ignore", "union-attr", "index", "no-untyped-def"]
