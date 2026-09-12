@@ -31,7 +31,7 @@ dev = [
   "ruff",
   "graphed[awkward,numpy]>=0.0.2",
   "awkward>=2.6",
-  "graphed-executors>=0.0.2",
+  "graphed-executors",
   "hist>=2.7",
   # parquet-reading tests: awkward's arrow->form conversion calls to_pandas_dtype (the
   # graphed-awkward dev-extra precedent)
