@@ -123,6 +123,7 @@ Where to go next
   with a ``variation`` axis).
 * :doc:`api` — the public surface grouped by task, and what the runner hands back.
 * :doc:`improvements` — the limitations you may hit, each with its workaround.
+* :doc:`changelog` — what changed in each release, and what to do differently.
 
 .. toctree::
    :maxdepth: 2
@@ -130,3 +131,4 @@ Where to go next
    design
    api
    improvements
+   changelog
