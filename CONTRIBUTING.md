@@ -42,6 +42,12 @@ pytest tests/frozen --cov=graphed_histogram --cov-branch
 sphinx-build -W -b html docs docs/_build/html
 ```
 
+Or run the lint and type checks exactly as CI does, in one shot:
+
+```bash
+uvx prek@0.4.5 run --all-files
+```
+
 Notes:
 
 - `mypy` runs in strict mode over `src/` and `tests/` (configured in `pyproject.toml`).

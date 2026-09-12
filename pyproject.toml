@@ -46,6 +46,10 @@ Homepage = "https://github.com/graphed-org/graphed-histogram"
 [tool.hatch.build.targets.wheel]
 packages = ["src/graphed_histogram"]
 
+# The agent-guidance file and the internal development log are not part of the distribution.
+[tool.hatch.build.targets.sdist]
+exclude = ["CLAUDE.md", ".graphed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests/frozen/m23", "tests/_corpus"]
@@ -67,6 +71,13 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415"]
 ignore = ["E501"]
+
+[tool.ruff.format]
+# ruff formats python blocks inside .md, which reflows the README's examples (aligned trailing
+# comments, deliberate one-liners) into something less readable. The prek hooks only ever hand
+# python/pyi files to the formatter, so excluding Markdown keeps a bare `ruff format --check .`
+# — the command CONTRIBUTING gives — agreeing with what CI runs.
+exclude = ["*.md"]
 
 [tool.mypy]
 python_version = "3.12"
