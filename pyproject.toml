@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graphed-histogram"
-version = "0.0.1"
+version = "0.0.2"
 description = "Deferred boost-histogram/hist filling on graphed task graphs (the dask-histogram analogue)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,10 +15,11 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
-# graphed-core: the DurablePlan + content-addressed task_id (from git). cloudpickle: resolve opaque
-# OpSpecs at execution time (the only non-IR-expressible callables a plan can carry).
-dependencies = ["graphed", "boost-histogram>=1.4", "numpy>=1.24"]
+# graphed: the Plan + content-addressed task_id a fill records into. The 0.0.2 floor is the
+# variation-aware fill lowering (varied weights, the variation axis, joint labels).
+dependencies = ["graphed>=0.0.2", "boost-histogram>=1.4", "numpy>=1.24"]
 
 [project.optional-dependencies]
 # the backends + corpus + exec-local exercise resume on a realistic HEP analysis end-to-end.
@@ -28,7 +29,7 @@ dev = [
   "hypothesis",
   "mypy",
   "ruff",
-  "graphed[awkward,numpy]",
+  "graphed[awkward,numpy]>=0.0.2",
   "awkward>=2.6",
   "graphed-executors",
   "hist>=2.7",
@@ -44,6 +45,10 @@ Homepage = "https://github.com/graphed-org/graphed-histogram"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/graphed_histogram"]
+
+# The agent-guidance file and the internal development log are not part of the distribution.
+[tool.hatch.build.targets.sdist]
+exclude = ["CLAUDE.md", ".graphed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -66,6 +71,13 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415"]
 ignore = ["E501"]
+
+[tool.ruff.format]
+# ruff formats python blocks inside .md, which reflows the README's examples (aligned trailing
+# comments, deliberate one-liners) into something less readable. The prek hooks only ever hand
+# python/pyi files to the formatter, so excluding Markdown keeps a bare `ruff format --check .`
+# — the command CONTRIBUTING gives — agreeing with what CI runs.
+exclude = ["*.md"]
 
 [tool.mypy]
 python_version = "3.12"

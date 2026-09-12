@@ -20,15 +20,15 @@ Build a histogram
    stage one fill in a single call.
 
 ``gh.histogram(x, *, bins, range)`` · ``gh.histogram2d`` · ``gh.histogramdd``
-   numpy-shaped one-liners. ``bins=`` and ``range=`` are required per dimension — neither has
-   a usable default, and omitting ``range=`` raises. Unweighted gives you an exact ``Int64``
-   storage; passing ``weights=`` gives you ``Weight()``.
+   numpy-shaped one-liners. ``range=`` is required — there is no sensible default for it, and
+   omitting it raises; ``bins=`` defaults to 10 per dimension. Unweighted gives you an exact
+   ``Int64`` storage; passing ``weights=`` gives you ``Weight()``.
 
 ``hist.graphed.Hist``
    The same deferred histogram behind ``hist``'s builder — ``Hist.new.Reg(100, 0, 200,
    name="met").Double()`` — with named-axis fills, and names and labels that survive the run.
-   It ships in a fork of ``hist`` carrying the ``hist.graphed`` module, which upstream ``hist``
-   does not have yet: ``pip install "hist @
+   Not released yet: it ships in a fork of ``hist`` carrying the ``hist.graphed`` module, which
+   upstream ``hist`` does not have — ``pip install "hist @
    git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"``.
 
 Fill it

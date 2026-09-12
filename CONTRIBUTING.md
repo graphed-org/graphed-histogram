@@ -16,15 +16,16 @@ pip install -e ".[dev,docs]"
 ```
 
 Install `graphed` from git **first**, exactly as CI does. A name-only `graphed[awkward,numpy]`
-— which is what the `dev` extra asks for — resolves to the PyPI release, and these tests are
-written against the git tip. Getting it from git first pins the version the later editable
-install then leaves alone. (This is also the step that compiles, hence the Rust toolchain.)
+— which is what the `dev` extra asks for — resolves to the newest PyPI release, and these tests
+track `graphed`'s git tip (`.github/workflows/ci.yml` pins the exact commit). Getting it from git
+first pins the version the later editable install then leaves alone. (This is also the step that
+compiles, hence the Rust toolchain.)
 
 The `dev` extra pulls in the rest of what the test suite uses: `hist`, `pyarrow`, `pandas`,
 and the test/lint/type tools.
 
-The `hist.graphed` builder lives in a fork of `hist`; the PyPI `hist` the `dev` extra installs
-does not carry it. To work on that path:
+The `hist.graphed` builder is not released: it lives in a fork of `hist`, and the PyPI `hist` the
+`dev` extra installs does not carry it. To work on that path:
 
 ```bash
 pip install "hist @ git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"
@@ -41,9 +42,15 @@ pytest tests/frozen --cov=graphed_histogram --cov-branch
 sphinx-build -W -b html docs docs/_build/html
 ```
 
+Or run the lint and type checks exactly as CI does, in one shot:
+
+```bash
+uvx prek@0.4.5 run --all-files
+```
+
 Notes:
 
-- `mypy` runs in strict mode over `src/` (configured in `pyproject.toml`).
+- `mypy` runs in strict mode over `src/` and `tests/` (configured in `pyproject.toml`).
 - Coverage must stay at or above 90% branch coverage on `graphed_histogram`.
 - A bare `pytest` also collects `tests/extra`, which needs the optional backends installed;
   CI runs the acceptance suite under `tests/frozen`, which is what the command above does.

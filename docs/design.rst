@@ -500,8 +500,8 @@ The hist builder you already use
 --------------------------------
 
 ``hist.graphed.Hist`` and ``hist.graphed.NamedHist`` give you the QuickConstruct builder and
-named-axis fills unchanged. They live in a fork of ``hist`` that adds the ``hist.graphed`` module;
-upstream ``hist`` does not ship it yet, so install it from there:
+named-axis fills unchanged. They are not released yet: they live in a fork of ``hist`` that adds
+the ``hist.graphed`` module, which upstream ``hist`` does not ship, so install the fork:
 
 .. code-block:: bash
 
