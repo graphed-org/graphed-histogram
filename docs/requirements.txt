@@ -2,4 +2,4 @@
 # from PyPI, so the docs build against the tip these pages were written against.
 # The [awkward,numpy] extras supply the backends that graphed-histogram's autosummary imports at
 # doc-build time; the Rust toolchain declared in ../.readthedocs.yaml builds the extension.
-graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@079d92f5bf966bb9970148b04235ef2f9d50be5e
+graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@6464a3a4d8a4856e94b6aa648c63b1028fda2e08

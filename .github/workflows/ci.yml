@@ -13,7 +13,7 @@ concurrency:
 
 env:
   # the former core/debug/frontend/numpy/awkward siblings are now one consolidated package
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@079d92f5bf966bb9970148b04235ef2f9d50be5e"
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@6464a3a4d8a4856e94b6aa648c63b1028fda2e08"
   # exec-local stays a separate package (used by the M23 process-executor integration tests)
   EXECLOCAL: "graphed-executors"
 
