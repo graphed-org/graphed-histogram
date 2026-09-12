@@ -102,7 +102,7 @@ def _record() -> tuple[Session, CorpusEvents, gh.boost.Histogram, Array, graphed
     """One session: HT observable, an njet-binned correctionlib SF as a varied event weight."""
     # AwkwardBackend narrows op_form's params to AwkwardForm where Backend needs Form, so it
     # fails the protocol check (contravariance). Upstream graphed issue, not a fault here.
-    session = Session(AwkwardBackend())  # type: ignore[arg-type]
+    session = Session(AwkwardBackend())
     source = CorpusEvents(EVENTS)
     form = AwkwardForm(ak.Array(EVENTS.layout.to_typetracer(forget_length=True)))
     events = session.source("events", form=form, data=source)
