@@ -79,7 +79,7 @@ jobs:
       - shell: bash
         run: |
           python -m pip install --upgrade pip
-          # runtime deps include the consolidated graphed package (git, not on PyPI)
+          # graphed comes from the pinned git sha above, not PyPI: the suites here track its tip
           python -m pip install "${{ env.GRAPHED }}"
           python -m pip install -e ".[docs]"
           sphinx-build -W -b html docs docs/_build/html

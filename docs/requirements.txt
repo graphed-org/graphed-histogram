@@ -1,5 +1,5 @@
-# Read the Docs cannot resolve the consolidated `graphed` package from PyPI — it is a Rust/maturin
-# package published only to GitHub. Install it from git@main, mirroring the CI docs job's env.GRAPHED.
+# `graphed` is installed from the same pinned git sha as the CI docs job (env.GRAPHED) rather than
+# from PyPI, so the docs build against the tip these pages were written against.
 # The [awkward,numpy] extras supply the backends that graphed-histogram's autosummary imports at
 # doc-build time; the Rust toolchain declared in ../.readthedocs.yaml builds the extension.
 graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@6cc2bbebdec783749de3b6cbbdd9204bc40fe3e8
