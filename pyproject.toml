@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graphed-histogram"
-version = "0.0.2"
+version = "0.0.3"
 description = "Deferred boost-histogram/hist filling on graphed task graphs (the dask-histogram analogue)"
 readme = "README.md"
 requires-python = ">=3.11"
