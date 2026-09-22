@@ -1,5 +1,5 @@
-# `graphed` is installed from the same pinned git sha as the CI docs job (env.GRAPHED) rather than
-# from PyPI, so the docs build against the tip these pages were written against.
+# `graphed` is pinned to the same release as the CI docs job (env.GRAPHED) so the docs build against
+# the version these pages were written against.
 # The [awkward,numpy] extras supply the backends that graphed-histogram's autosummary imports at
-# doc-build time; the Rust toolchain declared in ../.readthedocs.yaml builds the extension.
-graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@559ed8d3c84e249e9898b6159b7860ef2ecf5530
+# doc-build time.
+graphed[awkward,numpy]==0.0.5
