@@ -51,7 +51,7 @@ uvx prek@0.4.5 run --all-files
 
 Notes:
 
-- `mypy` runs in strict mode over `src/` and `tests/` (configured in `pyproject.toml`).
+- `mypy` runs in strict mode over `src/`, `tests/`, and `scripts/` (configured in `pyproject.toml`).
 - Coverage policy: every source file must independently reach >=90% line+branch coverage
   (`scripts/coverage_gate.py`, never lowered), and every pull request must cover >=98% of its
   own added/changed lines (`diff-cover` against `main`, enforced once this policy is on `main`).
