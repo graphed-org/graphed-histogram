@@ -28,6 +28,8 @@ jobs:
         python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -41,8 +43,25 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: Lint + types (pre-commit hooks via prek)
         run: uvx prek@0.4.5 run --all-files --show-diff-on-failure
-      - name: Pytest + coverage gate (>=90%)
-        run: pytest tests/frozen --cov=graphed_histogram --cov-branch --cov-report=term-missing
+      - name: Pytest + coverage
+        run: >
+          pytest tests/frozen tests/extra --cov=graphed_histogram --cov-branch
+          --cov-report=term-missing --cov-report=json --cov-report=xml
+      - name: Per-file coverage gate (>=90% each)
+        run: python scripts/coverage_gate.py coverage.json
+      # The delta gate governs PRs opened once this policy is on main; it is not a target for
+      # the PR that lands it, so it runs informationally (no --fail-under) until main carries
+      # scripts/coverage_gate.py, and only on one leg to avoid 16x redundant diff-cover runs.
+      - name: Diff coverage (>=98% of changed lines vs main)
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        shell: bash
+        run: |
+          git fetch origin main
+          if git cat-file -e origin/main:scripts/coverage_gate.py 2>/dev/null; then
+            diff-cover coverage.xml --compare-branch=origin/main --fail-under=98
+          else
+            diff-cover coverage.xml --compare-branch=origin/main || true
+          fi
 
   # Free-threaded / bleeding-edge Pythons (plan A.5): genuinely exercises concurrency under no-GIL.
   # Experimental + non-blocking (awkward wheels may lag on 3.14 / 3.14t).

@@ -38,5 +38,6 @@ Frozen tests under `tests/frozen/m23/` — never weakened. One source family per
 (PartitionedSource or in-memory; mixtures rejected). Ragged fill values flatten at fill time.
 The canonical spec encoding is VERSIONED and byte-stable (the content hash is identity).
 
-Gates: ruff + ruff format · mypy --strict · pytest (>=90% branch coverage) · sphinx -W.
+Gates: ruff + ruff format · mypy --strict · sphinx -W · coverage (every source file >=90%
+line+branch, never lowered; every PR >=98% diff coverage vs `main`).
 Status: see `.graphed/state.json`.

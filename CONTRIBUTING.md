@@ -38,7 +38,8 @@ These are the same checks CI runs on a pull request:
 ```bash
 ruff check . && ruff format --check .
 mypy
-pytest tests/frozen --cov=graphed_histogram --cov-branch
+pytest tests/frozen tests/extra --cov=graphed_histogram --cov-branch --cov-report=json --cov-report=xml
+python scripts/coverage_gate.py coverage.json
 sphinx-build -W -b html docs docs/_build/html
 ```
 
@@ -51,9 +52,10 @@ uvx prek@0.4.5 run --all-files
 Notes:
 
 - `mypy` runs in strict mode over `src/` and `tests/` (configured in `pyproject.toml`).
-- Coverage must stay at or above 90% branch coverage on `graphed_histogram`.
-- A bare `pytest` also collects `tests/extra`, which needs the optional backends installed;
-  CI runs the acceptance suite under `tests/frozen`, which is what the command above does.
+- Coverage policy: every source file must independently reach >=90% line+branch coverage
+  (`scripts/coverage_gate.py`, never lowered), and every pull request must cover >=98% of its
+  own added/changed lines (`diff-cover` against `main`, enforced once this policy is on `main`).
+- CI runs both `tests/frozen` and `tests/extra`, which needs the optional backends installed.
 - The docs build treats warnings as errors (`-W`); a broken cross-reference or a
   mismatched section underline fails the build.
 

@@ -37,6 +37,7 @@ dev = [
   # graphed-awkward dev-extra precedent)
   "pyarrow",
   "pandas",
+  "diff_cover",
 ]
 docs = ["sphinx", "furo"]
 
