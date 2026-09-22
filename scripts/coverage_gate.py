@@ -16,6 +16,10 @@ def main(path: str) -> int:
     with open(path) as fh:
         files = json.load(fh)["files"]
 
+    if not files:
+        print(f"0 files in {path} — an empty report is a gate failure, not a pass.")
+        return 1
+
     under = []
     print(f"{'file':<50} {'pct':>7}")
     for name in sorted(files):

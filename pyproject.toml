@@ -83,7 +83,7 @@ exclude = ["*.md"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 # boost_histogram ships no py.typed: the deferred Histogram subclasses an Any base deliberately
 disallow_subclassing_any = false
 
