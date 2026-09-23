@@ -10,8 +10,9 @@ Deferred [boost-histogram](https://github.com/scikit-hep/boost-histogram) /
   runner, so a thousand-file fill costs nothing to describe.
 - Several histograms sharing a selection run in **one pass** over the data — a shared
   sub-expression is read and evaluated once, not once per histogram.
-- Histograms add, so partial results merge in any order: the total is the same on 1 worker
-  or 100, and integer counts are exact under any combine order.
+- On fixed axes histograms add, so partial results merge in any combine tree: integer counts
+  are exact however the run is split, and nothing depends on the worker count. Axes with
+  `growth=True` merge too, to the result [Growth axes](docs/design.rst#growth-axes) defines.
 
 ## Install
 
@@ -141,15 +142,15 @@ Whichever you build with, a run hands back `boost_histogram.Histogram` objects w
 axis names and labels intact. Wrap one in `hist.Hist(result)` to get `.plot()` and
 name-based indexing back.
 
-The `hist` builder is not released yet. It lives in a fork of `hist` that carries the
-`hist.graphed` module; upstream `hist` does not ship it, so install the fork:
+The `hist` builder lives in the `hist.graphed` module, which `hist` ships from 2.12 on:
 
 ```bash
-pip install "hist @ git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"
+pip install "hist>=2.12"
 ```
 
 All standard boost storages and the Regular / Variable / Integer / IntCategory /
-StrCategory / Boolean axes are supported.
+StrCategory / Boolean axes are supported, with `growth=True` on all of them but Variable
+([Growth axes](docs/design.rst#growth-axes)).
 
 Beyond those, the toolbox splits by task:
 
@@ -164,22 +165,24 @@ Beyond those, the toolbox splits by task:
 ## What you can count on
 
 - Fills read partition by partition; a source's whole-dataset loader is never invoked.
-- Integer-count storages are exact for any worker count; float storages are reproducible
-  for a fixed runner configuration (floating-point addition is order-sensitive, and the
-  combine order is fixed up front).
+- On fixed axes, integer counts are exact under any combine tree. Inexact float sums (and
+  every `Mean` / `WeightedMean` field) keep their last bits for a given runner family and
+  partitioning, whatever the worker count: floating-point addition is order-sensitive, and
+  each runner fixes its combine tree up front. For growth axes, including the values whose
+  bins depend on the partitioning, see [Growth axes](docs/design.rst#growth-axes).
 - Worker backends are passed as a factory/class or an importable `"module:attr"` string and
   built **in the worker**; a worker missing a required behavior fails loudly rather than
   filling the wrong thing.
 
 ## Not supported yet
 
-- **Growth axes.** Declare the categories you expect with an explicit `StrCategory` /
-  `IntCategory` instead.
+- **Growing `Variable` axes.** They raise `TypeError`; declare the edges up front. Other axes
+  grow ([Growth axes](docs/design.rst#growth-axes)).
 - **dask-style `persist` / `to_delayed`.** A plan is a live object your script builds, not
   a file format — rebuild it from the script and hand it to whichever runner you have.
 - **Two datasets in one plan.** A plan reads one chunked dataset: every fill in it records
   into the same session, and that session has exactly one partitioned source. Run a plan
-  per dataset and add the results — histograms add.
+  per dataset and add the results with `gh.add_histograms`.
 
 ## Next
 

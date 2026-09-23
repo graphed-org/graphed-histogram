@@ -16,11 +16,12 @@ record through `record_external(descriptor=, form=)` (graphed M23) and evaluate 
 
 Aggregation rides the M7/M8 seam with graphed's OWN evaluation idiom (no `compute()` helper —
 user-directed, 2026-06-11): `plan()` builds the `Plan(process=fill-partition-through-the-
-compiled-IR, combine=histogram add, empty=zero-hist)`; an R7 executor's `run(plan).value` IS the
+compiled-IR, combine=add_histograms, empty=zero-hist)`; an R7 executor's `run(plan).value` IS the
 aggregated histogram; the reference `session.materialize(fill_node)` evaluates a fill eagerly.
 Sources implementing `graphed.write.PartitionedSource` are filled partition by partition (their
-whole-dataset loader is NEVER invoked); Int64 counts are exact under any combine tree, float
-storages are deterministic per fixed-tree executor configuration.
+whole-dataset loader is NEVER invoked). On fixed axes Int64 counts are exact under any combine
+tree and inexact float bits are fixed by runner family + partition count; growth axes combine to
+the reference in docs/design.rst "Growth axes" (lower-keyed partial on the LEFT).
 
 ## Surface (dask-histogram parity)
 
@@ -28,9 +29,10 @@ storages are deterministic per fixed-tree executor configuration.
   and returns self (multiple fills accumulate); `.plan()` exports the task graph.
 - `factory(*arrays, histref=, weight=, sample=)`.
 - numpy-like `histogram` / `histogram2d` / `histogramdd`.
-- All standard boost storages (combine is native `+`); axes Regular/Variable/Integer/
-  IntCategory/StrCategory/Boolean. **Phase 2 (do NOT build):** growth axes, dask-style
-  persist/delayed beyond Plan export.
+- All standard boost storages (combine is `add_histograms`: native `+`, plus a bin-aligned
+  union for growing Regular axes); axes Regular/Variable/Integer/IntCategory/StrCategory/Boolean,
+  growth on all but Variable (m64). **Phase 2 (do NOT build):** dask-style persist/delayed beyond
+  Plan export.
 
 ## Hard rules
 

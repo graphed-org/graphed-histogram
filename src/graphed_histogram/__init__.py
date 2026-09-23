@@ -4,7 +4,7 @@ The dask-histogram analogue, with graphed's own evaluation idiom. ``.fill(...)``
 the runner performs later, identified by the content hash of a canonical axes/storage
 description — so identical fills collapse to one, and nothing in graphed or in any array backend
 needs an opinion about histograms. ``plan()`` exports the plan any runner aggregates, one fill
-task per chunk combined by histogram addition. ``session.materialize(node)`` evaluates a single
+task per chunk combined by :func:`add_histograms`. ``session.materialize(node)`` evaluates a single
 fill on the spot, for a source that has no chunks to hand out.
 """
 

@@ -27,9 +27,7 @@ Build a histogram
 ``hist.graphed.Hist``
    The same deferred histogram behind ``hist``'s builder — ``Hist.new.Reg(100, 0, 200,
    name="met").Double()`` — with named-axis fills, and names and labels that survive the run.
-   Not released yet: it ships in a fork of ``hist`` carrying the ``hist.graphed`` module, which
-   upstream ``hist`` does not have — ``pip install "hist @
-   git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"``.
+   ``hist`` ships the ``hist.graphed`` module from 2.12 on — ``pip install "hist>=2.12"``.
 
 Fill it
 -------
@@ -82,8 +80,11 @@ Run it
    comes back as a single histogram under its name, carrying the variations on its axis.
 
 ``gh.add_histograms(a, b)``
-   Adds two filled histograms. Runners use it to combine partial results; you need it only
-   if you are merging results yourself.
+   Adds two filled histograms and returns a new ``boost_histogram.Histogram`` carrying ``a``'s
+   metadata; neither operand changes. On fixed axes it is native ``+``. Growing ``Regular``
+   axes on one grid are widened to their union first, and growth categories come out as
+   ``a``'s followed by ``b``'s new ones (:ref:`growth-axes`). Runners use it to combine
+   partial results; you need it only if you are merging results yourself.
 
 What you get back, in one program
 ---------------------------------

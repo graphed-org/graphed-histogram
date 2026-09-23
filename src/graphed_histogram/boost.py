@@ -5,10 +5,11 @@ correction lookup or an ONNX model evaluation is; its evaluator returns a FILLED
 for one chunk. The step's identity is the content hash of the canonical axes/storage spec plus
 its inputs, so identical fills collapse to one. Evaluation is graphed's own machinery — there is
 no ``compute()`` here: ``plan()`` exports a plan (one fill task per partition over a
-``graphed.write.PartitionedSource``; the whole-dataset loader is never invoked) whose
-tree-combine is native ``+``, and ANY runner's ``run(plan).value`` IS the aggregated histogram;
-``session.materialize(fill_node)`` evaluates a fill on the spot. Int64 counts are exact under
-any combine tree; float storages are reproducible per fixed-tree runner configuration.
+``graphed.write.PartitionedSource``; the whole-dataset loader is never invoked) whose combine
+is :func:`add_histograms`, and ANY runner's ``run(plan).value`` IS the aggregated histogram;
+``session.materialize(fill_node)`` evaluates a fill on the spot. On fixed axes, Int64 counts are
+exact under any combine tree, and float sums' bits are fixed by the runner family and the
+partition count. Growth axes combine to the reference stated in the docs' "Growth axes" section.
 """
 
 from __future__ import annotations
@@ -320,7 +321,7 @@ def _fill_chash(
 def _declare_axis_spec(hist: bh.Histogram, sorted_labels: Sequence[str]) -> str:
     """Declare a non-growth, sorted `"variation"` StrCategory axis at FILL time from the inferred
     label set, appended after the value axes. Returns the fill node's spec — identity-bearing, hence
-    byte-stable per partition (so `+` combine stays safe)."""
+    byte-stable per partition, so every partition's result has the same variation axis to add on."""
     var = bh.axis.StrCategory(list(sorted_labels))  # non-growth by default; stored order = as given
     var.__dict__["name"] = "variation"  # the `hist` name convention the spec codec round-trips
     declared = bh.Histogram(*hist.axes, var, storage=hist.storage_type())
@@ -341,8 +342,60 @@ def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
     return dict(hist._label_maps[0])
 
 
+def _grows_regular(axis: Any) -> bool:
+    return isinstance(axis, bh.axis.Regular) and bool(axis.traits.growth)
+
+
+def _width(axis: Any) -> float:
+    return float(axis.edges[-1] - axis.edges[0]) / int(axis.size)
+
+
+def _union(x: Any, y: Any) -> Any:
+    """The growing ``Regular`` axis spanning ``x`` and ``y``, or ``None`` when they are not two
+    differing growing ``Regular`` axes on one grid with equal metadata."""
+    if not (_grows_regular(x) and _grows_regular(y) and vars(x) == vars(y) and x != y):
+        return None
+    first = (float(y.edges[0]) - float(x.edges[0])) / _width(x)
+    last = (float(y.edges[-1]) - float(x.edges[0])) / _width(x)
+    k = round(first)
+    # 1e-6 of a bin admits grids that drifted by float rounding while they grew
+    if abs(first - k) > 1e-6 or abs(last - round(last)) > 1e-6 or round(last) - k != y.size:
+        return None
+    lo = y.edges[0] if k < 0 else x.edges[0]
+    hi = y.edges[-1] if k + y.size > x.size else x.edges[-1]
+    union = bh.axis.Regular(max(x.size, k + y.size) - min(0, k), lo, hi, growth=True)
+    union.__dict__.update(vars(x))
+    return union
+
+
+def _onto(hist: bh.Histogram, unions: Sequence[Any]) -> bh.Histogram:
+    """``hist`` re-binned onto ``unions`` (``None`` keeps that axis), flow bins to flow bins."""
+    axes = [ax if u is None else u for ax, u in zip(hist.axes, unions, strict=True)]
+    out = bh.Histogram(*axes, storage=hist.storage_type())
+    out.__dict__.update(vars(hist))
+    index = []
+    for ax, u in zip(hist.axes, unions, strict=True):
+        if u is None:
+            index.append(np.arange(ax.extent))
+        else:  # a growing Regular always has both flow bins
+            first = round((float(ax.edges[0]) - float(u.edges[0])) / _width(u))
+            index.append(np.r_[0, np.arange(ax.size) + first + 1, u.extent - 1])
+    out.view(flow=True)[np.ix_(*index)] = hist.view(flow=True)
+    return out
+
+
 def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
-    """The combine: histograms form a monoid under native addition (every standard storage)."""
+    """The combine: native ``+``, after widening each pair of growing ``Regular`` axes on one grid
+    (equal bin width, edges a whole number of bins apart, equal metadata) to their bin-aligned
+    union. Every pair native ``+`` refuses otherwise stays refused.
+
+    Returns a new ``boost_histogram.Histogram`` carrying ``a``'s metadata; neither operand
+    changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
+    the lower-keyed partitions (the docs' "Growth axes" section)."""
+    unions = [_union(x, y) for x, y in zip(a.axes, b.axes, strict=False)]
+    # a rank mismatch skips the widening so native + refuses it with boost's own error
+    if a.ndim == b.ndim and any(u is not None for u in unions):
+        a, b = _onto(a, unions), _onto(b, unions)
     return a + b
 
 
@@ -363,7 +416,7 @@ class _SumFills:
     def __call__(self, fills: list[object]) -> bh.Histogram:
         total = zero_of(self.spec)
         for i in self.indices:
-            total = total + fills[i]
+            total = add_histograms(total, fills[i])
         return total
 
 
@@ -385,7 +438,7 @@ class _GroupReduce:
         for key, indices, spec in self.layout:
             total = zero_of(spec)
             for i in indices:
-                total = total + fills[i]
+                total = add_histograms(total, fills[i])
             out[key] = total
         return out
 
@@ -393,8 +446,8 @@ class _GroupReduce:
 def _add_groups(
     a: dict[SlotKey, bh.Histogram], b: dict[SlotKey, bh.Histogram]
 ) -> dict[SlotKey, bh.Histogram]:
-    """Combine: histogram groups add key-wise (each histogram is a monoid under native +)."""
-    return {key: a[key] + b[key] for key in a}
+    """Combine: histogram groups add key-wise, each pair through :func:`add_histograms`."""
+    return {key: add_histograms(a[key], b[key]) for key in a}
 
 
 @dataclass(frozen=True)
@@ -735,8 +788,8 @@ class Histogram(bh.Histogram):
         backend: Callable[[], Any] | str | None = None,
         partitions: Sequence[Partition] | None = None,
     ) -> Plan[bh.Histogram]:
-        """A plan: one fill task per partition, combined by histogram addition. Run it later with
-        any runner.
+        """A plan: one fill task per partition, combined by :func:`add_histograms`. Run it later
+        with any runner.
 
         Thin specialization of :func:`graphed.aggregate_plan` — this histogram's fills are the
         outputs, summed per partition and added across them; ``backend`` is each worker's evaluation
@@ -793,7 +846,7 @@ def _slots(name: str, hist: Histogram, rank: Mapping[int, int]) -> Layout:
     fill that does not carry the label contributes its central one). Axis mode is the third key
     form: ONE `(name, None)` slot gathering every fill-node index, whatever the label count —
     the MODE decides the key (the bare-name rule is sibling-scoped), the value is the bare
-    variation-axis histogram, the combine stays a plain `+`."""
+    variation-axis histogram, the combine is the same `add_histograms`."""
     spec = hist._fill_specs[0]  # the FILL node's spec (axis mode forces one per output)
     if hist._axis_mode:
         return (((name, None), tuple(rank[node.node_id] for node in hist._fill_nodes), spec),)

@@ -1,6 +1,24 @@
 What changed
 ============
 
+Unreleased
+----------
+
+Growth axes
+~~~~~~~~~~~
+
+* ``StrCategory([], growth=True)``, ``IntCategory([], growth=True)``, ``Integer(...,
+  growth=True)`` and ``Regular(..., growth=True)`` now fill over a partitioned source: each
+  partition grows its own axes, and ``gh.add_histograms`` merges the partial results — a
+  category union in partition order, and a bin-aligned union for growing ``Regular`` axes. The
+  result, and the closed list of ways it differs from one eager fill of the whole dataset, is
+  in :ref:`growth-axes`. A growing ``Variable`` axis still raises ``TypeError``.
+* ``gh.spec_of`` refuses, with a ``TypeError`` naming it, any axis option its description cannot
+  carry — a transform, ``circular``, category ``overflow=False``, a growing ``Variable`` — where
+  it used to drop the option silently. A spec with a growth axis is version 2; every other spec
+  keeps its version-1 bytes and content hash.
+* Requires boost-histogram 1.4.1 or later.
+
 0.0.3
 -----
 

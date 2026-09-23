@@ -6,13 +6,15 @@ What doesn't work yet, and what to do instead.
 Growth axes
 -----------
 
-Axes created with ``growth=True`` are rejected with a ``TypeError`` when you construct the
-histogram. Each partition fills its own partial histogram, and two partials that each grew a
-different category set cannot yet be merged.
+``Regular``, ``Integer``, ``IntCategory`` and ``StrCategory`` axes grow (:ref:`growth-axes`).
+Two things are missing:
 
-Instead, declare the categories you expect up front — ``bh.axis.StrCategory(["ee", "mm",
-"em"])`` or an ``bh.axis.IntCategory`` of the codes you use, without ``growth=True``. Values
-outside your list land in overflow, exactly as they do for any non-growth category axis.
+* A growing ``Variable`` axis raises ``TypeError`` when you construct the histogram: its new
+  edges come from the data, so two partitions' axes share no grid to merge on. Declare the
+  edges up front.
+* Several fills into one growth-category histogram (two ``fill`` calls, or an axis-mode fill
+  whose values vary) list their categories partition by partition, not fill by fill as one
+  eager fill per call would. Declare the categories up front if you need fill order.
 
 No ``.compute()``, ``persist``, or ``to_delayed``
 -------------------------------------------------
@@ -25,11 +27,12 @@ See :doc:`design` for the full path from fill to result.
 Float storages and reproducibility
 ----------------------------------
 
-Integer count storages (``Int64``) give bit-identical totals however the run is split.
-``Weight`` and ``Mean`` storages accumulate floats, and floating-point addition depends on
-order: for a fixed runner configuration the combine order is fixed, so re-running reproduces
-your totals exactly — but changing the worker count or the partitioning can change the last
-bits.
+On fixed axes, integer count storages (``Int64``) give bit-identical totals however the run is
+split; on growth axes, see the edge and non-finite exceptions in :ref:`growth-axes`. Inexact
+float sums in any storage, and every ``Mean`` and ``WeightedMean`` field, depend on order:
+each runner fixes its combine tree from the runner family and the partition count, so
+re-running reproduces your totals exactly, and so does changing the worker count — but
+changing the runner family or the partitioning can change the last bits.
 
 For bit-for-bit comparisons between runs, keep the runner configuration fixed, or compare an
 ``Int64`` count alongside the weighted result.
@@ -41,8 +44,8 @@ A plan reads one dataset: every fill in it must record into the same session, an
 must have exactly one partitioned source. Fills drawing on two different datasets cannot be
 planned together.
 
-Histograms add, so run one plan per dataset and sum the results
-(``results_2017["pt"] + results_2018["pt"]``).
+Run one plan per dataset and add the results
+(``gh.add_histograms(results_2017["pt"], results_2018["pt"])``).
 
 Backend behaviors are not carried to workers
 --------------------------------------------

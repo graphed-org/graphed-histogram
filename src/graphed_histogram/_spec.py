@@ -4,7 +4,9 @@ A deferred fill's ``PayloadDescriptor.content_hash`` is the SHA-256 of this enco
 with the same axes/storage (and inputs) collapse to ONE graph node, and a plan re-run resolves its
 evaluator by the same hash on any machine. The encoding is declarative JSON (sorted keys, fixed
 float formatting via repr of Python floats) — never pickle; rebuilding axes from it round-trips
-exactly, back into ordinary UHI-compatible boost-histogram objects.
+exactly, back into ordinary UHI-compatible boost-histogram objects. An axis option the encoding
+cannot carry (a transform, ``circular``, category ``overflow=False``, a growing ``Variable``) is
+refused with a ``TypeError`` naming it, never dropped.
 """
 
 from __future__ import annotations
@@ -15,7 +17,10 @@ from typing import Any
 
 import boost_histogram as bh
 
+#: a spec with a growth axis is version 2, so a reader that predates growth refuses it rather
+#: than rebuilding fixed axes; every other spec keeps version 1 and its bytes
 SPEC_VERSION = 1
+_GROWTH_SPEC_VERSION = 2
 
 _STORAGES: dict[str, Any] = {
     "Double": bh.storage.Double,
@@ -37,7 +42,11 @@ def _metadata_of(axis: Any) -> dict[str, str]:
     return out
 
 
-def _axis_spec(axis: Any) -> dict[str, Any]:
+def _growth(axis: Any) -> dict[str, bool]:
+    return {"growth": True} if axis.traits.growth else {}
+
+
+def _encode_axis(axis: Any) -> dict[str, Any]:
     if isinstance(axis, bh.axis.Regular):
         return {
             "type": "Regular",
@@ -47,6 +56,7 @@ def _axis_spec(axis: Any) -> dict[str, Any]:
             "underflow": bool(axis.traits.underflow),
             "overflow": bool(axis.traits.overflow),
             "metadata": _metadata_of(axis),
+            **_growth(axis),
         }
     if isinstance(axis, bh.axis.Variable):
         return {
@@ -64,24 +74,40 @@ def _axis_spec(axis: Any) -> dict[str, Any]:
             "underflow": bool(axis.traits.underflow),
             "overflow": bool(axis.traits.overflow),
             "metadata": _metadata_of(axis),
+            **_growth(axis),
         }
     if isinstance(axis, bh.axis.IntCategory):
-        if axis.traits.growth:
-            raise TypeError(
-                "growth axes are not supported; declare the categories up front, "
-                'e.g. bh.axis.StrCategory(["ee", "emu", "mumu"])'
-            )
-        return {"type": "IntCategory", "categories": [int(c) for c in axis], "metadata": _metadata_of(axis)}
+        return {
+            "type": "IntCategory",
+            "categories": [int(c) for c in axis],
+            "metadata": _metadata_of(axis),
+            **_growth(axis),
+        }
     if isinstance(axis, bh.axis.StrCategory):
-        if axis.traits.growth:
-            raise TypeError(
-                "growth axes are not supported; declare the categories up front, "
-                'e.g. bh.axis.StrCategory(["ee", "emu", "mumu"])'
-            )
-        return {"type": "StrCategory", "categories": [str(c) for c in axis], "metadata": _metadata_of(axis)}
+        return {
+            "type": "StrCategory",
+            "categories": [str(c) for c in axis],
+            "metadata": _metadata_of(axis),
+            **_growth(axis),
+        }
     if isinstance(axis, bh.axis.Boolean):
         return {"type": "Boolean", "metadata": _metadata_of(axis)}
     raise TypeError(f"unsupported axis type for a deferred fill: {type(axis).__name__}")
+
+
+def _axis_spec(axis: Any) -> dict[str, Any]:
+    """The axis entry, refused when decoding it would lose a transform or a trait."""
+    spec = _encode_axis(axis)
+    lost = ["transform"] if getattr(axis, "transform", None) is not None else []
+    rebuilt = _make_axis(spec).traits
+    lost += [
+        t
+        for t in ("underflow", "overflow", "circular", "growth")
+        if getattr(rebuilt, t) != getattr(axis.traits, t)
+    ]
+    if lost:
+        raise TypeError(f"{type(axis).__name__} axis: the histogram spec cannot carry {', '.join(lost)}")
+    return spec
 
 
 def _restore_metadata(axis: Any, md: dict[str, str]) -> Any:
@@ -100,17 +126,22 @@ def _make_axis(spec: dict[str, Any]) -> Any:
             spec["stop"],
             underflow=spec["underflow"],
             overflow=spec["overflow"],
+            growth=spec.get("growth", False),
         )
     elif kind == "Variable":
         ax = bh.axis.Variable(spec["edges"], underflow=spec["underflow"], overflow=spec["overflow"])
     elif kind == "Integer":
         ax = bh.axis.Integer(
-            spec["start"], spec["stop"], underflow=spec["underflow"], overflow=spec["overflow"]
+            spec["start"],
+            spec["stop"],
+            underflow=spec["underflow"],
+            overflow=spec["overflow"],
+            growth=spec.get("growth", False),
         )
     elif kind == "IntCategory":
-        ax = bh.axis.IntCategory(spec["categories"])
+        ax = bh.axis.IntCategory(spec["categories"], growth=spec.get("growth", False))
     elif kind == "StrCategory":
-        ax = bh.axis.StrCategory(spec["categories"])
+        ax = bh.axis.StrCategory(spec["categories"], growth=spec.get("growth", False))
     elif kind == "Boolean":
         ax = bh.axis.Boolean()
     else:
@@ -121,7 +152,7 @@ def _make_axis(spec: dict[str, Any]) -> Any:
 def spec_of(hist: bh.Histogram) -> str:
     """The canonical spec string of a histogram's axes + storage (its content identity)."""
     payload = {
-        "version": SPEC_VERSION,
+        "version": _GROWTH_SPEC_VERSION if any(ax.traits.growth for ax in hist.axes) else SPEC_VERSION,
         "storage": type(hist.storage_type()).__name__,
         "axes": [_axis_spec(ax) for ax in hist.axes],
     }
@@ -133,9 +164,10 @@ def content_hash(spec: str) -> str:
 
 
 def zero_of(spec: str) -> bh.Histogram:
-    """An EMPTY histogram rebuilt from the canonical spec (the monoid identity)."""
+    """An EMPTY histogram rebuilt from the canonical spec: the combine's starting value, a bitwise
+    identity under ``+`` in every storage but ``Mean`` and ``WeightedMean``."""
     payload = json.loads(spec)
-    if payload["version"] != SPEC_VERSION:  # pragma: no cover - future-proofing
+    if payload["version"] not in (SPEC_VERSION, _GROWTH_SPEC_VERSION):
         raise ValueError(f"unsupported histogram spec version {payload['version']}")
     storage = _STORAGES[payload["storage"]]()
     return bh.Histogram(*(_make_axis(a) for a in payload["axes"]), storage=storage)
