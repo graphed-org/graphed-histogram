@@ -19,7 +19,8 @@ classifiers = [
 ]
 # graphed: the Plan + content-addressed task_id a fill records into. The 0.0.2 floor is the
 # variation-aware fill lowering (varied weights, the variation axis, joint labels).
-dependencies = ["graphed>=0.0.2", "boost-histogram>=1.4", "numpy>=1.24"]
+# boost-histogram 1.4.1: 1.4.0 under numpy 2 decodes axes wrong, which the spec codec relies on.
+dependencies = ["graphed>=0.0.2", "boost-histogram>=1.4.1", "numpy>=1.24"]
 
 [project.optional-dependencies]
 # the backends + corpus + exec-local exercise resume on a realistic HEP analysis end-to-end.
@@ -32,7 +33,9 @@ dev = [
   "graphed[awkward,numpy]>=0.0.2",
   "awkward>=2.6",
   "graphed-executors",
-  "hist>=2.7",
+  # hist 2.12 is the first with hist.graphed; uhi 1.0 the first with uhi.io.json
+  "hist>=2.12",
+  "uhi>=1.0",
   # parquet-reading tests: awkward's arrow->form conversion calls to_pandas_dtype (the
   # graphed-awkward dev-extra precedent)
   "pyarrow",
