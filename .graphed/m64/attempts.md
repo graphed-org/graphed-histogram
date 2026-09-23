@@ -18,3 +18,10 @@ stays empty for the life of the milestone.
 - `"growth": true` on growing IntCategory/StrCategory/Integer entries, version 2 when any axis grows,
   `zero_of` reads 1 and 2. Suite: 293 pass / 52 fail, newly red none; G5, G6, G13, G14 and G11's
   category legs green. Left red: every growing-Regular clause (still refused by D2 at this tip).
+
+## S4 — growing Regular merges by a bin-aligned union (D4)
+- `add_histograms` widens each admitted growing-Regular pair (`_union`: both growing Regular, equal
+  `vars`, unequal, offsets whole bins within 1e-6) and re-bins both operands (`_onto`, flow to flow,
+  `vars(h)` carried), then native `+`; `_SumFills`, `_GroupReduce`, `_add_groups` route through it;
+  Regular entries carry growth. Suite: 345 pass / 0 fail / 1 skip (pre-existing: extra m48
+  correctionlib absent from the lane venv). `git diff freeze-m64 -- tests/frozen/` empty.

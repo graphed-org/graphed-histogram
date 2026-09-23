@@ -56,6 +56,7 @@ def _encode_axis(axis: Any) -> dict[str, Any]:
             "underflow": bool(axis.traits.underflow),
             "overflow": bool(axis.traits.overflow),
             "metadata": _metadata_of(axis),
+            **_growth(axis),
         }
     if isinstance(axis, bh.axis.Variable):
         return {
