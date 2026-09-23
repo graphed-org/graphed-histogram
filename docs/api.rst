@@ -27,9 +27,7 @@ Build a histogram
 ``hist.graphed.Hist``
    The same deferred histogram behind ``hist``'s builder — ``Hist.new.Reg(100, 0, 200,
    name="met").Double()`` — with named-axis fills, and names and labels that survive the run.
-   Not released yet: it ships in a fork of ``hist`` carrying the ``hist.graphed`` module, which
-   upstream ``hist`` does not have — ``pip install "hist @
-   git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"``.
+   ``hist`` ships the ``hist.graphed`` module from 2.12 on — ``pip install "hist>=2.12"``.
 
 Fill it
 -------

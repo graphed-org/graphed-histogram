@@ -142,11 +142,10 @@ Whichever you build with, a run hands back `boost_histogram.Histogram` objects w
 axis names and labels intact. Wrap one in `hist.Hist(result)` to get `.plot()` and
 name-based indexing back.
 
-The `hist` builder is not released yet. It lives in a fork of `hist` that carries the
-`hist.graphed` module; upstream `hist` does not ship it, so install the fork:
+The `hist` builder lives in the `hist.graphed` module, which `hist` ships from 2.12 on:
 
 ```bash
-pip install "hist @ git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"
+pip install "hist>=2.12"
 ```
 
 All standard boost storages and the Regular / Variable / Integer / IntCategory /

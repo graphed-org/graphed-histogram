@@ -21,15 +21,8 @@ track `graphed`'s git tip (`.github/workflows/ci.yml` pins the exact commit). Ge
 first pins the version the later editable install then leaves alone. (This is also the step that
 compiles, hence the Rust toolchain.)
 
-The `dev` extra pulls in the rest of what the test suite uses: `hist`, `pyarrow`, `pandas`,
-and the test/lint/type tools.
-
-The `hist.graphed` builder is not released: it lives in a fork of `hist`, and the PyPI `hist` the
-`dev` extra installs does not carry it. To work on that path:
-
-```bash
-pip install "hist @ git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"
-```
+The `dev` extra pulls in the rest of what the test suite uses: `hist` (2.12 or later, which
+carries the `hist.graphed` builder), `pyarrow`, `pandas`, and the test/lint/type tools.
 
 ## Run the checks
 

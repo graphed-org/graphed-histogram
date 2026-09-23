@@ -387,8 +387,9 @@ mapping.
 
 The axis-mode result is an ordinary ``bh.Histogram`` with one extra axis, so nothing downstream
 needs a special case: it merges with ``gh.add_histograms`` like any other, and plotting or
-``hist`` indexing work on it unchanged. The ``variation`` axis is a non-growth ``StrCategory`` whose categories are your
-labels in sorted order, so two runs of the same program give you the same axis in the same order.
+``hist`` indexing work on it unchanged. The ``variation`` axis is a non-growth ``StrCategory``
+whose categories are your labels in sorted order, so two runs of the same program give you the
+same axis in the same order.
 ``graphed.labels`` reports them nominal-first, which is the order you usually want to read.
 
 
@@ -507,12 +508,12 @@ The hist builder you already use
 --------------------------------
 
 ``hist.graphed.Hist`` and ``hist.graphed.NamedHist`` give you the QuickConstruct builder and
-named-axis fills unchanged. They are not released yet: they live in a fork of ``hist`` that adds
-the ``hist.graphed`` module, which upstream ``hist`` does not ship, so install the fork:
+named-axis fills unchanged. They live in the ``hist.graphed`` module, which ``hist`` ships from
+2.12 on:
 
 .. code-block:: bash
 
-    pip install "hist @ git+https://github.com/graphed-org/hist-graphed-mvp@graphed-mvp"
+    pip install "hist>=2.12"
 
 .. code-block:: python
 
