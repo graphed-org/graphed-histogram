@@ -9,3 +9,7 @@ stays empty for the life of the milestone.
 
 ## S1 — floors
 - boost-histogram>=1.4.1 (runtime), hist>=2.12 and uhi>=1.0 (dev) per plan S1. No test changes state.
+
+## S2 — the codec refuses what it cannot carry (D2)
+- `_axis_spec` = `_encode_axis` + a decode comparison of transform and traits; the two category-only
+  growth raises go. Suite: 228 pass / 117 fail; newly red none; G4 and the m23 witness turn green.

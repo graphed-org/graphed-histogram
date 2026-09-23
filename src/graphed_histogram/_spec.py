@@ -4,7 +4,9 @@ A deferred fill's ``PayloadDescriptor.content_hash`` is the SHA-256 of this enco
 with the same axes/storage (and inputs) collapse to ONE graph node, and a plan re-run resolves its
 evaluator by the same hash on any machine. The encoding is declarative JSON (sorted keys, fixed
 float formatting via repr of Python floats) — never pickle; rebuilding axes from it round-trips
-exactly, back into ordinary UHI-compatible boost-histogram objects.
+exactly, back into ordinary UHI-compatible boost-histogram objects. An axis option the encoding
+cannot carry (a transform, ``circular``, category ``overflow=False``, a growing ``Variable``) is
+refused with a ``TypeError`` naming it, never dropped.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ def _metadata_of(axis: Any) -> dict[str, str]:
     return out
 
 
-def _axis_spec(axis: Any) -> dict[str, Any]:
+def _encode_axis(axis: Any) -> dict[str, Any]:
     if isinstance(axis, bh.axis.Regular):
         return {
             "type": "Regular",
@@ -66,22 +68,27 @@ def _axis_spec(axis: Any) -> dict[str, Any]:
             "metadata": _metadata_of(axis),
         }
     if isinstance(axis, bh.axis.IntCategory):
-        if axis.traits.growth:
-            raise TypeError(
-                "growth axes are not supported; declare the categories up front, "
-                'e.g. bh.axis.StrCategory(["ee", "emu", "mumu"])'
-            )
         return {"type": "IntCategory", "categories": [int(c) for c in axis], "metadata": _metadata_of(axis)}
     if isinstance(axis, bh.axis.StrCategory):
-        if axis.traits.growth:
-            raise TypeError(
-                "growth axes are not supported; declare the categories up front, "
-                'e.g. bh.axis.StrCategory(["ee", "emu", "mumu"])'
-            )
         return {"type": "StrCategory", "categories": [str(c) for c in axis], "metadata": _metadata_of(axis)}
     if isinstance(axis, bh.axis.Boolean):
         return {"type": "Boolean", "metadata": _metadata_of(axis)}
     raise TypeError(f"unsupported axis type for a deferred fill: {type(axis).__name__}")
+
+
+def _axis_spec(axis: Any) -> dict[str, Any]:
+    """The axis entry, refused when decoding it would lose a transform or a trait."""
+    spec = _encode_axis(axis)
+    lost = ["transform"] if getattr(axis, "transform", None) is not None else []
+    rebuilt = _make_axis(spec).traits
+    lost += [
+        t
+        for t in ("underflow", "overflow", "circular", "growth")
+        if getattr(rebuilt, t) != getattr(axis.traits, t)
+    ]
+    if lost:
+        raise TypeError(f"{type(axis).__name__} axis: the histogram spec cannot carry {', '.join(lost)}")
+    return spec
 
 
 def _restore_metadata(axis: Any, md: dict[str, str]) -> Any:
@@ -133,7 +140,8 @@ def content_hash(spec: str) -> str:
 
 
 def zero_of(spec: str) -> bh.Histogram:
-    """An EMPTY histogram rebuilt from the canonical spec (the monoid identity)."""
+    """An EMPTY histogram rebuilt from the canonical spec: the combine's starting value, a bitwise
+    identity under ``+`` in every storage but ``Mean`` and ``WeightedMean``."""
     payload = json.loads(spec)
     if payload["version"] != SPEC_VERSION:  # pragma: no cover - future-proofing
         raise ValueError(f"unsupported histogram spec version {payload['version']}")
