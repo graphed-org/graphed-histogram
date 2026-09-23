@@ -25,3 +25,11 @@ stays empty for the life of the milestone.
   `vars(h)` carried), then native `+`; `_SumFills`, `_GroupReduce`, `_add_groups` route through it;
   Regular entries carry growth. Suite: 345 pass / 0 fail / 1 skip (pre-existing: extra m48
   correctionlib absent from the lane venv). `git diff freeze-m64 -- tests/frozen/` empty.
+
+## S5 — docs (D7)
+- design.rst "Growth axes" (label `growth-axes`): D5's reference and closed deviation list in user
+  words, the executed example (lane venv; printed output pasted), the runner-order note (F1), the
+  two-modes sentence; "Not supported yet" keeps only growing Variable. Every D7 member rewritten to
+  fixed axes + a link, with the fold-shape (runner family + partition count), Mean/WeightedMean
+  identity/associativity and exact-sum corrections; api.rst add_histograms states the return type;
+  CLAUDE.md drops growth from Phase 2; changelog "Unreleased" above 0.0.3. `sphinx-build -W` ok.

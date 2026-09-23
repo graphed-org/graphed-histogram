@@ -5,7 +5,7 @@ You call ``h.fill(jets.pt)`` and nothing happens. No entries land, the view stay
 call hands you the histogram back. That single change — the fill **records**, and a runner
 computes it later — is the whole of this package, and everything below follows from it: why
 writing the same fill twice costs once, why twenty histograms cost one pass over your files, why
-your numbers come out the same on one core and on a hundred, and how a systematic variation
+your integer counts come out the same on one core and on a hundred, and how a systematic variation
 becomes an axis instead of a directory of files.
 
 
@@ -234,18 +234,23 @@ indexable by axis name.
 Why the total does not depend on how many workers you used
 ----------------------------------------------------------
 
-Histograms add. Every standard boost storage supports ``+``, so a partial result from one
-partition merges with a partial result from another in any order, and the runner's combine tree
-needs no special case for histograms — it needs an empty value and an addition, and the axes
-description supplies the first while boost supplies the second.
+Histograms with fixed axes add. Every standard boost storage supports ``+``, so a partial result
+from one partition merges with a partial result from another in any combine tree, and the runner's
+combine needs no special case for histograms — it needs an empty value and an addition, and the
+axes description supplies the first while boost supplies the second. Axes with ``growth=True``
+need more than ``+``; :ref:`growth-axes` says what they merge to.
 
-Integer counts are exact under any combine tree: whatever order the partials merge in, you get the
-same integers. Float storages (``Weight``, ``Mean``, ``WeightedMean``) are a different matter,
-because floating-point addition is not associative — ``(a + b) + c`` and ``a + (b + c)`` can differ
-in the last bits. The runner fixes the merge order up front rather than letting it depend on which
-worker finished first, so re-running the same plan on the same runner configuration reproduces the
-same floats. Change the worker count and the merge tree changes shape with it, so the last bits
-may move.
+Integer counts are exact under any combine tree: whatever tree the partials merge in, you get the
+same integers, and so for any float sum that is exact (weights that are multiples of 1/4, say).
+Other float sums are a different matter, because floating-point addition is not associative —
+``(a + b) + c`` and ``a + (b + c)`` can differ in the last bits. ``Mean`` and ``WeightedMean``
+fields never count as exact, even with integer samples and unit weights: their merge divides to
+recompute the mean, so even adding the empty histogram can move their last bits. The runner fixes
+its merge tree up front rather than letting it depend on which worker finished first, and the tree
+is set by the runner family and the partition count: ``SequentialRunner`` folds left, and
+``graphed-executors``' ``ProcessExecutor`` and ``ProcessPoolExecutor`` fold over one tree per
+partition count, whatever the worker count. So a re-run reproduces the same floats, and so does a
+different worker count; a different runner family or partitioning may move the last bits.
 
 
 Running fills on several processes
@@ -373,14 +378,16 @@ Printed output::
     ['nominal', 'sf_down', 'sf_up']
     [3.1 3.2 0.  0. ]
 
-The two modes agree bin for bin: the nominal slice of the axis-mode histogram and the ``nominal``
-entry of the sibling-mode mapping are the same numbers. What differs is the container, and
-``graphed.labels`` / ``graphed.nominal`` / ``graphed.universe`` read both shapes the same way — in
-axis mode they slice the axis away, in sibling mode they index the mapping.
+On fixed axes the two modes agree bin for bin: the nominal slice of the axis-mode histogram and
+the ``nominal`` entry of the sibling-mode mapping are the same numbers (on growth axes they agree
+label by label at equal category and bin edge, as :ref:`growth-axes` details). What differs is
+the container, and ``graphed.labels`` / ``graphed.nominal`` / ``graphed.universe`` read both
+shapes the same way — in axis mode they slice the axis away, in sibling mode they index the
+mapping.
 
 The axis-mode result is an ordinary ``bh.Histogram`` with one extra axis, so nothing downstream
-needs a special case: it merges under ``+`` like any other, and plotting or ``hist`` indexing work
-on it unchanged. The ``variation`` axis is a non-growth ``StrCategory`` whose categories are your
+needs a special case: it merges with ``gh.add_histograms`` like any other, and plotting or
+``hist`` indexing work on it unchanged. The ``variation`` axis is a non-growth ``StrCategory`` whose categories are your
 labels in sorted order, so two runs of the same program give you the same axis in the same order.
 ``graphed.labels`` reports them nominal-first, which is the order you usually want to read.
 
@@ -546,26 +553,136 @@ indexing are ``hist``'s own additions. One call gets them back: ``hist.Hist(resu
 two lines show.
 
 
+.. _growth-axes:
+
+Growth axes
+-----------
+
+``StrCategory([], growth=True)``, ``IntCategory([], growth=True)``, ``Integer(...,
+growth=True)`` and ``Regular(..., growth=True)`` work as they do eagerly: you do not have to know
+the categories or the range up front. Needs ``graphed[awkward]`` and ``graphed-histogram``.
+
+.. code-block:: python
+
+    import awkward as ak
+    import boost_histogram as bh
+    import graphed_histogram as gh
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_parquet
+    from graphed.core.execution import SequentialRunner
+
+    EVENTS = ak.Array({
+        "channel": ["mumu", "mumu", "ee", "emu", "ee", "mumu"],
+        "met": [10.0, 40.0, 70.0, 260.0, 30.0, -20.0],
+    })
+    ak.to_parquet(EVENTS, "channels.parquet")
+
+    session = Session(AwkwardBackend())
+    events = from_parquet(session, "events", "channels.parquet", steps_per_file=3)
+
+    h = gh.boost.Histogram(
+        bh.axis.StrCategory([], growth=True),
+        bh.axis.Regular(4, 0.0, 200.0, growth=True),
+        storage=bh.storage.Int64(),
+    )
+    h.fill(events.channel, events.met)
+    out = SequentialRunner().run(h.plan(steps_per_file=3)).value
+    print(list(out.axes[0]))
+    print(out.axes[1].size, out.axes[1].edges[0], out.axes[1].edges[-1])
+    print(out.values())
+
+    eager = bh.Histogram(
+        bh.axis.StrCategory([], growth=True),
+        bh.axis.Regular(4, 0.0, 200.0, growth=True),
+        storage=bh.storage.Int64(),
+    )
+    eager.fill(EVENTS.channel.to_numpy(), EVENTS.met.to_numpy())
+    print(out == eager)
+
+Printed output::
+
+    ['mumu', 'ee', 'emu']
+    7 -50.0 300.0
+    [[1 2 0 0 0 0 0]
+     [0 1 1 0 0 0 0]
+     [0 0 0 0 0 0 1]]
+    True
+
+Each partition fills its own histogram, and a growth axis grows to whatever that partition saw,
+so the partial results no longer share axes. ``gh.add_histograms``, the combine every plan uses,
+merges them: growth categories come out as the left operand's list followed by the right
+operand's new ones, and two growing ``Regular`` axes on one grid (equal bin width, edges a whole
+number of bins apart) are both widened to their union before they add. So the result a plan hands
+back is this:
+
+* **within each partition**, starting from the empty histogram, add the eager fill of that
+  partition's chunk for each fill of the histogram, in the order you recorded them;
+* **across partitions**, add those partition results left to right, in partition order, with
+  ``gh.add_histograms``.
+
+``SequentialRunner`` computes exactly that. ``ProcessExecutor`` and ``ProcessPoolExecutor``, at
+every worker count, equal it bit for bit in everything exact: the category lists and their order,
+integer counts, float sums that are exact, growing-``Integer`` edges, the growing-``Regular`` bin
+count, and ``Regular`` edges on grids whose width and start are exact binary fractions (0.25, 50;
+not 0.1). Every runner this package tests merges the lower-numbered partitions on the left, which
+is what keeps the category order; graphed's ``Plan`` contract does not promise that yet.
+
+Where this differs from one eager fill of the whole dataset is a closed list:
+
+* **Several fills into one histogram.** Two ``fill`` calls, or an axis-mode fill whose values
+  vary, list their categories partition by partition: partition 0's categories from every fill,
+  then partition 1's new ones, and so on, where one eager fill per call would list the first
+  call's categories first. That order depends on the partitioning. A single fill keeps the
+  dataset's first-appearance order on every runner and partitioning.
+* **A value on, or within float rounding of, a growing** ``Regular`` **bin edge.** boost bins each
+  value on its own chunk's grown axis, so the bin a rounding decides — and the extent, when the
+  value is the smallest or largest — follows that chunk's growth history, which depends on the
+  partitioning (not on the runner or the worker count).
+* **A non-finite value followed, in the same eager fill, by a value that grows its axis.** boost
+  moves that entry from its flow bin into a regular bin when the axis grows. Partitioned, the
+  growth may happen in a later partition, and the entry stays in its flow bin.
+* **Float bits.** Inexact float sums (inexact weights in any storage, and every ``Mean`` and
+  ``WeightedMean`` field) and the edges of a growing ``Regular`` whose width or start is not an
+  exact binary fraction agree with the eager fill within float rounding. Their bits are fixed by
+  the runner family and the partition count, so a re-run reproduces them.
+
+Everything else equals one eager fill bit for bit: a single fill's categories in first-appearance
+order; ``Int64`` counts and exact float sums, except for the edge and non-finite values above;
+growing-``Integer`` edges; the growing-``Regular`` bin count and offset; ``Regular`` edges on
+exact-binary-fraction grids.
+
+The two variation modes agree per label at equal category and equal bin edge. Axis mode's
+categories and growing-``Regular`` extent are the union over labels, so a sibling-mode label's
+``Regular`` bins are a sub-range of its axis-mode slice and its categories a subset, possibly in
+another order, and the slice is zero outside them. An axis-mode fill whose values vary is several
+fills, so its category order is partition by partition, as above. A label that shares an
+axis-mode fill with other labels is binned on the axis they grew, so for edge values and for
+non-finite values before a growth the modes can differ even within one partition. Edges agree bit
+for bit only on exact-binary-fraction grids.
+
+A growing ``Variable`` axis raises ``TypeError``: its new edges come from the data, so two
+partitions' axes share no grid to merge on.
+
+
 Not supported yet
 -----------------
 
-**Growth axes.** A category axis that grows as it sees new values cannot be combined across
-partitions without a category-union merge, so constructing a deferred histogram with one raises
-``TypeError`` right there. Declare the categories you expect up front:
-``bh.axis.StrCategory(["ee", "emu", "mumu"])``.
+**Growing** ``Variable`` **axes.** See :ref:`growth-axes`; declare the edges up front.
 
 **dask-style collection methods.** There is no ``persist`` or ``to_delayed``. A plan is a live
 object your script builds, not a file format — rebuild it from the script and hand it to whichever
 runner you have.
 
-**Bit-identical float storages across different worker counts.** ``Weight``, ``Mean`` and
-``WeightedMean`` reproduce exactly for a fixed runner configuration, not across configurations
-that merge in a different tree shape. ``Int64`` counts are exact everywhere. If you need
-bit-identical floats across machines, fix the worker count.
+**Bit-identical inexact floats across runner families or partitionings.** Inexact ``Weight``
+sums and the ``Mean`` and ``WeightedMean`` fields reproduce exactly for one runner family and
+partition count, whatever the worker count, not across configurations that merge in a different
+tree shape. On fixed axes ``Int64`` counts are exact everywhere (on growth axes, see the edge and
+non-finite exceptions in :ref:`growth-axes`). If you need bit-identical floats across machines,
+keep the runner family and the partitioning fixed.
 
 **Two datasets in one plan.** Every fill in a plan must record into the same session, and a
 session plans against exactly one partitioned source. Run the datasets separately and add the
-results — histograms add.
+results with ``gh.add_histograms``.
 
 **Behaviors carried automatically to workers.** Pass ``backend="module:attr"`` when your backend
 carries behaviors; there is no default that recovers them from the recording session.

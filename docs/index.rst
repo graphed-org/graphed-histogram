@@ -110,9 +110,10 @@ pool, a dask cluster or a parsl pool changes no analysis code:
    [3 3 1 1]
    [9 5 0 0]
 
-Same numbers, on two processes. Because histograms add, the partial results merge in any
-order: your total is the same on one worker and on a hundred, and integer-count storages
-are exact whatever the worker count.
+Same numbers, on two processes. On fixed axes like these, histograms add, so the partial
+results merge in any combine tree: integer counts are exact however the run is split, and
+nothing depends on the worker count. Axes with ``growth=True`` merge too, to the result
+:ref:`growth-axes` defines.
 
 Where to go next
 ----------------

@@ -82,8 +82,11 @@ Run it
    comes back as a single histogram under its name, carrying the variations on its axis.
 
 ``gh.add_histograms(a, b)``
-   Adds two filled histograms. Runners use it to combine partial results; you need it only
-   if you are merging results yourself.
+   Adds two filled histograms and returns a new ``boost_histogram.Histogram`` carrying ``a``'s
+   metadata; neither operand changes. On fixed axes it is native ``+``. Growing ``Regular``
+   axes on one grid are widened to their union first, and growth categories come out as
+   ``a``'s followed by ``b``'s new ones (:ref:`growth-axes`). Runners use it to combine
+   partial results; you need it only if you are merging results yourself.
 
 What you get back, in one program
 ---------------------------------
