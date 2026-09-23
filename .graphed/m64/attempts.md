@@ -13,3 +13,8 @@ stays empty for the life of the milestone.
 ## S2 — the codec refuses what it cannot carry (D2)
 - `_axis_spec` = `_encode_axis` + a decode comparison of transform and traits; the two category-only
   growth raises go. Suite: 228 pass / 117 fail; newly red none; G4 and the m23 witness turn green.
+
+## S3 — growth on category and Integer axes (D1)
+- `"growth": true` on growing IntCategory/StrCategory/Integer entries, version 2 when any axis grows,
+  `zero_of` reads 1 and 2. Suite: 293 pass / 52 fail, newly red none; G5, G6, G13, G14 and G11's
+  category legs green. Left red: every growing-Regular clause (still refused by D2 at this tip).

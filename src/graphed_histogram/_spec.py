@@ -17,7 +17,10 @@ from typing import Any
 
 import boost_histogram as bh
 
+#: a spec with a growth axis is version 2, so a reader that predates growth refuses it rather
+#: than rebuilding fixed axes; every other spec keeps version 1 and its bytes
 SPEC_VERSION = 1
+_GROWTH_SPEC_VERSION = 2
 
 _STORAGES: dict[str, Any] = {
     "Double": bh.storage.Double,
@@ -37,6 +40,10 @@ def _metadata_of(axis: Any) -> dict[str, str]:
     extras = getattr(axis, "__dict__", None) or {}
     out = {str(k): str(v) for k, v in sorted(extras.items()) if v is not None}
     return out
+
+
+def _growth(axis: Any) -> dict[str, bool]:
+    return {"growth": True} if axis.traits.growth else {}
 
 
 def _encode_axis(axis: Any) -> dict[str, Any]:
@@ -66,11 +73,22 @@ def _encode_axis(axis: Any) -> dict[str, Any]:
             "underflow": bool(axis.traits.underflow),
             "overflow": bool(axis.traits.overflow),
             "metadata": _metadata_of(axis),
+            **_growth(axis),
         }
     if isinstance(axis, bh.axis.IntCategory):
-        return {"type": "IntCategory", "categories": [int(c) for c in axis], "metadata": _metadata_of(axis)}
+        return {
+            "type": "IntCategory",
+            "categories": [int(c) for c in axis],
+            "metadata": _metadata_of(axis),
+            **_growth(axis),
+        }
     if isinstance(axis, bh.axis.StrCategory):
-        return {"type": "StrCategory", "categories": [str(c) for c in axis], "metadata": _metadata_of(axis)}
+        return {
+            "type": "StrCategory",
+            "categories": [str(c) for c in axis],
+            "metadata": _metadata_of(axis),
+            **_growth(axis),
+        }
     if isinstance(axis, bh.axis.Boolean):
         return {"type": "Boolean", "metadata": _metadata_of(axis)}
     raise TypeError(f"unsupported axis type for a deferred fill: {type(axis).__name__}")
@@ -107,17 +125,22 @@ def _make_axis(spec: dict[str, Any]) -> Any:
             spec["stop"],
             underflow=spec["underflow"],
             overflow=spec["overflow"],
+            growth=spec.get("growth", False),
         )
     elif kind == "Variable":
         ax = bh.axis.Variable(spec["edges"], underflow=spec["underflow"], overflow=spec["overflow"])
     elif kind == "Integer":
         ax = bh.axis.Integer(
-            spec["start"], spec["stop"], underflow=spec["underflow"], overflow=spec["overflow"]
+            spec["start"],
+            spec["stop"],
+            underflow=spec["underflow"],
+            overflow=spec["overflow"],
+            growth=spec.get("growth", False),
         )
     elif kind == "IntCategory":
-        ax = bh.axis.IntCategory(spec["categories"])
+        ax = bh.axis.IntCategory(spec["categories"], growth=spec.get("growth", False))
     elif kind == "StrCategory":
-        ax = bh.axis.StrCategory(spec["categories"])
+        ax = bh.axis.StrCategory(spec["categories"], growth=spec.get("growth", False))
     elif kind == "Boolean":
         ax = bh.axis.Boolean()
     else:
@@ -128,7 +151,7 @@ def _make_axis(spec: dict[str, Any]) -> Any:
 def spec_of(hist: bh.Histogram) -> str:
     """The canonical spec string of a histogram's axes + storage (its content identity)."""
     payload = {
-        "version": SPEC_VERSION,
+        "version": _GROWTH_SPEC_VERSION if any(ax.traits.growth for ax in hist.axes) else SPEC_VERSION,
         "storage": type(hist.storage_type()).__name__,
         "axes": [_axis_spec(ax) for ax in hist.axes],
     }
@@ -143,7 +166,7 @@ def zero_of(spec: str) -> bh.Histogram:
     """An EMPTY histogram rebuilt from the canonical spec: the combine's starting value, a bitwise
     identity under ``+`` in every storage but ``Mean`` and ``WeightedMean``."""
     payload = json.loads(spec)
-    if payload["version"] != SPEC_VERSION:  # pragma: no cover - future-proofing
+    if payload["version"] not in (SPEC_VERSION, _GROWTH_SPEC_VERSION):
         raise ValueError(f"unsupported histogram spec version {payload['version']}")
     storage = _STORAGES[payload["storage"]]()
     return bh.Histogram(*(_make_axis(a) for a in payload["axes"]), storage=storage)
