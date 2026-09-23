@@ -392,9 +392,9 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     Returns a new ``boost_histogram.Histogram`` carrying ``a``'s metadata; neither operand
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
     the lower-keyed partitions (the docs' "Growth axes" section)."""
-    # a rank mismatch falls through to native +, which refuses it
     unions = [_union(x, y) for x, y in zip(a.axes, b.axes, strict=False)]
-    if any(u is not None for u in unions):
+    # a rank mismatch skips the widening so native + refuses it with boost's own error
+    if a.ndim == b.ndim and any(u is not None for u in unions):
         a, b = _onto(a, unions), _onto(b, unions)
     return a + b
 
