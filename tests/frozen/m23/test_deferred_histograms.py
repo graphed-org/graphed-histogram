@@ -257,7 +257,7 @@ def test_guardrails_fail_loudly() -> None:
     with pytest.raises(ValueError, match="nothing staged"):
         gh.boost.Histogram(bh.axis.Regular(4, 0.0, 1.0)).plan()
     with pytest.raises(TypeError, match="growth"):
-        gh.spec_of(bh.Histogram(bh.axis.IntCategory([], growth=True)))
+        gh.spec_of(bh.Histogram(bh.axis.Variable([0.0, 0.5, 1.0], growth=True)))
     s2 = Session(NumpyBackend())
     arr = s2.source("m", form=NumpyForm(DATA.dtype, shape=(None,)), data=DATA)
     with pytest.raises(TypeError, match="partitioned source"):
