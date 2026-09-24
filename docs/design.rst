@@ -559,9 +559,16 @@ two lines show.
 Growth axes
 -----------
 
+You are filling one histogram with a category per decay channel, or per trigger path, or per run
+number, and you do not want to write the categories down before you have seen the data. Or the
+range of a variable is not known until the run is over. Eagerly, ``growth=True`` handles that: the
+axis adds a category or a bin when a value lands outside it. Deferred, every partition grows its
+own copy of the axis, so the partial histograms come back with different axes, and they still have
+to add up to one result.
+
 ``StrCategory([], growth=True)``, ``IntCategory([], growth=True)``, ``Integer(...,
-growth=True)`` and ``Regular(..., growth=True)`` work as they do eagerly: you do not have to know
-the categories or the range up front. Needs ``graphed[awkward]`` and ``graphed-histogram``.
+growth=True)`` and ``Regular(..., growth=True)`` all work this way. Needs ``graphed[awkward]``
+and ``graphed-histogram``.
 
 .. code-block:: python
 
@@ -625,8 +632,9 @@ back is this:
 every worker count, equal it bit for bit in everything exact: the category lists and their order,
 integer counts, float sums that are exact, growing-``Integer`` edges, the growing-``Regular`` bin
 count, and ``Regular`` edges on grids whose width and start are exact binary fractions (0.25, 50;
-not 0.1). Every runner this package tests merges the lower-numbered partitions on the left, which
-is what keeps the category order; graphed's ``Plan`` contract does not promise that yet.
+not 0.1). ``SequentialRunner`` and the ``graphed-executors`` pools merge the lower-numbered
+partition on the left, which is what keeps the category order. A runner is not required to, so
+one of your own may list the categories in another order.
 
 Where this differs from one eager fill of the whole dataset is a closed list:
 

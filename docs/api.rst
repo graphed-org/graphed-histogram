@@ -13,7 +13,8 @@ Build a histogram
 ``gh.boost.Histogram(*axes, storage=..., metadata=...)``
    A ``boost_histogram.Histogram`` whose fills are deferred. Same axes, same storages,
    same eager API for axes/storage/views of the empty state. All standard boost storages
-   and the Regular / Variable / Integer / IntCategory / StrCategory / Boolean axes work.
+   and the Regular / Variable / Integer / IntCategory / StrCategory / Boolean axes work;
+   ``growth=True`` works on Regular, Integer, IntCategory and StrCategory (:ref:`growth-axes`).
 
 ``gh.factory(*arrays, histref=h, weight=None, sample=None)``
    ``dask-histogram``'s ``factory``: take a reference histogram's axes and storage, and
