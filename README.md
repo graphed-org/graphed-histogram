@@ -2,7 +2,7 @@
 
 Deferred [boost-histogram](https://github.com/scikit-hep/boost-histogram) /
 [hist](https://github.com/scikit-hep/hist) filling for
-[graphed](https://github.com/graphed-org) — the
+[graphed](https://github.com/graphed-org/graphed) — the
 [dask-histogram](https://github.com/dask-contrib/dask-histogram) shape, without a
 `.compute()`: **`.fill()` records, a runner computes.**
 
@@ -28,8 +28,8 @@ Building `graphed` from source (no wheel for your platform) needs a Rust toolcha
 
 A complete program: awkward events in, a filled `boost_histogram.Histogram` out. The only
 new ingredient over eager boost-histogram is a *source* — the object that hands your dataset
-out in chunks, so workers each fill their piece. Here it is a parquet file; ROOT files work
-the same way.
+out in chunks, so workers each fill their piece. Here it is a parquet file; a ROOT file read
+through uproot's `uproot.graphed` works the same way.
 
 ```python
 import awkward as ak
@@ -149,8 +149,8 @@ pip install "hist>=2.12"
 ```
 
 All standard boost storages and the Regular / Variable / Integer / IntCategory /
-StrCategory / Boolean axes are supported, with `growth=True` on all of them but Variable
-([Growth axes](docs/design.rst#growth-axes)).
+StrCategory / Boolean axes are supported, and `growth=True` on Regular, Integer, IntCategory and
+StrCategory ([Growth axes](docs/design.rst#growth-axes)).
 
 Beyond those, the toolbox splits by task:
 
@@ -189,6 +189,6 @@ Beyond those, the toolbox splits by task:
 - [How graphed-histogram works](docs/design.rst) — why filling is free until you run, how
   many histograms share one pass, and the variations walkthrough.
 - [API reference](docs/api.rst).
-- Siblings: [graphed](https://github.com/graphed-org) (the frontend your arrays come from)
-  and [graphed-executors](https://github.com/graphed-org) (process-pool, dask and parsl
-  runners).
+- Siblings: [graphed](https://github.com/graphed-org/graphed) (the frontend your arrays come
+  from) and [graphed-executors](https://github.com/graphed-org/graphed-executors) (process-pool,
+  dask and parsl runners).
