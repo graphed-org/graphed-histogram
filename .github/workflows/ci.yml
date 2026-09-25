@@ -15,7 +15,7 @@ env:
   # the former core/debug/frontend/numpy/awkward siblings are now one consolidated package
   # Pinned to a release, not @main: graphed is an unpinned upstream whose merges can redden this frozen
   # suite with no local change. Bump deliberately.
-  GRAPHED: "graphed[awkward,numpy]==0.0.5"
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@3c46e017b2196fdc8f190674c2d4bac1dcbd6695"
   # exec-local stays a separate package (used by the M23 process-executor integration tests)
   EXECLOCAL: "graphed-executors"
 

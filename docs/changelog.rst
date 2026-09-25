@@ -1,8 +1,10 @@
 What changed
 ============
 
-Unreleased
-----------
+0.0.4
+-----
+
+Requires ``graphed`` 0.0.5 or later.
 
 Growth axes
 ~~~~~~~~~~~

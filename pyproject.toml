@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graphed-histogram"
-version = "0.0.3"
+version = "0.0.4"
 description = "Deferred boost-histogram/hist filling on graphed task graphs (the dask-histogram analogue)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,7 +20,7 @@ classifiers = [
 # graphed: the Plan + content-addressed task_id a fill records into. The 0.0.2 floor is the
 # variation-aware fill lowering (varied weights, the variation axis, joint labels).
 # boost-histogram 1.4.1: 1.4.0 under numpy 2 decodes axes wrong, which the spec codec relies on.
-dependencies = ["graphed>=0.0.2", "boost-histogram>=1.4.1", "numpy>=1.24"]
+dependencies = ["graphed>=0.0.5", "boost-histogram>=1.4.1", "numpy>=1.24"]
 
 [project.optional-dependencies]
 # the backends + corpus + exec-local exercise resume on a realistic HEP analysis end-to-end.
