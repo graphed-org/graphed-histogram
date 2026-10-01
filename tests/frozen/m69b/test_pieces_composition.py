@@ -128,10 +128,10 @@ def test_a_composed_served_plan_equals_gh_plan_and_counts_events(tmp_path: Path)
 
 def test_an_unserved_composed_plan_fails_its_first_task_naming_serve(tmp_path: Path) -> None:
     _session, ev = events(write_events(str(tmp_path / "e.parquet")))
-    ctx = histserv_api().Context(memory_mb=1024, workers=1, name="m69b-pieces-unserved")
+    ctx = histserv_api().Context(memory_mb=1024, workers=1, name="m69b-pieces-bare")
     p = boost_api().pieces(_hists(ev, ctx))
     plan = compose(p, ev.x * 0 + 1, counter_first=True)
-    with pytest.raises(Exception, match="serve"):
+    with pytest.raises(Exception, match=r"\bserve\b"):
         run_bounded(lambda: SequentialRunner().run(plan))
 
 

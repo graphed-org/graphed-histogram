@@ -73,17 +73,18 @@ def test_backing_leaves_the_graph_identity_of_the_unbacked_twin(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
-    "axis",
+    ("axis", "tag"),
     [
-        bh.axis.Regular(4, 0.0, 1.0, growth=True),
-        bh.axis.StrCategory([], growth=True),
-        bh.axis.IntCategory([], growth=True),
+        (bh.axis.Regular(4, 0.0, 1.0, growth=True), "a"),
+        (bh.axis.StrCategory([], growth=True), "b"),
+        (bh.axis.IntCategory([], growth=True), "c"),
     ],
     ids=["Regular", "StrCategory", "IntCategory"],
 )
-def test_a_growth_axis_is_refused_naming_histserv_and_the_axis(axis: Any) -> None:
+def test_a_growth_axis_is_refused_naming_histserv_and_the_axis(axis: Any, tag: str) -> None:
     hs = histserv_api()
-    ctx = hs.Context(memory_mb=1024, workers=1, name=f"m69b-surface-growth-{type(axis).__name__}")
+    # the name holds none of the asserted words, so only the refusal itself can supply them
+    ctx = hs.Context(memory_mb=1024, workers=1, name=f"m69b-surface-growth-{tag}")
     with pytest.raises(REFUSED) as made:
         hs.Histogram(axis, context=ctx)
     with pytest.raises(REFUSED) as backed:
@@ -92,10 +93,14 @@ def test_a_growth_axis_is_refused_naming_histserv_and_the_axis(axis: Any) -> Non
         assert "histserv" in message.lower() and type(axis).__name__ in message
 
 
-@pytest.mark.parametrize("storage", ["Mean", "WeightedMean", "Unlimited", "AtomicInt64"])
-def test_a_storage_histserv_does_not_hold_is_refused_naming_it(storage: str) -> None:
+@pytest.mark.parametrize(
+    ("storage", "tag"),
+    [("Mean", "a"), ("WeightedMean", "b"), ("Unlimited", "c"), ("AtomicInt64", "d")],
+    ids=["Mean", "WeightedMean", "Unlimited", "AtomicInt64"],
+)
+def test_a_storage_histserv_does_not_hold_is_refused_naming_it(storage: str, tag: str) -> None:
     hs = histserv_api()
-    ctx = hs.Context(memory_mb=1024, workers=1, name=f"m69b-surface-storage-{storage}")
+    ctx = hs.Context(memory_mb=1024, workers=1, name=f"m69b-surface-storage-{tag}")
     make = getattr(bh.storage, storage)
     with pytest.raises(REFUSED) as made:
         hs.Histogram(bh.axis.Regular(4, 0.0, 1.0), storage=make(), context=ctx)

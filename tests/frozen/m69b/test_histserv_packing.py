@@ -229,7 +229,7 @@ def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(pa
     once = boost_api().pieces({"h": hist()})
     plan = built(once)
     once.serve(plan)
-    with pytest.raises(REFUSED, match=r"(?i)serve"):
+    with pytest.raises(REFUSED, match=r"\bserve\b"):
         once.serve(plan)
 
     local = boost_api().pieces({"u": hist(back=False)})
