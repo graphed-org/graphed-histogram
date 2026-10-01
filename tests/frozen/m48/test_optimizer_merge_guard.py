@@ -5,23 +5,21 @@ intern to one node id, and the result carries BOTH keys off one evaluated fill �
 `(output, label) -> node id` and derives the position as the rank in the DEDUPLICATED id list, so
 many labels may resolve to one position and the unpacker replicates that value.
 
-OPTIMIZER collapse is REFUSED. The M4 reducer also merges DISTINCT record ids (`x * 1.0` is an
+OPTIMIZER collapse is READ. The M4 reducer also merges DISTINCT record ids (`x * 1.0` is an
 identity token), so two fills differing only in `weight=[w]` versus `weight=[w * 1.0]` record two
-nodes and compile to ONE output. The sound key — the record-to-reduced map — does not exist until
-m49, so m48 refuses rather than mis-slicing; a mis-slice surfaces as an opaque worker-side
-`IndexError`. The guard's SITE is the group-plan builder, not `compile_ir` and not
-`aggregate_plan`, and it fires over a VARIED program only.
+nodes and compile to ONE output. The builder reads each marked fill at its compiled position (the
+record-to-reduced map), so every label fills from that one output; a rank in the deduplicated id
+list instead overruns the shorter value list as an opaque worker-side `IndexError`.
 
 §1.1's stringified-float families make `points={s: w * float(s)}` — which contains a literal
-`w * 1.0` member — a natural spelling, which is why this is guarded rather than documented.
+`w * 1.0` member — a natural spelling, which is why this case is pinned rather than documented.
 """
 
 from __future__ import annotations
 
 import graphed
 import numpy as np
-import pytest
-from graphed import GraphedError, compile_ir
+from graphed import compile_ir
 from graphed.core import GraphStore
 from graphed.core.execution import SequentialRunner
 from vary_hist_fixtures import in_memory_events, partitioned_events, weighted
@@ -46,8 +44,8 @@ def _deduping(events: object) -> gh.boost.Histogram:
 
 
 def test_the_optimizer_merge_is_real_before_the_guard_is_asserted() -> None:
-    """The instrument: without this the refusal below could be firing on a program whose labels
-    the optimizer never merged, and the guard would be untested."""
+    """The instrument: without this the read below could be passing on a program whose labels
+    the optimizer never merged, and the merged read would be untested."""
     session, events = in_memory_events()
     h = _merging(events)
     marked = [node.node_id for node in h.fill_nodes()]
@@ -56,14 +54,15 @@ def test_the_optimizer_merge_is_real_before_the_guard_is_asserted() -> None:
     assert len(GraphStore.deserialize(compiled.ir).outputs()) == 1
 
 
-def test_a_varied_program_whose_labels_the_optimizer_merges_is_refused() -> None:
+def test_a_varied_program_whose_labels_the_optimizer_merges_fills_every_label() -> None:
     _session, events, _source = partitioned_events()
-    with pytest.raises(GraphedError) as excinfo:
-        gh.plan({"met": _merging(events)})
-    message = str(excinfo.value)
-    assert "met" in message
-    assert "nominal" in message and "sig_up" in message
-    assert "points=" in message, "the refusal must carry the same-expression workaround"
+    result = gh.unpack(SequentialRunner().run(gh.plan({"met": _merging(events)})).value)
+    assert set(result["met"]) == {"nominal", "sig_up"}
+    nominal = result["met"]["nominal"].view(flow=True)
+    sig_up = result["met"]["sig_up"].view(flow=True)
+    assert nominal["value"].sum() > 0
+    assert np.array_equal(sig_up["value"], nominal["value"])
+    assert np.array_equal(sig_up["variance"], nominal["variance"])
 
 
 def test_a_varied_program_the_optimizer_does_not_merge_plans_normally() -> None:
