@@ -444,28 +444,55 @@ Layout = tuple[tuple[SlotKey, tuple[int, ...], str], ...]
 @dataclass
 class _GroupReduce:
     """Reduce one partition's evaluated fills to ``{slot: histogram}``: each slot sums its own
-    fills, each read at its compiled position. ``positions`` is set by ``pieces.on_compiled``."""
+    fills, each read at its compiled position (``positions``, set by ``pieces.on_compiled``). A
+    ``backed`` slot's sum is shipped to its histserv server and its value is the receipt."""
 
     layout: Layout
+    backed: tuple[SlotKey, ...] = ()
     positions: dict[int, int] = field(default_factory=dict)
 
     def __call__(self, fills: list[object]) -> dict[SlotKey, Any]:
         if not self.positions:
             raise GraphedError(_NO_POSITIONS)
-        return {key: _sum_fills(spec, ids, self.positions, fills) for key, ids, spec in self.layout}
+        out = {key: _sum_fills(spec, ids, self.positions, fills) for key, ids, spec in self.layout}
+        if self.backed:
+            from .histserv import _ship  # noqa: PLC0415  (only a backed slot ships)
+
+            backed = set(self.backed)
+            out = {
+                key: _ship(key, spec, out[key]) if key in backed else out[key]
+                for key, _ids, spec in self.layout
+            }
+        return out
+
+    def resolve_services(self, value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
+        """``value`` with each receipt replaced by its server histogram, deleted from the server."""
+        return {
+            key: h if isinstance(h, bh.Histogram) else h.snapshot(delete=True) for key, h in value.items()
+        }
 
 
 def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
-    """Combine: histogram groups add key-wise, each pair through :func:`add_histograms`."""
-    return {key: add_histograms(a[key], b[key]) for key in a}
+    """Combine: histogram groups add key-wise, each pair through :func:`add_histograms`, and
+    receipts by their own ``+``."""
+    return {
+        key: add_histograms(a[key], b[key]) if isinstance(a[key], bh.Histogram) else a[key] + b[key]
+        for key in a
+    }
 
 
 @dataclass(frozen=True)
 class _GroupZero:
     layout: Layout
+    backed: tuple[SlotKey, ...] = ()
 
     def __call__(self) -> dict[SlotKey, Any]:
-        return {key: zero_of(spec) for key, _ids, spec in self.layout}
+        if not self.backed:
+            return {key: zero_of(spec) for key, _ids, spec in self.layout}
+        from .histserv import Receipt  # noqa: PLC0415
+
+        backed = set(self.backed)
+        return {key: Receipt(spec) if key in backed else zero_of(spec) for key, _ids, spec in self.layout}
 
 
 class Histogram(bh.Histogram):
@@ -943,19 +970,21 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     evaluators: dict[str, Callable[..., object]] = {}
     for _, h in items:
         evaluators.update(h._evaluators)
+    backing = tuple(
+        (key, spec, h._histserv)
+        for name, h in items
+        if h._histserv is not None
+        for key, _ids, spec in _slots(name, h)
+    )
+    backed = tuple(key for key, _spec, _ctx in backing)
     return HistogramPieces(
         fill_nodes=tuple(n for _, h in items for n in h._fill_nodes),
-        reduce=_GroupReduce(layout),
+        reduce=_GroupReduce(layout, backed),
         combine=_add_groups,
-        empty=_GroupZero(layout),
+        empty=_GroupZero(layout, backed),
         externals=evaluators,
         items=items,
-        backing=tuple(
-            (key, spec, h._histserv)
-            for name, h in items
-            if h._histserv is not None
-            for key, _ids, spec in _slots(name, h)
-        ),
+        backing=backing,
     )
 
 
@@ -1040,7 +1069,7 @@ def _variation_labels(
     )
 
 
-def unpack(value: Mapping[SlotKey, bh.Histogram]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
+def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
     """The result unpacker: the executed plan's flat slot-keyed value as the per-output shape.
 
     The shape is decided by the KEY FORM, which is total and per output — a bare output name is
@@ -1048,9 +1077,11 @@ def unpack(value: Mapping[SlotKey, bh.Histogram]) -> dict[str, bh.Histogram | di
     ``(output, None)`` is the axis-mode histogram, which carries its variations on an axis
     rather than in the mapping. A varied sibling output always carries at least two labels, so no
     output's shape is ambiguous, in a mixed plan exactly as in a single-mode one.
-    ``graphed.labels``/``universe``/``nominal`` read both shapes uniformly."""
+    ``graphed.labels``/``universe``/``nominal`` read both shapes uniformly. A histserv receipt
+    unpacks to its server histogram's snapshot, which stays on the server."""
     out: dict[str, Any] = {}
-    for key, hist in value.items():
+    for key, held in value.items():
+        hist = held if isinstance(held, bh.Histogram) else held.snapshot()
         if not isinstance(key, tuple):
             out[key] = hist
             continue

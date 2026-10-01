@@ -16,19 +16,23 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import threading
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from typing import Any, TypeVar
 
+import boost_histogram as bh
+import numpy as np
 from graphed import GraphedError
 from graphed.core import Partition
 from graphed.core.execution import Plan, WorkerResources
-from graphed.services import Launch, ServiceSpec
+from graphed.services import Bindable, Launch, Resolvable, ServiceSpec, UnboundService, split_endpoint
 
 from . import boost
-from ._spec import _make_axis
+from ._spec import _make_axis, zero_of
 from .boost import SlotKey
 
 H = TypeVar("H", bound=boost.Histogram)
@@ -239,6 +243,141 @@ class Histogram(boost.Histogram):
         backed(self, context)
 
 
+class HistservError(GraphedError):
+    """A histserv RPC failed: the server's ``endpoint``, the gRPC status ``code`` name and its
+    ``details``. Unlike grpc's own error, it pickles, so it crosses a process boundary intact."""
+
+    def __init__(self, endpoint: str, code: str, details: str) -> None:
+        super().__init__(endpoint, code, details)
+        self.endpoint = endpoint
+        self.code = code
+        self.details = details
+
+    def __str__(self) -> str:
+        return f"histserv at {self.endpoint} answered {self.code}: {self.details}"
+
+
+#: per process, so a forked worker never reuses its parent's channel
+_CLIENTS: dict[tuple[int, str], Any] = {}
+_CLIENTS_LOCK = threading.Lock()
+
+
+def _call(endpoint: str, rpc: Callable[[Any], V]) -> V:
+    """``rpc(client)`` against ``endpoint``'s cached client, a gRPC error raised as a
+    :class:`HistservError`."""
+    import grpc  # noqa: PLC0415  (only a bound run talks to a server)
+
+    with _CLIENTS_LOCK:
+        key = (os.getpid(), endpoint)
+        client = _CLIENTS.get(key)
+        if client is None:
+            from histserv import Client  # noqa: PLC0415
+
+            client = _CLIENTS[key] = Client(split_endpoint(endpoint)[1])
+    try:
+        return rpc(client)
+    except grpc.RpcError as err:
+        raise HistservError(endpoint, err.code().name, str(err.details())) from err
+
+
+@dataclass(frozen=True)
+class Receipt:
+    """A backed slot's value between its reduce and ``resolve_services``: the server histogram
+    holding it. Receipts add by identity; one without ``hist_id`` is the empty value."""
+
+    spec: str
+    endpoint: str | None = None
+    hist_id: str | None = None
+
+    def __add__(self, other: Receipt) -> Receipt:
+        if other.hist_id is None or other == self:
+            return self
+        if self.hist_id is None:
+            return other
+        raise GraphedError(
+            f"receipts of two histserv histograms do not add: {self.hist_id} at {self.endpoint} and "
+            f"{other.hist_id} at {other.endpoint}"
+        )
+
+    def snapshot(self, *, delete: bool = False) -> Any:
+        """The server histogram's contents as the slot's boost histogram (empty for the empty
+        receipt); ``delete`` also drops it from the server."""
+        out = zero_of(self.spec)
+        if self.endpoint is None or self.hist_id is None:
+            return out
+        from histserv.protos import hist_pb2  # noqa: PLC0415
+        from histserv.serialize import deserialize_chunked_hist_payload  # noqa: PLC0415
+
+        request = hist_pb2.SnapshotRequest(hist_id=self.hist_id, delete_from_server=delete)
+        reply = _call(self.endpoint, lambda c: c.stub.Snapshot(request, timeout=_RPC_TIMEOUT_S))
+        view = out.view(flow=True)
+        for key, chunk in deserialize_chunked_hist_payload(reply.payload).items():
+            # a keyed chunk is one label of the variation axis, the spec's last
+            view[(..., out.axes[-1].index(key[0])) if key else ...] = chunk
+        return out
+
+
+_RPC_TIMEOUT_S = 600
+
+
+def _template(key: SlotKey, spec: str) -> Any:
+    """The server-side histogram of a slot: a no-flow ``Regular`` per non-variation axis over its
+    flow extent, so category and boolean flow bins survive, and the variation axis as the chunk
+    axis."""
+    import hist  # noqa: PLC0415
+    from histserv.chunked_hist import ChunkedHist  # noqa: PLC0415
+
+    payload = json.loads(spec)
+    labels = _labels(key, spec)
+    dense = payload["axes"] if labels is None else payload["axes"][:-1]
+    axes = [
+        hist.axis.Regular(_make_axis(a).extent, 0.0, 1.0, underflow=False, overflow=False, name=f"a{i}")
+        for i, a in enumerate(dense)
+    ]
+    if labels is not None:
+        axes.append(hist.axis.StrCategory(list(labels), name="variation"))
+    return ChunkedHist(*axes, storage=getattr(bh.storage, payload["storage"])())
+
+
+#: the running task's ``(unique id, {slot: (endpoint, hist_id)})``, set by `_Served.__call__`
+_SCOPE: ContextVar[tuple[str, dict[SlotKey, tuple[str, str]]] | None] = ContextVar(
+    "graphed_histogram_histserv_scope", default=None
+)
+
+
+def _ship(key: SlotKey, spec: str, partial: Any) -> Receipt:
+    """One partition's partial of a backed slot, sent as one ``FillMany`` keyed by the partition
+    (a chunk per variation label); a replay of that partition is ``ALREADY_EXISTS``, already done."""
+    scope = _SCOPE.get()
+    if scope is None or key not in scope[1]:
+        raise GraphedError(
+            f"histserv-backed slot {key!r} fills on a server, so it runs only in a plan served by "
+            "pieces.serve(plan) and bound to its servers"
+        )
+    from histserv.protos import hist_pb2  # noqa: PLC0415
+    from histserv.serialize import serialize_chunk_payload, serialize_unique_id  # noqa: PLC0415
+
+    unique_id, homes = scope
+    endpoint, hist_id = homes[key]
+    view = np.asarray(partial.view(flow=True))
+    labels = _labels(key, spec)
+    if labels is None:
+        chunks = [serialize_chunk_payload((), view, shape=view.shape, dtype=view.dtype)]
+    else:
+        chunks = [
+            serialize_chunk_payload((label,), view[..., i], shape=view.shape[:-1], dtype=view.dtype)
+            for i, label in enumerate(labels)
+        ]
+    request = hist_pb2.FillManyRequest(hist_id=hist_id, chunks=chunks)
+    request.unique_id = serialize_unique_id(unique_id)
+    try:
+        _call(endpoint, lambda c: c.stub.FillMany(request, timeout=_RPC_TIMEOUT_S))
+    except HistservError as err:
+        if err.code != "ALREADY_EXISTS":
+            raise
+    return Receipt(spec, endpoint, hist_id)
+
+
 @dataclass(frozen=True)
 class _Home:
     """Where a backed slot fills: its server's service name, and the slot's histogram spec."""
@@ -247,12 +386,84 @@ class _Home:
     spec: str
 
 
+def _create(endpoint: str, key: SlotKey, spec: str) -> str:
+    template = _template(key, spec)
+    return str(_call(endpoint, lambda c: c.init(template, timeout=_RPC_TIMEOUT_S)).hist_id)
+
+
+class _Handles:
+    """A bound plan's server-side histogram ids, created once, under a lock, on first use."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._ids: dict[SlotKey, str] | None = None
+
+    def ids(self, endpoints: Mapping[str, str], slots: Sequence[tuple[SlotKey, _Home]]) -> dict[SlotKey, str]:
+        with self._lock:
+            if self._ids is None:
+                self._ids = {key: _create(endpoints[home.name], key, home.spec) for key, home in slots}
+            return self._ids
+
+    def __getstate__(self) -> dict[SlotKey, str] | None:
+        return self._ids
+
+    def __setstate__(self, ids: dict[SlotKey, str] | None) -> None:
+        self._lock = threading.Lock()
+        self._ids = ids
+
+
 @dataclass(frozen=True)
 class _Served:
-    """A served plan's process: the plan's own, plus each backed slot's server."""
+    """A served plan's process: the plan's own, around which each task's backed slots know their
+    server histograms. Those are created on the first call or the first pickle, which every runner
+    reaches in the driver, so a worker receives their ids and creates none."""
 
     inner: Callable[[Partition, WorkerResources], Any]
     slots: tuple[tuple[SlotKey, _Home], ...]
+    endpoints: dict[str, str] | None = None
+    handles: _Handles | None = None
+
+    def _names(self) -> list[str]:
+        return sorted({home.name for _key, home in self.slots})
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> _Served:
+        """A copy bound to ``endpoints`` over those it holds, with fresh handles; no RPC."""
+        merged = {**(self.endpoints or {}), **endpoints}
+        missing = [name for name in self._names() if name not in merged]
+        if missing:
+            raise UnboundService(*missing)
+        for name in self._names():
+            if split_endpoint(merged[name])[0] not in ("tcp", "grpc"):
+                raise ValueError(
+                    f"histserv server {name!r} speaks plaintext gRPC only, so its endpoint is "
+                    f"tcp:// or grpc://, not {merged[name]!r}"
+                )
+        inner = self.inner.bind_services(endpoints) if isinstance(self.inner, Bindable) else self.inner
+        bound = {name: merged[name] for name in self._names()}
+        return replace(self, inner=inner, endpoints=bound, handles=_Handles())
+
+    def __call__(self, partition: Partition, resources: WorkerResources) -> Any:
+        if self.endpoints is None or self.handles is None:
+            raise UnboundService(*self._names())
+        ids = self.handles.ids(self.endpoints, self.slots)
+        homes = {key: (self.endpoints[home.name], ids[key]) for key, home in self.slots}
+        token = _SCOPE.set((str(partition), homes))
+        try:
+            return self.inner(partition, resources)
+        finally:
+            _SCOPE.reset(token)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        if self.endpoints is not None and self.handles is not None:
+            self.handles.ids(self.endpoints, self.slots)
+        return (_Served, (self.inner, self.slots, self.endpoints, self.handles))
+
+    def resolve_services(self, value: Any) -> Any:
+        return self.inner.resolve_services(value) if isinstance(self.inner, Resolvable) else value
+
+    def part_paths(self, partition: Partition) -> Sequence[str]:
+        hook = getattr(self.inner, "part_paths", None)
+        return () if hook is None else hook(partition)
 
 
 def _serve(plan: Plan[V], session: Any, backing: Sequence[tuple[SlotKey, str, Context]]) -> Plan[V]:
@@ -287,8 +498,9 @@ def _serve(plan: Plan[V], session: Any, backing: Sequence[tuple[SlotKey, str, Co
         session.declare_service(spec)
     services = {s.name: s for s in plan.services} | landed
     slots = tuple((key, _Home(f"{homes[key][0].name}-{homes[key][1]}", spec)) for key, spec, _ctx in backing)
-    served: Any = _Served(plan.process, slots)
-    return replace(plan, process=served, services=tuple(services[n] for n in sorted(services)))
+    return replace(
+        plan, process=_Served(plan.process, slots), services=tuple(services[n] for n in sorted(services))
+    )
 
 
-__all__ = ["CEILING", "Context", "Histogram", "backed"]
+__all__ = ["CEILING", "Context", "Histogram", "HistservError", "Receipt", "backed"]
