@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import sysconfig
@@ -90,7 +91,7 @@ def test_a_growth_axis_is_refused_naming_histserv_and_the_axis(axis: Any, tag: s
     with pytest.raises(REFUSED) as backed:
         hs.backed(gh.boost.Histogram(axis), ctx)
     for message in (str(made.value), str(backed.value)):
-        assert "histserv" in message.lower() and type(axis).__name__ in message
+        assert re.search(r"(?i)\bhistserv\b", message) and re.search(rf"\b{type(axis).__name__}\b", message)
 
 
 @pytest.mark.parametrize(
@@ -107,7 +108,7 @@ def test_a_storage_histserv_does_not_hold_is_refused_naming_it(storage: str, tag
     with pytest.raises(REFUSED) as backed:
         hs.backed(gh.boost.Histogram(bh.axis.Regular(4, 0.0, 1.0), storage=make()), ctx)
     for message in (str(made.value), str(backed.value)):
-        assert "histserv" in message.lower() and storage in message
+        assert re.search(r"(?i)\bhistserv\b", message) and re.search(rf"\b{storage}\b", message)
 
 
 @pytest.mark.parametrize("storage", ["Double", "Int64", "Weight"])

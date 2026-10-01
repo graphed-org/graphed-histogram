@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pickle
+import re
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +72,9 @@ def test_a_killed_server_raises_a_histserv_error_that_survives_a_pickle(tmp_path
         with pytest.raises(hs.HistservError) as raised:
             run_bounded(lambda: bound.process(second.partition, res))
     err = raised.value
-    assert started[0].address in str(err) and "UNAVAILABLE" in str(err)
+    assert re.search(rf"\b{re.escape(started[0].address)}\b", str(err)) and re.search(
+        r"\bUNAVAILABLE\b", str(err)
+    )
     assert started[0].address in err.endpoint and err.code == "UNAVAILABLE"
     back = pickle.loads(pickle.dumps(err))
     assert type(back) is type(err) and str(back) == str(err)
@@ -90,4 +93,4 @@ def test_receipts_of_two_server_histograms_refuse_to_add(tmp_path: Path) -> None
     assert (h + h).hist_id == h.hist_id
     with pytest.raises(REFUSED) as raised:
         h + o
-    assert h.hist_id in str(raised.value) and o.hist_id in str(raised.value)
+    assert all(re.search(rf"\b{hist_id}\b", str(raised.value)) for hist_id in (h.hist_id, o.hist_id))

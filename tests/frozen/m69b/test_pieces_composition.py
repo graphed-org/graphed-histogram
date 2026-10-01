@@ -139,7 +139,7 @@ def test_a_reduce_whose_hook_never_ran_fails_naming_on_compiled(tmp_path: Path) 
     _session, ev = events(write_events(str(tmp_path / "e.parquet")))
     p = boost_api().pieces(_hists(ev, None))
     plan = compose(p, ev.x * 0 + 1, counter_first=True, hook=False)
-    with pytest.raises(Exception, match="on_compiled"):
+    with pytest.raises(Exception, match=r"\bon_compiled\b"):
         run_bounded(lambda: SequentialRunner().run(plan))
 
 
@@ -149,7 +149,7 @@ def test_one_pieces_feeds_one_plan_and_the_first_still_runs_right(tmp_path: Path
     counter = ev.x * 0 + 1
     p = boost_api().pieces({"h": _weighted(ev)})
     first = compose(p, counter, counter_first=True)
-    with pytest.raises(Exception, match="pieces"):
+    with pytest.raises(Exception, match=r"\bpieces\b"):
         compose(p, counter, counter_first=False)
     value = SequentialRunner().run(first).value
     assert value["n"] == len(ak.from_parquet(path))

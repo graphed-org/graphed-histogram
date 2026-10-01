@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import math
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -191,8 +192,8 @@ def test_a_slot_past_the_message_ceiling_is_refused_naming_the_sizes(path: str) 
     with pytest.raises(REFUSED) as raised:
         _labelled(path, 1_048_447, ctx)
     message = str(raised.value)
-    assert "huge" in message and str(CEILING) in message
-    assert str(over) in message or str(over + 64 * 1024) in message
+    assert re.search(r"\bhuge\b", message) and re.search(rf"\b{CEILING}\b", message)
+    assert re.search(rf"\b({over}|{over + 64 * 1024})\b", message)
 
 
 def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(path: str) -> None:
@@ -217,19 +218,19 @@ def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(pa
 
     p = boost_api().pieces({"h": hist()})
     adaptive = dataclasses.replace(built(p), next_tasks=lambda _ctx: None)
-    with pytest.raises(REFUSED, match="next_tasks"):
+    with pytest.raises(REFUSED, match=r"\bnext_tasks\b"):
         p.serve(adaptive)
 
     part = gh.plan({"u": hist(back=False)}, steps_per_file=3).tasks[0].partition
     unbacked = gh.plan({"u": hist(back=False)}, partitions=[part, part])
     assert len(unbacked.tasks) == 2 and unbacked.services == ()
-    with pytest.raises(REFUSED, match=r"(?i)partition"):
+    with pytest.raises(REFUSED, match=r"(?i)\bpartitions?\b"):
         gh.plan({"h": hist()}, partitions=[part, part])
 
     once = boost_api().pieces({"h": hist()})
     plan = built(once)
     once.serve(plan)
-    with pytest.raises(REFUSED, match=r"\bserve\b"):
+    with pytest.raises(REFUSED, match=r"(?i)\bserved?\b"):
         once.serve(plan)
 
     local = boost_api().pieces({"u": hist(back=False)})
@@ -256,7 +257,7 @@ def test_an_equal_second_context_shares_the_first_ones_servers_without_overfilli
     n = "m69b-pack-equal"
     first = hs.Context(memory_mb=160, workers=1, name=n)
     p1 = _plan(write_events(str(tmp_path / "one.parquet"), seed=1), 3, {"p1a": (2.5, first)})
-    with pytest.warns(Warning, match=n):
+    with pytest.warns(Warning, match=rf"\b{re.escape(n)}\b"):
         second = hs.Context(memory_mb=160, workers=1, name=n)
     p2 = _plan(
         write_events(str(tmp_path / "two.parquet"), seed=2), 3, {"p2a": (2.7, second), "p2b": (0.25, second)}
@@ -279,12 +280,13 @@ HELD = "m69b-pack-held-name"
 
 def test_a_name_holds_its_arguments_for_the_process() -> None:
     hs = histserv_api()
-    hs.Context(memory_mb=150, workers=1, name=HELD)
+    # sizes no line number of this file can echo
+    hs.Context(memory_mb=1500, workers=1, name=HELD)
     with pytest.raises(REFUSED) as raised:
-        hs.Context(memory_mb=170, workers=1, name=HELD)
-    assert "150" in str(raised.value) and "170" in str(raised.value)
+        hs.Context(memory_mb=1700, workers=1, name=HELD)
+    assert re.search(r"\b1500\b", str(raised.value)) and re.search(r"\b1700\b", str(raised.value))
     hs.Context(memory_mb=[140, 160], workers=1, name=f"{HELD}-sizes")
-    with pytest.warns(Warning, match=f"{HELD}-sizes"):
+    with pytest.warns(Warning, match=rf"\b{re.escape(HELD)}-sizes\b"):
         hs.Context(memory_mb=[160, 140], workers=1, name=f"{HELD}-sizes")
     with pytest.raises(REFUSED):
         hs.Context(memory_mb=[140], workers=1, name=f"{HELD}-sizes")
@@ -297,7 +299,7 @@ def test_a_name_holds_its_arguments_for_the_process() -> None:
 def test_a_later_test_still_finds_the_name_held() -> None:
     """Runs after ``test_a_name_holds_its_arguments_for_the_process`` in file order, in one process."""
     with pytest.raises(REFUSED):
-        histserv_api().Context(memory_mb=170, workers=1, name=HELD)
+        histserv_api().Context(memory_mb=1700, workers=1, name=HELD)
 
 
 def test_plan_services_are_sorted_by_name(path: str) -> None:
