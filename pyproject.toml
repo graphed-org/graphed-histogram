@@ -60,6 +60,8 @@ exclude = ["CLAUDE.md", ".graphed"]
 testpaths = ["tests"]
 pythonpath = ["src", "tests/frozen/m23", "tests/_corpus"]
 addopts = "-q"
+# Below run_bounded's 240 s, so a hang prints the stuck stack before the bare HARD TIMEOUT.
+faulthandler_timeout = 200
 
 [tool.coverage.run]
 branch = true
