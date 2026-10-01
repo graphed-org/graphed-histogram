@@ -40,12 +40,13 @@ V = TypeVar("V")
 
 MiB = 1 << 20
 # The size model's constants, each the maximum over the MODEL lines of the plan's
-# probes/m69b/probe_histserv_memory{,.amd64}.txt and (_PER_CONN) probe_histserv_connections{,.amd64}.txt.
-_BASE = 129 * MiB
+# probes/m69b/probe_histserv_memory.txt, probe_histserv_memory.amd64.txt and probe_histserv_memory.gha.txt,
+# and (_PER_CONN) probe_histserv_connections{,.amd64}.txt.
+_BASE = 164 * MiB
 _PER_HIST = 4000
 _PER_TASK = 160
 _FILL_A = 5.5
-_FILL_B = 3.0
+_FILL_B = 3.5
 _PER_CONN = 19 * 1024
 #: histserv 0.2.1's client refuses a message past 2**29 bytes; a fill message is the slot's stored
 #: bytes plus at most this much

@@ -706,7 +706,7 @@ partial, and hands a receipt through the tree.
     session = Session(AwkwardBackend())
     events = from_parquet(session, "events", "x.parquet", steps_per_file=4)
 
-    ctx = histserv.Context(memory_mb=[160, 512], workers=8, name="docs")
+    ctx = histserv.Context(memory_mb=[256, 512], workers=8, name="docs")
     big = histserv.Histogram(bh.axis.Regular(1_000_000, 0.0, 4.0), context=ctx)
     small = histserv.Histogram(bh.axis.Regular(40, 0.0, 4.0), storage=bh.storage.Weight(), context=ctx)
     big.fill(events.x)
@@ -720,12 +720,12 @@ partial, and hands a receipt through the tree.
 
 Printed output::
 
-    docs-0 512 369.5 MiB 2
+    docs-0 512 435.0 MiB 2
     docs-0 histserv tcp (10000, 10100) {'memory_mb': 512}
 
 ``memory_mb`` is the server sizes you can offer, in MiB; ``workers`` is your bound on the worker
 processes that dial one server and the fills in flight to it. Nothing has started: ``gh.plan``
-sized the two histograms, found that ``big`` needs more than the 160 MiB size, opened a 512 MiB
+sized the two histograms, found that ``big`` needs more than the 256 MiB size, opened a 512 MiB
 server for it and put ``small`` in its spare room. ``histserv.backed(h, ctx)`` backs a histogram you
 already built (a ``hist.graphed.Hist`` too) and returns it.
 
@@ -776,10 +776,12 @@ variation labels in axis mode, else 1. A server's predicted peak is::
 
 summed over the results it holds, ``tasks`` the plan's task count and ``M`` the largest ``stored``
 on it. The constants were measured on histserv 0.2.1 under CPython 3.11–3.14 on Linux arm64 and
-amd64, each the largest seen: ``B`` = 129 MiB (the server at rest, the announcer a batch job adds,
-and the driver's connection), ``O`` = 4000 B per histogram, ``I`` = 160 B per histogram per task
-(its retry record), ``a`` = 5.5 and ``b`` = 3.0 (a fill's transient, in units of ``M``) and ``K`` =
-19 KiB per worker connection.
+amd64, in containers without pandas and on GitHub's runners with it, each the largest seen: ``B`` =
+164 MiB (the server at rest, the announcer a batch job adds, and the driver's connection), ``O`` =
+4000 B per histogram, ``I`` = 160 B per histogram per task (its retry record), ``a`` = 5.5 and
+``b`` = 3.5 (a fill's transient, in units of ``M``) and ``K`` = 19 KiB per worker connection. The
+server's environment sets ``B``: histserv imports ``hist``, which imports pandas and pyarrow when
+they are installed.
 
 Results are placed largest first, ties by name. Each lands on the first server of its context with
 room (the prediction with it added is at most the server's size), else on a new server at the

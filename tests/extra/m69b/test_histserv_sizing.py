@@ -47,7 +47,7 @@ def test_slots_are_sized_by_flow_extents_with_one_chunk_per_axis_label(path: str
 def test_a_refused_serve_opens_no_server(path: str) -> None:
     """Every refusal precedes placement: refusing after packing would leave servers no plan
     declares, and the next serve would pack around them."""
-    ctx = histserv.Context(memory_mb=160, workers=1, name="m69b-extra-refused")
+    ctx = histserv.Context(memory_mb=1024, workers=1, name="m69b-extra-refused")
     _session, ev = events(path)
     hist = gh.boost.Histogram(bh.axis.Regular(8, 0.0, 1.0), storage=bh.storage.Double())
     hist.fill(ev.x)

@@ -69,3 +69,24 @@ m48/m49 tests and 46 m69b items; the 5 memory-model items skip off Linux).
 - Gates: frozen + extra 405 passed, 6 skipped (5 memory-model off Linux, correctionlib absent);
   per-file min `_spec.py` 95.9 %; diff-cover 100 % (369 lines) vs origin/main; ruff, format, mypy
   clean; sphinx -W ok.
+
+## Iteration 4 — 2026-10-01 — review r1: the baseline measured where pandas is installed
+
+- Review r1 rejected two frozen-suite defects (no implementation defect); refrozen at
+  freeze-m69b-fixup (1d432af): harness `BASE` 164 MiB, `FILL_B` 3.5, sizes as offsets from `BASE`.
+- src `_BASE`/`_FILL_B` re-derived as the maxima over the 16 MODEL lines of
+  `probe_histserv_memory{,.amd64,.gha}.txt`: B 164 MiB (gha ubuntu-latest 3.14), b 3.5 (gha
+  ubuntu-latest 3.13); O 4000, I 160, a 5.5 unchanged (amd64 lines). Probe: `import histserv` loads
+  `hist.interop`, pandas and pyarrow in this venv.
+- `tests/extra/m69b`: the refused-serve context offered 160 MiB, now below `B`; it offers 1024.
+- `design.rst`: the example offers 256/512 MiB (160 is below `B`), outputs re-run verbatim; the
+  constants paragraph says where they were measured and that the server's environment sets `B`.
+- Gates: macOS frozen 379 passed + 5 skipped (memory model off Linux), extra 26 passed + 1 skipped;
+  per-file min `_spec.py` 95.9 %; diff-cover 100 % (368 lines); ruff, format, mypy (75 files) clean;
+  sphinx -W ok; precommit ok. Linux arm64 python:3.12-slim with pandas 3.0.6 + pyarrow 25.0.1 and
+  graphed's CI wheel (run 36801426917): 410 passed, 1 skipped (correctionlib), memory model included.
+- Process-pool timeout watch (CI 36809889213 macOS 3.12 attempt 1): no mechanism found. Workers are
+  spawned (`get_context("spawn")` in graphed_executors.local), so no channel or lock crosses a fork;
+  clients and the handles' lock are created per process. 30/30 isolated local runs passed at ~2.5 s.
+  The failure log carries no worker stack. An RPC deadline (600 s) exceeds the harness's 240 s, so a
+  stalled RPC reports as HARD TIMEOUT, not DEADLINE_EXCEEDED.
