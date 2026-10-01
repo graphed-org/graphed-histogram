@@ -137,26 +137,33 @@ def test_the_same_program_with_a_matching_factor_runs() -> None:
     assert got.sum(flow=True).value > 0
 
 
-# --- A4: the merge refusal names the output whose fills actually merged ------------------------
-def test_a_merge_inside_an_unvaried_sibling_names_that_sibling() -> None:
-    """In a mixed plan the shortfall is global but the culprit need not be varied; naming only the
-    varied outputs sends the reader to the wrong histogram with an inapplicable workaround."""
+# --- A4: a merge inside an unvaried sibling is read once per marked fill ---------------------
+def test_a_merge_inside_an_unvaried_sibling_sums_both_fills_beside_a_varied_output() -> None:
+    """In a mixed plan the merged pair is read at each fill's position: the merged output is two
+    fills' worth, the varied output its own. A read per distinct output halves `merging`."""
     _session, source, _data = partitioned_events()
     events = gnano.events(source)
     factor = events.MET.pt * 0.01
 
+    def single() -> Any:
+        h = weighted()
+        h.fill(events.MET.pt, weight=[factor])
+        return h
+
     varied = weighted()
     varied.fill(events.MET.pt, weight=[graphed.vary(factor, "sig", up=factor * 1.2)])
-    merging = weighted()  # two fills the M4 identity rules collapse into one output
-    merging.fill(events.MET.pt, weight=[factor])
+    merging = single()  # two fills the M4 identity rules collapse into one output
     merging.fill(events.MET.pt, weight=[factor * 1.0])
+    pair = merging.fill_nodes()
+    assert len(graphed.core.GraphStore.deserialize(compile_ir(pair[0].session, *pair).ir).outputs()) == 1
 
-    with pytest.raises(GraphedError) as excinfo:
-        gh.plan({"varied": varied, "merging": merging}, steps_per_file=2)
-    message = str(excinfo.value)
-    assert "merging" in message
-    assert "varied carries" not in message
-    assert "points=" not in message, "the workaround does not apply to an unvaried output"
+    run = SequentialRunner().run
+    got = gh.unpack(run(gh.plan({"varied": varied, "merging": merging}, steps_per_file=2)).value)
+    one = cast(bh.Histogram, gh.unpack(run(gh.plan({"m": single()}, steps_per_file=2)).value)["m"])
+    merged, varied_out = cast(bh.Histogram, got["merging"]), cast(dict[str, Any], got["varied"])
+    assert one.sum(flow=True).value > 0
+    assert np.array_equal(merged.view(flow=True)["value"], 2.0 * one.view(flow=True)["value"])
+    assert np.array_equal(varied_out["nominal"].view(flow=True)["value"], one.view(flow=True)["value"])
 
 
 # --- A5: ancestor-context weight factors are re-indexed ----------------------------------------

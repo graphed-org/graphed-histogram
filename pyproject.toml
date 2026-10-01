@@ -43,6 +43,8 @@ dev = [
   "diff_cover",
 ]
 docs = ["sphinx", "furo"]
+# filling on histserv servers (graphed_histogram.histserv); grpcio ships no free-threaded wheel
+histserv = ["histserv>=0.2.1,<0.3"]
 
 [project.urls]
 Homepage = "https://github.com/graphed-org/graphed-histogram"
@@ -91,7 +93,7 @@ files = ["src", "tests", "scripts"]
 disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
-module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "hist.*", "pyarrow.*"]
+module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "hist.*", "pyarrow.*", "histserv.*", "grpc.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
@@ -103,6 +105,7 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = [
   "behavior_toy",
+  "histserv_harness",
   "m49_hist_fixtures",
   "m50_axis_fixtures",
   "m52_joint_fill_fixtures",
@@ -123,6 +126,12 @@ module = [
   "test_fill_unweighted",
   "test_golden_side_strip",
   "test_group_plan",
+  "test_histserv_fill_path",
+  "test_histserv_lazy_init",
+  "test_histserv_memory_model",
+  "test_histserv_packing",
+  "test_histserv_retries",
+  "test_histserv_surface",
   "test_jer_stochastic",
   "test_joint_axis_mode_parity",
   "test_joint_fill_resolution",
@@ -131,6 +140,7 @@ module = [
   "test_multi_weight_fills",
   "test_optimizer_merge_guard",
   "test_output_label_listing",
+  "test_pieces_composition",
   "test_points_bare_histogram",
   "test_process_executor_witnesses",
   "test_reference_matrix",

@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, TypeVar
 
 import boost_histogram as bh
 import graphed
 import numpy as np
-from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan, compile_ir
+from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan
 from graphed.core import GraphStore, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key
@@ -35,6 +35,8 @@ from ._spec import content_hash, spec_of, zero_of
 SlotKey = str | tuple[str, str | None]
 
 Operand = Any  # an `Array`, or a `Varied` of them (which carries `Array`'s surface)
+
+V = TypeVar("V")
 
 #: this package's own version, recorded on the payloads it descriptors (the fill nodes carry
 #: boost-histogram's, being boost payloads; the row-space guard is ours)
@@ -399,53 +401,61 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     return a + b
 
 
-@dataclass(frozen=True)
-class _SumFills:
-    """Reduce one partition's evaluated fills to a single histogram (the single-histogram case): the
-    partition result is the sum of that histogram's own fills.
+def _positions(compiled: CompiledGraph, nodes: Sequence[Array]) -> dict[int, int]:
+    """Each marked fill's index among the values ``compiled`` evaluates to. The optimizer may merge
+    two marked fills into one output (``weight=[w]`` and ``weight=[w * 1.0]``); reading each fill at
+    its own position reads that output once per marked fill, which is what filling twice means."""
+    order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
+    return {n.node_id: order[compiled.correspondence.node_map[n.node_id][0]] for n in nodes}
 
-    It sums by OUTPUT INDEX, like `_GroupReduce`'s layout and for the same reason: two staged fills
-    that record identically collapse to ONE node, `evaluate_ir` returns one value per DISTINCT
-    output, and iterating the values would count that fill once — a plausible, physically wrong
-    histogram at half strength. Repeating the index replicates it, which is what filling twice means.
-    """
+
+_NO_POSITIONS = (
+    "this histogram reduce has no fill positions: its plan's aggregate_plan(on_compiled=) never fired; "
+    "pass on_compiled=pieces.on_compiled"
+)
+
+
+def _sum_fills(spec: str, node_ids: Sequence[int], positions: Mapping[int, int], fills: list[object]) -> Any:
+    total = zero_of(spec)
+    for nid in node_ids:
+        total = add_histograms(total, fills[positions[nid]])
+    return total
+
+
+@dataclass
+class _SumFills:
+    """Reduce one partition's evaluated fills to a single histogram: the sum of this histogram's
+    staged fills, each read at its compiled position (``positions``, set by the plan's hook)."""
 
     spec: str
-    indices: tuple[int, ...]
+    node_ids: tuple[int, ...]
+    positions: dict[int, int] = field(default_factory=dict)
 
     def __call__(self, fills: list[object]) -> bh.Histogram:
-        total = zero_of(self.spec)
-        for i in self.indices:
-            total = add_histograms(total, fills[i])
-        return total
-
-
-#: the slot layout: per slot, its key, the OUTPUT INDICES it sums, and its spec. Indices, not
-#: counts — two labels whose members are structurally identical collapse to ONE node, and
-#: `evaluate_ir` returns one value per DISTINCT output, so a shared index simply replicates.
-Layout = tuple[tuple[SlotKey, tuple[int, ...], str], ...]
-
-
-@dataclass(frozen=True)
-class _GroupReduce:
-    """Reduce one partition's evaluated fills to ``{slot: histogram}`` — each histogram is the sum of
-    its OWN fills, sliced out of the single shared one-pass evaluation by ``layout``."""
-
-    layout: Layout
-
-    def __call__(self, fills: list[object]) -> dict[SlotKey, bh.Histogram]:
-        out: dict[SlotKey, bh.Histogram] = {}
-        for key, indices, spec in self.layout:
-            total = zero_of(spec)
-            for i in indices:
-                total = add_histograms(total, fills[i])
-            out[key] = total
+        out: bh.Histogram = _sum_fills(self.spec, self.node_ids, self.positions, fills)
         return out
 
 
-def _add_groups(
-    a: dict[SlotKey, bh.Histogram], b: dict[SlotKey, bh.Histogram]
-) -> dict[SlotKey, bh.Histogram]:
+#: the slot layout: per slot, its key, the RECORD ids of the fills it sums (one per staged fill, so
+#: an id interned twice repeats), and its spec
+Layout = tuple[tuple[SlotKey, tuple[int, ...], str], ...]
+
+
+@dataclass
+class _GroupReduce:
+    """Reduce one partition's evaluated fills to ``{slot: histogram}``: each slot sums its own
+    fills, each read at its compiled position. ``positions`` is set by ``pieces.on_compiled``."""
+
+    layout: Layout
+    positions: dict[int, int] = field(default_factory=dict)
+
+    def __call__(self, fills: list[object]) -> dict[SlotKey, Any]:
+        if not self.positions:
+            raise GraphedError(_NO_POSITIONS)
+        return {key: _sum_fills(spec, ids, self.positions, fills) for key, ids, spec in self.layout}
+
+
+def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
     """Combine: histogram groups add key-wise, each pair through :func:`add_histograms`."""
     return {key: add_histograms(a[key], b[key]) for key in a}
 
@@ -454,8 +464,8 @@ def _add_groups(
 class _GroupZero:
     layout: Layout
 
-    def __call__(self) -> dict[SlotKey, bh.Histogram]:
-        return {key: zero_of(spec) for key, _indices, spec in self.layout}
+    def __call__(self) -> dict[SlotKey, Any]:
+        return {key: zero_of(spec) for key, _ids, spec in self.layout}
 
 
 class Histogram(bh.Histogram):
@@ -488,6 +498,9 @@ class Histogram(bh.Histogram):
         #: the axis-mode inferred label set of the FIRST axis fill; a later axis fill whose
         #: set differs is refused (the declared axis, hence the spec, would disagree)
         self._axis_labels: tuple[str, ...] | None = None
+        #: the `histserv.Context` whose servers fill this histogram (`histserv.backed`); outside
+        #: graph identity
+        self._histserv: Any = None
 
     # ---- recording -------------------------------------------------------------------------
     def fill(
@@ -799,6 +812,11 @@ class Histogram(bh.Histogram):
         runs ONCE."""
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
+        if self._histserv is not None:
+            raise GraphedError(
+                ".plan() runs no servers, and this histogram is histserv-backed; plan it through "
+                "graphed_histogram.plan({name: hist}), which declares the servers it fills on"
+            )
         # `.plan()` starts from `self._spec` (fixed in __init__, no variation axis) and
         # `_SumFills` adds every staged fill into ONE histogram — merging a varied histogram's
         # universes, and unable to render an axis-mode result at all. The refusal is GENERAL over
@@ -811,22 +829,22 @@ class Histogram(bh.Histogram):
                 "universes; plan it through graphed_histogram.plan({name: hist}), whose per-slot "
                 "results keep them apart"
             )
-        # the same rank the group builder slices with: staged fill -> its output index
-        rank = {nid: i for i, nid in enumerate(dict.fromkeys(n.node_id for n in self._fill_nodes))}
-        marked = len(rank)
+        reduce = _SumFills(self._spec, tuple(n.node_id for n in self._fill_nodes))
+
+        def on_compiled(compiled: CompiledGraph) -> Any:
+            reduce.positions = _positions(compiled, self._fill_nodes)
+            return _variation_labels((("this histogram", self),), compiled)
+
         return aggregate_plan(
             *self._fill_nodes,
-            reduce=_SumFills(self._spec, tuple(rank[n.node_id] for n in self._fill_nodes)),
+            reduce=reduce,
             combine=add_histograms,
             empty=_ZeroHist(self._spec),
             externals=self._evaluators,
             backend=backend,
             steps_per_file=steps_per_file,
             partitions=partitions,
-            # the shortfall refusal is a CLASS, and `_SumFills` is its silent member: an
-            # OPTIMIZER merge of distinct record ids leaves it summing fewer values than slots,
-            # under-summing into a plausible, physically wrong histogram rather than raising.
-            on_compiled=_on_compiled((("this histogram", self),), marked),
+            on_compiled=on_compiled,
         )
 
 
@@ -839,7 +857,7 @@ def _output_labels(hist: Histogram) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _slots(name: str, hist: Histogram, rank: Mapping[int, int]) -> Layout:
+def _slots(name: str, hist: Histogram) -> Layout:
     """The plan-value keying for ONE output: a bare `name` when no variation reaches it — which is
     what keeps unvaried programs' plan values exactly as they were — and one `(name, label)` slot
     per label otherwise, each gathering that label's node from every fill call (the fallback: a
@@ -849,17 +867,95 @@ def _slots(name: str, hist: Histogram, rank: Mapping[int, int]) -> Layout:
     variation-axis histogram, the combine is the same `add_histograms`."""
     spec = hist._fill_specs[0]  # the FILL node's spec (axis mode forces one per output)
     if hist._axis_mode:
-        return (((name, None), tuple(rank[node.node_id] for node in hist._fill_nodes), spec),)
+        return (((name, None), tuple(node.node_id for node in hist._fill_nodes), spec),)
     labels = _output_labels(hist)
     if len(labels) == 1:
-        return ((name, tuple(rank[node.node_id] for node in hist._fill_nodes), spec),)
+        return ((name, tuple(node.node_id for node in hist._fill_nodes), spec),)
     return tuple(
         (
             (name, label),
-            tuple(rank[per_label.get(label, per_label["nominal"]).node_id] for per_label in hist._label_maps),
+            tuple(per_label.get(label, per_label["nominal"]).node_id for per_label in hist._label_maps),
             spec,
         )
         for label in labels
+    )
+
+
+@dataclass
+class HistogramPieces:
+    """The histogram half of one plan, for a plan that composes these fills with outputs of its own.
+
+    Mark the plan's own outputs, then ``fill_nodes``; hand ``reduce`` the whole value list and
+    forward ``reduce.resolve_services``; pass ``combine``, ``empty`` and ``externals`` as they are
+    and ``on_compiled=pieces.on_compiled``; then run ``serve(plan)``. ``reduce`` reads each fill at
+    its compiled position, which ``on_compiled`` records, so a pieces belongs to ONE plan."""
+
+    fill_nodes: tuple[Array, ...]
+    reduce: _GroupReduce
+    combine: Callable[[dict[SlotKey, Any], dict[SlotKey, Any]], dict[SlotKey, Any]]
+    empty: _GroupZero
+    externals: dict[str, Callable[..., object]]
+    items: tuple[tuple[str, Histogram], ...]
+    #: per histserv-backed slot: its key, spec and context
+    backing: tuple[tuple[SlotKey, str, Any], ...]
+    served: bool = False
+
+    def on_compiled(self, compiled: CompiledGraph) -> Any:
+        """The plan's ``aggregate_plan(on_compiled=)`` hook: records where each fill landed and
+        returns the variation-label payload the shipped closure carries."""
+        if self.reduce.positions:
+            raise GraphedError(
+                "these pieces already fed a plan; graphed_histogram.boost.pieces(...) belongs to one "
+                "plan, so build fresh pieces for another"
+            )
+        self.reduce.positions = _positions(compiled, self.fill_nodes)
+        return _variation_labels(self.items, compiled)
+
+    def serve(self, plan: Plan[V]) -> Plan[V]:
+        """``plan`` with its histserv-backed slots sized, packed onto servers and declared in
+        ``plan.services``; ``plan`` itself when no slot is backed."""
+        if not self.backing:
+            return plan
+        if self.served:
+            raise GraphedError(
+                "these pieces already served a plan; graphed_histogram.boost.pieces(...) belongs to "
+                "one plan, so build fresh pieces for another"
+            )
+        from .histserv import _serve  # noqa: PLC0415  (histserv's sizing only for backed slots)
+
+        served = _serve(plan, self.fill_nodes[0].session, self.backing)
+        self.served = True
+        return served
+
+
+def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> HistogramPieces:
+    """The parts :func:`plan` builds its plan from, for a plan that adds outputs of its own."""
+    items = tuple(
+        [(str(k), v) for k, v in histograms.items()]
+        if isinstance(histograms, Mapping)
+        else [(str(i), h) for i, h in enumerate(histograms)]
+    )
+    if not items:
+        raise ValueError("plan() needs at least one histogram")
+    if any(not h._fill_nodes for _, h in items):
+        raise ValueError("every histogram must have at least one staged fill before planning")
+    layout = tuple(slot for name, hist in items for slot in _slots(name, hist))
+    evaluators: dict[str, Callable[..., object]] = {}
+    for _, h in items:
+        evaluators.update(h._evaluators)
+    return HistogramPieces(
+        fill_nodes=tuple(n for _, h in items for n in h._fill_nodes),
+        reduce=_GroupReduce(layout),
+        combine=_add_groups,
+        empty=_GroupZero(layout),
+        externals=evaluators,
+        items=items,
+        backing=tuple(
+            (key, spec, h._histserv)
+            for name, h in items
+            if h._histserv is not None
+            for key, _ids, spec in _slots(name, h)
+        ),
     )
 
 
@@ -869,7 +965,7 @@ def plan(
     steps_per_file: int = 1,
     backend: Callable[[], Any] | str | None = None,
     partitions: Sequence[Partition] | None = None,
-) -> Plan[dict[SlotKey, bh.Histogram]]:
+) -> Plan[dict[SlotKey, Any]]:
     """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
 
     All their fills compile into ONE IR, so a sub-graph feeding multiple histograms (e.g. a trijet
@@ -878,92 +974,21 @@ def plan(
     ``compute(dict_of_hists)`` analogue; ``run(plan).value`` is a flat slot-keyed mapping — a bare
     output name for an output no variation reaches, ``(output, label)`` for a varied one — which
     :func:`graphed_histogram.unpack` turns into the user-facing per-output shape.
-    Column projection covers the union of all histograms' fills."""
-    items = (
-        [(str(k), v) for k, v in histograms.items()]
-        if isinstance(histograms, Mapping)
-        else [(str(i), h) for i, h in enumerate(histograms)]
-    )
-    if not items:
-        raise ValueError("plan() needs at least one histogram")
-    hists = [h for _, h in items]
-    if any(not h._fill_nodes for h in hists):
-        raise ValueError("every histogram must have at least one staged fill before planning")
-    fill_nodes = [n for h in hists for n in h._fill_nodes]
-    # a slot's operand is the rank of its node id in the DEDUPLICATED id list, which
-    # matches `evaluate_ir`'s one-value-per-distinct-output list element for element (`Array` is
-    # unhashable, so the dedup runs over ids). A raw index into the staged list overruns it.
-    rank = {nid: i for i, nid in enumerate(dict.fromkeys(n.node_id for n in fill_nodes))}
-    layout = tuple(slot for name, hist in items for slot in _slots(name, hist, rank))
-    evaluators: dict[str, Callable[..., object]] = {}
-    for h in hists:
-        evaluators.update(h._evaluators)
-    return aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
-        *fill_nodes,
-        reduce=_GroupReduce(layout),
-        combine=_add_groups,
-        empty=_GroupZero(layout),
-        externals=evaluators,
-        backend=backend,
-        steps_per_file=steps_per_file,
-        partitions=partitions,
-        on_compiled=_on_compiled(items, len(rank)),
-    )
-
-
-def _on_compiled(items: Sequence[tuple[str, Histogram]], marked: int) -> Callable[[CompiledGraph], Any]:
-    """The compiled-artifact hook, supplied on EVERY program by both builders.
-
-    It refuses a merge shortfall first — the refusal is what makes the artifact needed at all — and
-    otherwise returns the label payload the shipped closure carries."""
-
-    def hook(compiled: CompiledGraph) -> Any:
-        _refuse_shortfall(items, marked, compiled)
-        return _variation_labels(items, compiled)
-
-    return hook
-
-
-def _refuse_shortfall(items: Sequence[tuple[str, Histogram]], marked: int, compiled: CompiledGraph) -> None:
-    """The optimizer-merge refusal, at the builders — the only site holding both the marked
-    record ids and the compiled artifact.
-
-    The optimizer merges DISTINCT record ids too (``x * 1.0`` is an identity token), so two fills
-    differing only in ``weight=[w]`` versus ``weight=[w * 1.0]`` compile to ONE output while the
-    consumer still expects two. Both consumers are wrong on a shortfall and wrong differently: the
-    group builder mis-slices into an opaque worker-side ``IndexError``, ``Histogram.plan``'s
-    ``_SumFills`` silently under-sums. Neither slices; both refuse.
-    """
-    outputs = len(GraphStore.deserialize(compiled.ir).outputs())
-    if outputs >= marked:
-        return
-
-    def shrinks(hist: Histogram) -> bool:
-        """Does THIS output's own compile lose fills? The refusal must name the histogram whose
-        fills merged, which in a mixed plan need not be a varied one."""
-        ids = dict.fromkeys(node.node_id for node in hist._fill_nodes)
-        compiled_one = compile_ir(hist._fill_nodes[0].session, *hist._fill_nodes)
-        return len(GraphStore.deserialize(compiled_one.ir).outputs()) < len(ids)
-
-    # the shortfall is real; re-compiling per output to attribute it costs nothing on a path that
-    # is about to raise. No single output shrinking means the merge crossed two of them.
-    culprits = [(name, hist, _output_labels(hist)) for name, hist in items if shrinks(hist)]
-    culprits = culprits or [(name, hist, _output_labels(hist)) for name, hist in items]
-    # an unvaried program has no labels to name: `("nominal",)` is the absence of variation, and
-    # printing it would read as one
-    detail = "; ".join(
-        f"{name} carries {list(labels)}" if len(labels) > 1 else name for name, _hist, labels in culprits
-    )
-    workaround = (
-        " Spell a label whose value equals another's with the SAME expression "
-        '(points={"1": w}, not w * 1.0), which routes it through the supported '
-        "record-time dedup instead."
-        if any(len(labels) > 1 for _name, _hist, labels in culprits)
-        else ""
-    )
-    raise GraphedError(
-        f"the optimizer merged fills that record as distinct nodes ({marked} marked, {outputs} "
-        f"compiled), so this plan's slots can no longer be told apart: {detail}.{workaround}"
+    Column projection covers the union of all histograms' fills. Histserv-backed histograms are
+    served: their servers are in ``plan.services``."""
+    p = pieces(histograms)
+    return p.serve(
+        aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
+            *p.fill_nodes,
+            reduce=p.reduce,
+            combine=p.combine,
+            empty=p.empty,
+            externals=p.externals,
+            backend=backend,
+            steps_per_file=steps_per_file,
+            partitions=partitions,
+            on_compiled=p.on_compiled,
+        )
     )
 
 
