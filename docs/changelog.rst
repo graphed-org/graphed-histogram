@@ -1,6 +1,29 @@
 What changed
 ============
 
+Unreleased
+----------
+
+Filling on histserv servers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed_histogram.histserv`` fills histograms on `histserv <https://pypi.org/project/histserv/>`_
+  servers instead of carrying them through the reduction tree: back a histogram with a
+  ``histserv.Context`` and ``gh.plan`` sizes it, packs it onto servers of the sizes you offer and
+  declares those servers in ``plan.services`` for the executor to start (:ref:`histserv`). Install
+  with ``pip install "graphed-histogram[histserv]"``; needs a ``graphed`` with the service surface
+  (``graphed.services``), not yet in a release.
+* ``gh.boost.pieces(histograms)`` hands out the parts ``gh.plan`` builds from, so a plan can put
+  your histograms beside outputs of its own.
+
+Changed
+~~~~~~~
+
+* Two fills the optimizer merges into one (``weight=[w]`` and ``weight=[w * 1.0]``) are now read
+  once per fill, so the histogram is what filling twice gives, in ``gh.plan`` and ``h.plan()``
+  alike. Both used to refuse the plan.
+* ``h.plan()`` refuses a histserv-backed histogram; plan it with ``gh.plan``.
+
 0.0.4
 -----
 

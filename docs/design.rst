@@ -673,6 +673,191 @@ A growing ``Variable`` axis raises ``TypeError``: its new edges come from the da
 partitions' axes share no grid to merge on.
 
 
+.. _histserv:
+
+Filling on histserv servers
+---------------------------
+
+Every task's partial result rides the reduction tree: a million-bin ``Double`` histogram is 8 MB
+per partial, a varied one that much per label, and the tree carries and adds one per partition. A
+`histserv <https://pypi.org/project/histserv/>`_ server holds the histogram instead. Each task sends
+its partial to the server once, the tree carries a receipt of a few hundred bytes, and the end of
+the run fetches each histogram once. Needs ``pip install "graphed-histogram[histserv]"``; grpcio has
+no free-threaded wheel, so not on CPython 3.14t.
+
+Four parts, four owners. **Recording** is unchanged: a backed histogram records exactly the graph
+its unbacked twin records, so its IR, evaluators and replay ids are the twin's. The **context**
+(``histserv.Context``) sizes each backed result with a measured model, packs them onto servers of
+the sizes it offers, and puts one service per server in ``plan.services`` when you plan. The
+**executor** starts, binds and stops those servers as it does any service, and never learns what a
+histogram is. The **served process** creates the server-side histograms, ships each partition's
+partial, and hands a receipt through the tree.
+
+.. code-block:: python
+
+    import awkward as ak
+    import boost_histogram as bh
+    import graphed_histogram as gh
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_parquet
+    from graphed_histogram import histserv
+
+    ak.to_parquet(ak.Array({"x": [0.5, 1.5, 2.5, 3.5, 1.0, 2.0] * 100}), "x.parquet")
+    session = Session(AwkwardBackend())
+    events = from_parquet(session, "events", "x.parquet", steps_per_file=4)
+
+    ctx = histserv.Context(memory_mb=[256, 512], workers=8, name="docs")
+    big = histserv.Histogram(bh.axis.Regular(1_000_000, 0.0, 4.0), context=ctx)
+    small = histserv.Histogram(bh.axis.Regular(40, 0.0, 4.0), storage=bh.storage.Weight(), context=ctx)
+    big.fill(events.x)
+    small.fill(events.x, weight=[events.x * 0.5])
+
+    plan = gh.plan({"big": big, "small": small}, steps_per_file=4)
+    for name, memory_mb, predicted, n in ctx.servers():
+        print(name, memory_mb, f"{predicted / 2**20:.1f} MiB", n)
+    spec = plan.services[0]
+    print(spec.name, spec.kind, spec.check, spec.ports, dict(spec.launch.resources))
+
+Printed output::
+
+    docs-0 512 435.0 MiB 2
+    docs-0 histserv tcp (10000, 10100) {'memory_mb': 512}
+
+``memory_mb`` is the server sizes you can offer, in MiB; ``workers`` is your bound on the worker
+processes that dial one server and the fills in flight to it. Nothing has started: ``gh.plan``
+sized the two histograms, found that ``big`` needs more than the 256 MiB size, opened a 512 MiB
+server for it and put ``small`` in its spare room. ``histserv.backed(h, ctx)`` backs a histogram you
+already built (a ``hist.graphed.Hist`` too) and returns it.
+
+An executor that resolves ``plan.services``, such as ``graphed-executors``' ``SubmitRunner``, starts
+each server, binds its endpoint before the first task, and resolves the receipts at the end while the
+servers are still up: you declare and bind nothing. Here the server is started and bound by hand:
+
+.. code-block:: python
+
+    import socket, subprocess, sys, time
+    from graphed.core.execution import SequentialRunner
+    from graphed.services import bind_services, resolve_services
+
+    server = subprocess.Popen([sys.executable, "-m", "histserv", "--port", "50071", "--log-level", "ERROR"])
+    for _ in range(100):
+        try:
+            socket.create_connection(("127.0.0.1", 50071)).close()
+            break
+        except OSError:
+            time.sleep(0.1)
+
+    bound = bind_services(plan, {"docs-0": "tcp://127.0.0.1:50071"})
+    value = SequentialRunner().run(bound).value
+    print(value["small"].endpoint, len(value["small"].hist_id))
+    out = gh.unpack(resolve_services(bound, value))
+    print(out["big"].sum(), out["small"].sum().value)
+    server.kill()
+
+Printed output::
+
+    tcp://127.0.0.1:50071 32
+    600.0 550.0
+
+The run's value holds a ``histserv.Receipt`` per backed result. ``resolve_services`` replaces each
+with its server histogram and deletes it from the server; ``gh.unpack`` does the same without
+deleting, for a value no runner resolved. A server speaks plaintext gRPC, so its endpoint is
+``tcp://`` or ``grpc://``; a TLS or HTTP endpoint is refused before anything dials it.
+
+How a server is sized
+~~~~~~~~~~~~~~~~~~~~~
+
+Each backed result — each label of a sibling-mode histogram is its own — is ``stored = chunks ×
+dense`` bytes on its server: ``dense`` is the product of its non-variation axes' extents, flow bins
+included, times 8 bytes (``Double``, ``Int64``) or 16 (``Weight``); ``chunks`` is its number of
+variation labels in axis mode, else 1. A server's predicted peak is::
+
+    B + Σ (O + I × tasks + (chunks + 1) × dense) + (a + b × workers) × M + K × workers
+
+summed over the results it holds, ``tasks`` the plan's task count and ``M`` the largest ``stored``
+on it. The constants were measured on histserv 0.2.1 under CPython 3.11–3.14 on Linux arm64 and
+amd64, in containers without pandas and on GitHub's runners with it, each the largest seen: ``B`` =
+164 MiB (the server at rest, the announcer a batch job adds, and the driver's connection), ``O`` =
+4000 B per histogram, ``I`` = 160 B per histogram per task (its retry record), ``a`` = 5.5 and
+``b`` = 3.5 (a fill's transient, in units of ``M``) and ``K`` = 19 KiB per worker connection. The
+server's environment sets ``B``: histserv imports ``hist``, which imports pandas and pyarrow when
+they are installed.
+
+Results are placed largest first, ties by name. Each lands on the first server of its context with
+room (the prediction with it added is at most the server's size), else on a new server at the
+smallest offered size that holds it, else on a server of its own sized to its prediction, rounded up
+to the MiB, that takes nothing else. A result is never refused for its size, with one exception: a
+fill message (``stored`` plus 64 KiB) past histserv's 2\ :sup:`29`-byte message limit, which its
+client enforces. A growth axis is refused (a server is sized before the run), and so is a storage
+other than ``Double``, ``Int64`` and ``Weight``. So is a plan with ``next_tasks``, or one partition
+in two tasks: the partition is the key that makes a retried task fill once.
+
+A context's name holds its packing for the life of the process. A second ``Context`` under that
+name with equal arguments shares it, with a warning, so one context across several datasets' plans
+packs them all onto the same servers and ``graphed.aggregate.collate`` starts each server once. One
+with other arguments is refused: re-running a notebook cell with a new ``memory_mb`` under the same
+name needs a fresh ``name=`` or a restarted kernel.
+
+What the sizes guarantee
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The size is the memory a server is given, not a limit histserv enforces. Where an executor runs a
+server as a batch job, the job requests that size, and the model keeps the server and its announcer
+under it. Where it runs one beside the driver, nothing limits a running server, so the prediction is
+all that holds it. A server you or the site provide (an endpoint handed to the runner) is outside
+both; you may bind several server names to one such server.
+
+A retried task fills once: every fill carries its partition as a unique id, and the server answers a
+repeat ``ALREADY_EXISTS``, which counts as done. A result's float sums follow the order fills
+arrive: sequential and one-worker runs equal the local fold bit for bit, concurrent ones agree to
+rounding, and integer and exact sums agree exactly.
+
+Composing histograms with other outputs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``gh.plan`` is built from ``gh.boost.pieces``, which you can use yourself to put your histograms in
+one plan with outputs of your own — here an event count. Mark your outputs first and the fills after,
+hand the histogram half of the values to ``pieces.reduce``, and serve the plan:
+
+.. code-block:: python
+
+    from graphed import aggregate_plan
+
+    h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 4.0), storage=bh.storage.Int64())
+    h.fill(events.x)
+    ones = events.x * 0 + 1
+    p = gh.boost.pieces({"x": h})
+
+    class Reduce:
+        def __call__(self, values):
+            return {"hists": p.reduce(values), "n": int(ak.sum(values[0]))}
+
+        def resolve_services(self, value):
+            return {"hists": p.reduce.resolve_services(value["hists"]), "n": value["n"]}
+
+    plan = p.serve(aggregate_plan(
+        ones, *p.fill_nodes,                     # your outputs first, then the fills
+        reduce=Reduce(),
+        combine=lambda a, b: {"hists": p.combine(a["hists"], b["hists"]), "n": a["n"] + b["n"]},
+        empty=lambda: {"hists": p.empty(), "n": 0},
+        externals=p.externals,
+        on_compiled=p.on_compiled,
+        steps_per_file=4,
+    ))
+    value = SequentialRunner().run(plan).value
+    print(value["n"], gh.unpack(value["hists"])["x"].values())
+
+Printed output::
+
+    600 [100 200 200 100]
+
+``p.on_compiled`` records where each fill landed in the compiled graph, so ``p.reduce`` reads every
+fill there, including two fills the optimizer merged into one (``weight=[w]`` and
+``weight=[w * 1.0]``), which it reads once for each. A ``pieces`` belongs to one plan: a second
+plan over it is refused. ``serve`` returns the plan unchanged when nothing is backed. A process pool
+pickles the plan, so give it module-level functions where this example uses lambdas.
+
+
 Not supported yet
 -----------------
 

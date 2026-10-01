@@ -12,10 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # the former core/debug/frontend/numpy/awkward siblings are now one consolidated package
-  # Pinned to a release, not @main: graphed is an unpinned upstream whose merges can redden this frozen
-  # suite with no local change. Bump deliberately.
-  GRAPHED: "graphed[awkward,numpy]==0.0.6"
+  # A sha, not a release: graphed.services (histserv's servers) and aggregate_plan(opt_level=) are unreleased.
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@a0638719da2f7af93767ff7acfa0e9d8eb492507"
   # exec-local stays a separate package (used by the M23 process-executor integration tests)
   EXECLOCAL: "graphed-executors"
 
@@ -41,7 +39,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "${{ env.GRAPHED }}" "${{ env.EXECLOCAL }}"
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev,histserv]"
       - uses: astral-sh/setup-uv@v5
       - name: Lint + types (pre-commit hooks via prek)
         run: uvx prek@0.4.5 run --all-files --show-diff-on-failure
@@ -85,6 +83,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "${{ env.GRAPHED }}" "${{ env.EXECLOCAL }}"
+          # no histserv extra: grpcio ships no free-threaded wheel, so its tests skip here
           python -m pip install -e ".[dev]"
           pytest tests/frozen
 

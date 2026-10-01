@@ -31,8 +31,8 @@ Authority: `systematics-vary-plan.md` r33. Section references in the files are t
 | H4 | §6.1c the trigger is not the fill-node count | `test_varied_plan_refusal.py::test_the_refusal_is_not_keyed_on_the_number_of_staged_fills` |
 | H4 | §6.1c positive control: unvaried sibling-mode `.plan()` still works | `test_varied_plan_refusal.py::test_plan_on_an_unvaried_sibling_mode_histogram_still_works` |
 | H4 | §6.1c the refusal is a redirect to the group API | `test_varied_plan_refusal.py::test_the_varied_route_to_a_plan_is_the_group_api_the_refusal_names` |
-| H5 | §7.2 optimizer-merge shortfall refused at the group-plan builder | `test_optimizer_merge_guard.py::test_a_varied_program_whose_labels_the_optimizer_merges_is_refused` |
-| H5 | §7.2 the merge is real (the guard's instrument) | `test_optimizer_merge_guard.py::test_the_optimizer_merge_is_real_before_the_guard_is_asserted` |
+| H5 | §7.2 optimizer-merged labels each read at their compiled position: `gh.plan` runs, `unpack` gives `nominal` and `sig_up`, `sig_up`'s flow view equals `nominal`'s bit for bit | `test_optimizer_merge_guard.py::test_a_varied_program_whose_labels_the_optimizer_merges_fills_every_label` |
+| H5 | §7.2 the merge is real (the merged read's instrument) | `test_optimizer_merge_guard.py::test_the_optimizer_merge_is_real_before_the_guard_is_asserted` |
 | H5 | §7.2 scope: an unmerged varied program plans normally | `test_optimizer_merge_guard.py::test_a_varied_program_the_optimizer_does_not_merge_plans_normally` |
 | H5 | §1.2/§7.2 record-time dedup — both keys off ONE evaluated fill | `test_optimizer_merge_guard.py::test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill` |
 | H6 | §6.1d ambient fill on a per-object value: value labels ∪ ambient labels | `test_ambient_object_fills.py::test_a_per_object_fill_carries_the_value_labels_UNION_the_ambient_labels` |
@@ -69,7 +69,7 @@ Authority: `systematics-vary-plan.md` r33. Section references in the files are t
 | `graphed_histogram.fill_nodes_by_label(h)` | `dict[str, Array]`, label order per §2.4 (nominal first) |
 | `graphed_histogram.plan(...)` value | flat `{output: hist}` for an output no variation reaches, `{(output, label): hist}` for a varied sibling output |
 | `Histogram.fill(..., unweighted=True)` | suppresses the ambient weight AND every explicit `weight=[…]` factor |
-| the `.plan()` and merge-shortfall refusals | `graphed.GraphedError`; `.plan()`'s message names `graphed_histogram.plan`, the shortfall's names the output, the labels and `points=` |
+| the `.plan()` refusal; an optimizer-merged fill | `.plan()`: `graphed.GraphedError` naming `graphed_histogram.plan`; a merged fill is read once per marked fill, never refused |
 | §6.1d's execution-time length messages | ambient offender: contains `ambient` + `pass the value unflattened`; explicit offender: contains `weight[<i>]` for the offending index + `pass the value unflattened`; loose-value offender: contains `value[<i>]` and NEITHER of the other two |
 
 ## Fixtures

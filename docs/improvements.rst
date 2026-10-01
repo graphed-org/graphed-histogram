@@ -16,6 +16,21 @@ Two things are missing:
   whose values vary) list their categories partition by partition, not fill by fill as one
   eager fill per call would. Declare the categories up front if you need fill order.
 
+Histserv servers
+----------------
+
+* Growth axes, and ``Mean``, ``WeightedMean``, ``Unlimited`` and ``AtomicInt64`` storages, cannot
+  be backed: a server is sized before the run, and histserv holds the other three storages.
+* Plaintext gRPC only: histserv's client opens no TLS channel, so a ``grpcs://`` or ``https://``
+  endpoint is refused.
+* Not on free-threaded CPython: grpcio ships no such wheel.
+* A server merges fills on one core; how many workers one server keeps up with is unmeasured.
+* gRPC binds its port with ``SO_REUSEPORT``, so two runs on one host that both pick a free port
+  in the same instant can end up sharing it. They fail loudly (``NOT_FOUND`` on a fill), never with
+  wrong sums.
+* A plan with ``next_tasks`` cannot be served, and ``graphed.debug.replay`` refuses a served plan:
+  replay its unbacked twin.
+
 No ``.compute()``, ``persist``, or ``to_delayed``
 -------------------------------------------------
 

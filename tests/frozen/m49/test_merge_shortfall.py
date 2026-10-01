@@ -1,4 +1,4 @@
-"""m49/F3 — §7.2's merge-shortfall refusal, widened to its CLASS: both consumers, every program.
+"""m49/F3 — §7.2's merge shortfall over its CLASS: both consumers read a merged fill per marked fill.
 
 m48 refused only on the group-plan builder and only for VARIED programs. The premise under that
 scoping — that unvaried programs are unaffected — is false on both members, and they fail
@@ -12,8 +12,8 @@ differently:
   reachable from public API.
 
 The trigger is the M4 reducer merging DISTINCT record ids: `weight=[w]` against `weight=[w * 1.0]`
-records two fill nodes and compiles to one. Both refusals are BUILDER-side, so they are asserted
-around the builder call — a refusal that waits for the run is the `IndexError` again.
+records two fill nodes and compiles to one. Both builders read each marked fill at its compiled
+position, so the one merged output is summed once per marked fill: two direct fills' worth.
 """
 
 from __future__ import annotations
@@ -23,8 +23,7 @@ from typing import Any
 import awkward as ak
 import boost_histogram as bh
 import numpy as np
-import pytest
-from graphed import GraphedError, Session
+from graphed import Session
 from graphed.awkward import AwkwardBackend, AwkwardForm
 from graphed.core.execution import SequentialRunner
 from m49_hist_fixtures import CountingSource, eager_weighted
@@ -83,28 +82,39 @@ def _values(hist: bh.Histogram) -> np.ndarray:
     return np.asarray(hist.view(flow=True)["value"])
 
 
-def test_the_group_builder_refuses_a_merged_UNVARIED_program() -> None:
-    """m48's refusal was scoped to varied programs, so this one reaches the worker `IndexError`."""
-    with pytest.raises(GraphedError) as excinfo:
-        gh.plan({"h": _merging()}, steps_per_file=STEPS)
-    message = str(excinfo.value)
-    assert "h" in message
-    assert "nominal" not in message, "an unvaried program has no labels to name"
+def _twice() -> bh.Histogram:
+    want = eager_weighted(bins=4, lo=0.0, hi=8.0)
+    for _ in range(2):
+        want.fill(ak.to_numpy(EVENTS.x), weight=ak.to_numpy(EVENTS.w))
+    return want
 
 
-def test_the_single_histogram_plan_refuses_a_merged_program() -> None:
-    """New work, not a widening: `Histogram.plan()` has never carried a shortfall check."""
-    with pytest.raises(GraphedError) as excinfo:
-        _merging().plan(steps_per_file=STEPS)
-    assert "merged" in str(excinfo.value)
+def _grouped(hist: gh.boost.Histogram) -> bh.Histogram:
+    value = gh.unpack(SequentialRunner().run(gh.plan({"h": hist}, steps_per_file=STEPS)).value)["h"]
+    assert isinstance(value, bh.Histogram)
+    return value
 
 
-def test_neither_refusal_waits_for_the_run() -> None:
-    """Both are builder-side. A check installed in the worker still ships a plan whose slots
-    cannot be told apart, which is the failure mode the refusal exists to replace."""
-    for build in (lambda: gh.plan({"h": _merging()}, steps_per_file=STEPS), lambda: _merging().plan()):
-        with pytest.raises(GraphedError):
-            build()
+def _planned(hist: gh.boost.Histogram) -> bh.Histogram:
+    value: bh.Histogram = SequentialRunner().run(hist.plan(steps_per_file=STEPS)).value
+    return value
+
+
+def test_the_group_builder_sums_both_fills_of_a_merged_UNVARIED_program() -> None:
+    assert np.allclose(_values(_grouped(_merging())), _values(_twice()), rtol=1e-12)
+
+
+def test_the_single_histogram_plan_sums_both_fills() -> None:
+    assert np.allclose(_values(_planned(_merging())), _values(_twice()), rtol=1e-12)
+
+
+def test_both_builders_read_a_merged_fill_once_per_marked_fill() -> None:
+    """The merged output is one fill's value; reading it at both marked positions doubles it
+    exactly, where a read per distinct output gives one fill's worth."""
+    one = _values(_planned(_single()))
+    assert one.sum() > 0
+    for got in (_grouped(_merging()), _planned(_merging())):
+        assert np.array_equal(_values(got), 2.0 * one)
 
 
 def test_the_merge_free_pair_still_plans_and_sums_BOTH_fills_on_both_consumers() -> None:
@@ -126,8 +136,8 @@ def test_the_merge_free_pair_still_plans_and_sums_BOTH_fills_on_both_consumers()
 
 
 def test_the_merged_pair_really_does_record_two_nodes_that_compile_to_one() -> None:
-    """The instrument: if the identity token stopped merging, every refusal above would be
-    asserting a refusal of a program that has nothing wrong with it."""
+    """The instrument: if the identity token stopped merging, every merged read above would be
+    summing two fills that never merged, and the per-marked-fill read would be untested."""
     from graphed import compile_ir  # noqa: PLC0415  (a diagnostic import, not a fixture surface)
     from graphed.core import GraphStore  # noqa: PLC0415
 

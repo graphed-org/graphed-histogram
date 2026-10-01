@@ -18,6 +18,7 @@ Install
    pip install "graphed[awkward]" graphed-histogram   # awkward events + deferred fills
    pip install graphed-executors                      # process-pool runners
    pip install "graphed-executors[dask]"              # or [parsl] for a cluster
+   pip install "graphed-histogram[histserv]"          # fill on histserv servers
 
 Building ``graphed`` from source — when there is no wheel for your platform — needs a Rust
 toolchain.

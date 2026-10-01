@@ -73,12 +73,22 @@ Run it
    The same for a single histogram; its run value is that one filled histogram rather than
    a mapping, so there is nothing to unpack. It refuses a histogram whose fills carry variations, because summing every staged fill
    into one histogram would silently merge the variations together — use ``gh.plan`` there,
-   whose per-name results keep them apart.
+   whose per-name results keep them apart. It also refuses a histserv-backed histogram, whose
+   servers only ``gh.plan`` declares.
 
 ``gh.unpack(value)``
    Turns what a runner returns into ``{name: histogram}``, or ``{name: {label: histogram}}``
    for a name whose fills carry variations. A histogram filled with ``variation_axis=True``
-   comes back as a single histogram under its name, carrying the variations on its axis.
+   comes back as a single histogram under its name, carrying the variations on its axis. A
+   histserv receipt comes back as its server histogram, left on the server.
+
+``gh.boost.pieces(histograms)``
+   The parts ``gh.plan`` builds its plan from — ``fill_nodes``, ``reduce``, ``combine``,
+   ``empty``, ``externals``, ``on_compiled`` and ``serve`` — for a plan that adds outputs of
+   its own (:ref:`histserv`, "Composing histograms with other outputs"). Mark your outputs,
+   then ``fill_nodes``; pass ``on_compiled=pieces.on_compiled``; hand ``reduce`` the whole value
+   list and forward ``reduce.resolve_services``; return ``pieces.serve(plan)``. One ``pieces``
+   belongs to one plan.
 
 ``gh.add_histograms(a, b)``
    Adds two filled histograms and returns a new ``boost_histogram.Histogram`` carrying ``a``'s
@@ -139,6 +149,37 @@ you want ``.plot()`` or name-based indexing.
 The runner's own value is keyed by ``(name, label)`` pairs; ``unpack`` is what turns that
 into the nested mapping. A name no variation reaches keeps a bare-name key and unpacks to a
 bare histogram, so an analysis without systematics sees exactly what it always saw.
+
+Fill on histserv servers
+------------------------
+
+``from graphed_histogram import histserv`` (with ``pip install "graphed-histogram[histserv]"``).
+How a server is sized and what that guarantees: :ref:`histserv`.
+
+``histserv.Context(*, memory_mb, workers, name="histserv", ports=(10000, 10100), timeout_s=600.0)``
+   The servers backed histograms fill on. ``memory_mb`` is the server sizes offered in MiB (one
+   int or several), kept sorted as ``ctx.memory_mb``; ``workers`` bounds the worker processes
+   dialling one server. Server ``i`` is the service ``f"{name}-{i}"`` on a port in ``ports``,
+   started within ``timeout_s``. A name holds its packing for the life of the process: an equal
+   second context shares it and warns, one with other arguments is refused.
+   ``ctx.servers()`` lists ``(name, memory_mb, predicted_bytes, n_histograms)`` per server
+   before anything runs.
+
+``histserv.Histogram(*axes, storage=None, metadata=None, context)``
+   A ``gh.boost.Histogram`` filled on ``context``'s servers.
+
+``histserv.backed(h, context)``
+   Backs a histogram you already built and returns it; its recorded graph does not change.
+   Refuses growth axes and storages other than ``Double``, ``Int64`` and ``Weight``.
+
+``histserv.Receipt``
+   A backed result's value in the run: ``spec``, ``endpoint`` and ``hist_id`` of the server
+   histogram holding it. ``receipt.snapshot(delete=False)`` fetches it as the result's
+   histogram; ``resolve_services`` and ``gh.unpack`` call it for you.
+
+``histserv.HistservError``
+   A failed server call, with ``endpoint``, the gRPC status ``code`` name and ``details``. It
+   pickles, so a worker's failure reaches the driver intact.
 
 Inspect variations before running
 ---------------------------------
