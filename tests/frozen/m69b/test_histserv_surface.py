@@ -209,7 +209,9 @@ FROZEN_BEFORE_M69B = {
 
 def _digest(directory: Path, root: Path) -> str:
     h = hashlib.sha256()
-    for f in sorted(q for q in directory.rglob("*") if q.is_file() and "__pycache__" not in q.parts):
+    files = (q for q in directory.rglob("*") if q.is_file() and "__pycache__" not in q.parts)
+    # str parts order alike on every OS; WindowsPath ordering ignores case
+    for f in sorted(files, key=lambda q: q.relative_to(root).parts):
         data = f.read_bytes()
         if f.suffix in (".py", ".md"):
             data = data.replace(b"\r\n", b"\n")

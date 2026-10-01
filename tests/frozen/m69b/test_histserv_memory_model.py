@@ -150,7 +150,9 @@ def test_two_thousand_one_bin_slots_stay_under_a_prediction_made_of_per_histogra
         run_bounded(lambda: SequentialRunner().run(bound))
         assert server.stats()["histogram_count"] == 2000
 
-    warm, grew, predicted_bytes = _measure(path, "m69b-mem-overhead", hists, 1, 1, 160, filled_once)
+    warm, grew, predicted_bytes = _measure(
+        path, "m69b-mem-overhead", hists, 1, 1, BASE // MiB + 31, filled_once
+    )
     assert 0.9 * (predicted_bytes - BASE) <= 2000 * PER_HIST
     assert warm < BASE
     assert grew <= predicted_bytes - BASE

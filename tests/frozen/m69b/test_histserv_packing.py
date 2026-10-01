@@ -22,6 +22,7 @@ from graphed import GraphedError, aggregate_plan
 from graphed.aggregate import collate
 from graphed.core.execution import Plan
 from histserv_harness import (
+    BASE,
     CEILING,
     MiB,
     Slot,
@@ -49,6 +50,10 @@ ARGV = (
     "--log-level",
     "WARNING",
 )
+#: server sizes offset from the model's ``B``, so a re-measured ``B`` changes only ``BASE``
+BASE_MB = BASE // MiB
+SMALL_MB = BASE_MB + 11
+LARGE_MB = BASE_MB + 32
 
 
 def _bins(mib: float) -> int:
@@ -82,8 +87,8 @@ def path(tmp_path_factory: pytest.TempPathFactory) -> str:
 def test_slots_land_first_fit_in_stored_then_key_order_with_the_model_prediction(path: str) -> None:
     hs = histserv_api()
     n = "m69b-pack-ffd"
-    ctx = hs.Context(memory_mb=160, workers=1, name=n, ports=(20000, 20100), timeout_s=300.0)
-    mib = {"z": 1.0, "k": 0.75, "q": 2.5, "b": 0.75, "m": 1.5}
+    ctx = hs.Context(memory_mb=LARGE_MB, workers=1, name=n, ports=(20000, 20100), timeout_s=300.0)
+    mib = {"z": 1.0, "k": 0.75, "q": 2.5, "b": 0.75, "m": 1.375}
     plan = _plan(path, 3, {key: (size, ctx) for key, size in mib.items()})
     want = {"q": f"{n}-0", "m": f"{n}-0", "b": f"{n}-0", "z": f"{n}-1", "k": f"{n}-1"}
     assert assigned(plan) == want
@@ -92,9 +97,9 @@ def test_slots_land_first_fit_in_stored_then_key_order_with_the_model_prediction
     assert set(servers) == set(held)
     for name, slots in held.items():
         size, got, count = servers[name]
-        assert (size, count) == (160, len(slots))
+        assert (size, count) == (LARGE_MB, len(slots))
         assert got == pytest.approx(predicted(slots, workers=1), abs=1)
-        assert got <= 160 * MiB
+        assert got <= LARGE_MB * MiB
     assert [s.name for s in plan.services] == [f"{n}-0", f"{n}-1"]
     for spec in plan.services:
         assert (spec.kind, spec.check, spec.ports, spec.timeout_s) == (
@@ -104,10 +109,10 @@ def test_slots_land_first_fit_in_stored_then_key_order_with_the_model_prediction
             300.0,
         )
         assert spec.launch is not None and spec.launch.argv == ARGV
-        assert dict(spec.launch.resources) == {"memory_mb": 160}
+        assert dict(spec.launch.resources) == {"memory_mb": LARGE_MB}
 
 
-def _count(path: str, name: str, *, workers: int = 1, steps: int = 1, size: int = 136) -> int:
+def _count(path: str, name: str, *, workers: int = 1, steps: int = 1, size: int = BASE_MB + 8) -> int:
     ctx = histserv_api().Context(memory_mb=size, workers=workers, name=name)
     plan = _plan(path, steps, {f"s{i:02d}": (0.25, ctx) for i in range(32)})
     servers = _servers(ctx)
@@ -121,27 +126,27 @@ def test_with_one_size_the_server_count_rises_with_workers_and_tasks_and_falls_w
 ) -> None:
     by_workers = [_count(path, f"m69b-pack-workers-{w}", workers=w) for w in (1, 3, 6)]
     by_tasks = [_count(path, f"m69b-pack-tasks-{t}", steps=t) for t in (1, 1000, 4000)]
-    by_size = [_count(path, f"m69b-pack-size-{s}", size=s) for s in (136, 144, 200)]
+    by_size = [_count(path, f"m69b-pack-size-{s}", size=s) for s in (BASE_MB + 8, BASE_MB + 15, BASE_MB + 71)]
     assert by_workers[0] < by_workers[1] < by_workers[2]
     assert by_tasks[0] < by_tasks[1] < by_tasks[2]
     assert by_size[0] > by_size[1] > by_size[2]
 
 
-#: one context offering s = 140 < L = 160 MiB: ``only_l`` fits L alone, ``big`` fits neither
-TWO_SIZE = {"big": 3.046875, "only_l": 2.8, "small1": 0.5, "small2": 0.5, "small3": 0.5, "tiny": 0.1}
+#: one context offering s = SMALL_MB < L = LARGE_MB: ``only_l`` fits L alone, ``big`` fits neither
+TWO_SIZE = {"big": 3.046875, "only_l": 2.75, "small1": 0.5, "small2": 0.5, "small3": 0.5, "tiny": 0.1}
 
 
 def _two_size_plan(path: str, name: str) -> tuple[Plan[Any], Any]:
-    ctx = histserv_api().Context(memory_mb=[160, 140], workers=1, name=name)
+    ctx = histserv_api().Context(memory_mb=[LARGE_MB, SMALL_MB], workers=1, name=name)
     return _plan(path, 3, {key: (mib, ctx) for key, mib in TWO_SIZE.items()}), ctx
 
 
 def test_one_context_with_two_sizes_opens_the_smallest_that_fits_and_never_refuses_on_size(path: str) -> None:
     n = "m69b-pack-two-size"
     plan, ctx = _two_size_plan(path, n)
-    assert ctx.memory_mb == (140, 160)
+    assert ctx.memory_mb == (SMALL_MB, LARGE_MB)
     alone = predicted([_slot(TWO_SIZE["big"], 3)], workers=1)
-    assert alone > 160 * MiB and predicted([_slot(TWO_SIZE["only_l"], 3)], workers=1) > 140 * MiB
+    assert alone > LARGE_MB * MiB and predicted([_slot(TWO_SIZE["only_l"], 3)], workers=1) > SMALL_MB * MiB
     want = {
         "big": f"{n}-0",
         "only_l": f"{n}-1",
@@ -151,7 +156,7 @@ def test_one_context_with_two_sizes_opens_the_smallest_that_fits_and_never_refus
         "small3": f"{n}-2",
     }
     assert assigned(plan) == want
-    sizes = {f"{n}-0": math.ceil(alone / MiB), f"{n}-1": 160, f"{n}-2": 140}
+    sizes = {f"{n}-0": math.ceil(alone / MiB), f"{n}-1": LARGE_MB, f"{n}-2": SMALL_MB}
     servers = _servers(ctx)
     for name, size in sizes.items():
         held = [_slot(TWO_SIZE[k], 3) for k, s in want.items() if s == name]
@@ -164,14 +169,16 @@ def test_one_context_with_two_sizes_opens_the_smallest_that_fits_and_never_refus
 
 def test_two_contexts_in_one_plan_never_share_a_server(path: str) -> None:
     hs = histserv_api()
-    x = hs.Context(memory_mb=140, workers=1, name="m69b-pack-ctx-x")
-    y = hs.Context(memory_mb=160, workers=1, name="m69b-pack-ctx-y")
+    x = hs.Context(memory_mb=SMALL_MB, workers=1, name="m69b-pack-ctx-x")
+    y = hs.Context(memory_mb=LARGE_MB, workers=1, name="m69b-pack-ctx-y")
     plan = _plan(path, 3, {"x_only_l": (2.8, x), "y_small": (0.5, y)})
     alone = predicted([_slot(2.8, 3)], workers=1)
-    assert 140 * MiB < alone and predicted([_slot(2.8, 3), _slot(0.5, 3)], workers=1) <= 160 * MiB
+    assert SMALL_MB * MiB < alone and predicted([_slot(2.8, 3), _slot(0.5, 3)], workers=1) <= LARGE_MB * MiB
     assert assigned(plan) == {"x_only_l": "m69b-pack-ctx-x-0", "y_small": "m69b-pack-ctx-y-0"}
     assert _servers(x) == {"m69b-pack-ctx-x-0": (math.ceil(alone / MiB), pytest.approx(alone, abs=1), 1)}
-    assert [(name, size, count) for name, size, _p, count in y.servers()] == [("m69b-pack-ctx-y-0", 160, 1)]
+    assert [(name, size, count) for name, size, _p, count in y.servers()] == [
+        ("m69b-pack-ctx-y-0", LARGE_MB, 1)
+    ]
 
 
 def _labelled(path: str, bins: int, ctx: Any) -> Plan[Any]:
@@ -183,7 +190,7 @@ def _labelled(path: str, bins: int, ctx: Any) -> Plan[Any]:
 
 
 def test_a_slot_past_the_message_ceiling_is_refused_naming_the_sizes(path: str) -> None:
-    ctx = histserv_api().Context(memory_mb=160, workers=1, name="m69b-pack-ceiling")
+    ctx = histserv_api().Context(memory_mb=LARGE_MB, workers=1, name="m69b-pack-ceiling")
     # 32 labels of 16 * (bins + 2) bytes: 1048446 bins put stored + 64 KiB exactly at the ceiling
     at = 32 * 16 * (1_048_446 + 2)
     assert at + 64 * 1024 == CEILING
@@ -197,7 +204,7 @@ def test_a_slot_past_the_message_ceiling_is_refused_naming_the_sizes(path: str) 
 
 
 def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(path: str) -> None:
-    ctx = histserv_api().Context(memory_mb=160, workers=1, name="m69b-pack-refusals")
+    ctx = histserv_api().Context(memory_mb=LARGE_MB, workers=1, name="m69b-pack-refusals")
     _session, ev = events(path)
 
     def hist(back: bool = True) -> gh.boost.Histogram:
@@ -241,7 +248,7 @@ def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(pa
 def test_one_context_over_two_plans_fills_the_open_servers_first_and_collate_starts_each_once(
     tmp_path: Path,
 ) -> None:
-    ctx = histserv_api().Context(memory_mb=160, workers=1, name="m69b-pack-two-plans")
+    ctx = histserv_api().Context(memory_mb=LARGE_MB, workers=1, name="m69b-pack-two-plans")
     a = _plan(write_events(str(tmp_path / "a.parquet"), seed=1), 3, {"a1": (2.8, ctx), "a2": (2.0, ctx)})
     b = _plan(write_events(str(tmp_path / "b.parquet"), seed=2), 3, {"b1": (1.5, ctx), "b2": (2.6, ctx)})
     n = "m69b-pack-two-plans"
@@ -249,16 +256,16 @@ def test_one_context_over_two_plans_fills_the_open_servers_first_and_collate_sta
     assert assigned(b) == {"b2": f"{n}-2", "b1": f"{n}-1"}
     assert [s.name for s in collate({"A": a, "B": b}).services] == [f"{n}-0", f"{n}-1", f"{n}-2"]
     shared = predicted([_slot(2.0, 3), _slot(1.5, 3)], workers=1)
-    assert _servers(ctx)[f"{n}-1"] == (160, pytest.approx(shared, abs=1), 2) and shared <= 160 * MiB
+    assert _servers(ctx)[f"{n}-1"] == (LARGE_MB, pytest.approx(shared, abs=1), 2) and shared <= LARGE_MB * MiB
 
 
 def test_an_equal_second_context_shares_the_first_ones_servers_without_overfilling(tmp_path: Path) -> None:
     hs = histserv_api()
     n = "m69b-pack-equal"
-    first = hs.Context(memory_mb=160, workers=1, name=n)
+    first = hs.Context(memory_mb=LARGE_MB, workers=1, name=n)
     p1 = _plan(write_events(str(tmp_path / "one.parquet"), seed=1), 3, {"p1a": (2.5, first)})
     with pytest.warns(Warning, match=rf"\b{re.escape(n)}\b"):
-        second = hs.Context(memory_mb=160, workers=1, name=n)
+        second = hs.Context(memory_mb=LARGE_MB, workers=1, name=n)
     p2 = _plan(
         write_events(str(tmp_path / "two.parquet"), seed=2), 3, {"p2a": (2.7, second), "p2b": (0.25, second)}
     )
@@ -270,7 +277,7 @@ def test_an_equal_second_context_shares_the_first_ones_servers_without_overfilli
             held.setdefault(server, []).append(_slot(mib[key], 3))
     assert assigned(p2)["p2b"] in declared
     for server, slots in held.items():
-        assert predicted(slots, workers=1) <= 160 * MiB
+        assert predicted(slots, workers=1) <= LARGE_MB * MiB
         assert _servers(second)[server][1] == pytest.approx(predicted(slots, workers=1), abs=1)
     assert first.servers() == second.servers()
 
@@ -285,15 +292,15 @@ def test_a_name_holds_its_arguments_for_the_process() -> None:
     with pytest.raises(REFUSED) as raised:
         hs.Context(memory_mb=1700, workers=1, name=HELD)
     assert re.search(r"\b1500\b", str(raised.value)) and re.search(r"\b1700\b", str(raised.value))
-    hs.Context(memory_mb=[140, 160], workers=1, name=f"{HELD}-sizes")
+    hs.Context(memory_mb=[SMALL_MB, LARGE_MB], workers=1, name=f"{HELD}-sizes")
     with pytest.warns(Warning, match=rf"\b{re.escape(HELD)}-sizes\b"):
-        hs.Context(memory_mb=[160, 140], workers=1, name=f"{HELD}-sizes")
+        hs.Context(memory_mb=[LARGE_MB, SMALL_MB], workers=1, name=f"{HELD}-sizes")
     with pytest.raises(REFUSED):
-        hs.Context(memory_mb=[140], workers=1, name=f"{HELD}-sizes")
+        hs.Context(memory_mb=[SMALL_MB], workers=1, name=f"{HELD}-sizes")
     with pytest.raises(REFUSED):
         hs.Context(memory_mb=[], workers=1, name=f"{HELD}-empty")
     with pytest.raises(REFUSED):
-        hs.Context(memory_mb=128, workers=1, name=f"{HELD}-below")
+        hs.Context(memory_mb=BASE_MB - 1, workers=1, name=f"{HELD}-below")
 
 
 def test_a_later_test_still_finds_the_name_held() -> None:
@@ -304,8 +311,8 @@ def test_a_later_test_still_finds_the_name_held() -> None:
 
 def test_plan_services_are_sorted_by_name(path: str) -> None:
     hs = histserv_api()
-    z = hs.Context(memory_mb=160, workers=1, name="m69b-pack-sort-z")
-    a = hs.Context(memory_mb=160, workers=1, name="m69b-pack-sort-a")
+    z = hs.Context(memory_mb=LARGE_MB, workers=1, name="m69b-pack-sort-z")
+    a = hs.Context(memory_mb=LARGE_MB, workers=1, name="m69b-pack-sort-a")
     plan = _plan(path, 3, {"big": (2.5, z), "small": (0.25, a)})
     assert [s.name for s in plan.services] == ["m69b-pack-sort-a-0", "m69b-pack-sort-z-0"]
 
