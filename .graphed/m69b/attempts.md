@@ -53,3 +53,19 @@ m48/m49 tests and 46 m69b items; the 5 memory-model items skip off Linux).
   model included. Coverage: histserv.py 100 %, boost.py 98.9 %, _spec.py 95.9 % (min); diff-cover
   100 % vs origin/main. ruff, format, mypy clean. Extra-test mutants (5) killed, the lock mutant
   4/4 runs (8 creations against 1).
+
+## Iteration 3 — 2026-09-30 — ci + docs
+
+- ci.yml: `GRAPHED` = graphed a0638719 by git URL (one-line reason: the services surface and
+  `opt_level` are unreleased); GIL legs install `.[dev,histserv]`, the 3.14t leg `.[dev]` (its
+  frozen server files skip through their `importorskip`; `tests/extra/m69b`'s server file skips on
+  free-threaded builds only, so a GIL leg missing histserv fails).
+- docs: `design.rst` "Filling on histserv servers" (four parts, a sizing example, a hand-bound run,
+  the model and its constants, placement rules and refusals, the context's process scope, what the
+  sizes guarantee per placement, retries and float order, composing with `pieces`) — every block
+  run verbatim in sequence, outputs pasted from that run; `api.rst`, `improvements.rst`, changelog
+  (Unreleased), index install line.
+- `tests/extra/m69b` landed with commits 1 and 2, beside the code each witnesses.
+- Gates: frozen + extra 405 passed, 6 skipped (5 memory-model off Linux, correctionlib absent);
+  per-file min `_spec.py` 95.9 %; diff-cover 100 % (369 lines) vs origin/main; ruff, format, mypy
+  clean; sphinx -W ok.
