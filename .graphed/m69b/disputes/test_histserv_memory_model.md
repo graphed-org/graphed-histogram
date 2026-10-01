@@ -22,5 +22,5 @@ Owner, 2026-10-01: "m69b refreeze authorized." `histserv_harness.py`: `BASE = 16
 `PER_HIST`, `PER_TASK`, `FILL_A`, `PER_CONN` keep their maxima. Server sizes in `test_histserv_packing.py` and
 `test_histserv_memory_model.py` are offsets from `BASE`. The larger `FILL_B` also moved two slot sizes (`m` 1.5 → 1.375
 in the first-fit test, `only_l` 2.8 → 2.75 in `TWO_SIZE`), so every map, fit and refusal is the same as before.
-Outside the ruling: `test_histserv_fill_path.py`'s `SIZE_MB = 136` is below the new `B`, so its `Context` is refused;
-it needs its own scope extension (`SIZE_MB = BASE // MiB + 7` keeps its relations).
+Owner, 2026-10-01: "approve refreeze on tests/frozen/m69b/test_histserv_fill_path.py": its `SIZE_MB = 136` sat below
+the new `B` (its `Context` was refused), now `SIZE_MB = BASE // MiB + 7`, refrozen in `test(frozen): m69b fill-path server rides the measured baseline`.

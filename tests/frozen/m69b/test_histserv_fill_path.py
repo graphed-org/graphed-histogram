@@ -16,6 +16,7 @@ from graphed import GraphedError
 from graphed.core.execution import Plan, SequentialRunner
 from graphed.services import bind_services, resolve_services
 from histserv_harness import (
+    BASE,
     MiB,
     assigned,
     bind,
@@ -35,7 +36,7 @@ import graphed_histogram as gh
 pytest.importorskip("histserv")
 
 REFUSED = (GraphedError, TypeError, ValueError)
-SIZE_MB = 136
+SIZE_MB = BASE // MiB + 7
 #: Double over 400000 bins: its alone prediction is past every size the context offers
 BIG_BINS = 400_000
 
