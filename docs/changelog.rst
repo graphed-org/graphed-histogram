@@ -1,8 +1,10 @@
 What changed
 ============
 
-Unreleased
-----------
+0.0.5
+-----
+
+Requires ``graphed`` 0.0.7 or later.
 
 Filling on histserv servers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -11,8 +13,8 @@ Filling on histserv servers
   servers instead of carrying them through the reduction tree: back a histogram with a
   ``histserv.Context`` and ``gh.plan`` sizes it, packs it onto servers of the sizes you offer and
   declares those servers in ``plan.services`` for the executor to start (:ref:`histserv`). Install
-  with ``pip install "graphed-histogram[histserv]"``; needs a ``graphed`` with the service surface
-  (``graphed.services``), not yet in a release.
+  with ``pip install "graphed-histogram[histserv]"``; it uses
+  graphed 0.0.7's service surface (``graphed.services``).
 * ``gh.boost.pieces(histograms)`` hands out the parts ``gh.plan`` builds from, so a plan can put
   your histograms beside outputs of its own.
 
