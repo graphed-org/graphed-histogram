@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # A sha, not a release: graphed.services (histserv's servers) and aggregate_plan(opt_level=) are unreleased.
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@a0638719da2f7af93767ff7acfa0e9d8eb492507"
+  # graphed 0.0.7's release commit (graphed#79) until 0.0.7 is on PyPI.
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@cff4d2783ef08608318a5d5cbc14f16ef2b7d17b"
   # exec-local stays a separate package (used by the M23 process-executor integration tests)
   EXECLOCAL: "graphed-executors"
 
