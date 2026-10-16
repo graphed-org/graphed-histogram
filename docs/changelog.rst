@@ -1,6 +1,17 @@
 What changed
 ============
 
+Unreleased
+----------
+
+Changed
+~~~~~~~
+
+* A fill takes a scalar (``str``, ``int``, ``float`` or ``bool``) for any axis, ``weight=`` factor
+  or ``sample=`` and broadcasts it per entry, as an eager fill does:
+  ``h.fill(dataset="DYJets", pt=events.Muon.pt)``. Fills with different constants are different
+  nodes. Every fill needs a graphed Array on at least one axis.
+
 0.0.5
 -----
 

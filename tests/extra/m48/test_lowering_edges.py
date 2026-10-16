@@ -52,9 +52,9 @@ def test_fill_refuses_non_array_weight_and_sample_operands() -> None:
     session, x = _source()
     del session
     with pytest.raises(TypeError, match="weights must be graphed Arrays"):
-        _hist().fill(x, weight=[1.5])
+        _hist().fill(x, weight=[np.ones(3)])
     with pytest.raises(TypeError, match="sample= must be a graphed Array"):
-        _hist().fill(x, sample=1.5)
+        _hist().fill(x, sample=np.ones(3))
 
 
 def test_unpack_reads_an_axis_mode_slot_as_a_bare_histogram() -> None:
