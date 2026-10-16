@@ -143,3 +143,20 @@ def test_a_scalar_factor_keeps_its_slot_after_the_ambient_weight() -> None:
         flat = ak.to_numpy(ak.flatten(ak.broadcast_arrays(ambient, EVENTS.pt)[0]))
         want = bh.Histogram(PT_AXIS, storage=bh.storage.Weight()).fill(PT, weight=flat * PT * 0.3)
         _assert_same(got[label], want)
+
+
+@pytest.mark.parametrize(
+    "constant", [np.int64(2018), np.float32(2.5), np.bool_(True)], ids=["int64", "float32", "bool_"]
+)
+def test_a_numpy_scalar_is_a_constant_like_its_python_value(constant: Any) -> None:
+    events = _events()
+    axis = (
+        hist.axis.Regular(4, 0.0, 4.0, name="c")
+        if not isinstance(constant, np.int64)
+        else hist.axis.IntCategory([], growth=True, name="c")
+    )
+    deferred = hist.graphed.Hist(axis, PT_AXIS).fill(c=constant, pt=events.pt)
+    python = hist.graphed.Hist(axis, PT_AXIS).fill(c=constant.item(), pt=events.pt)
+    assert deferred.fill_nodes()[0].node_id == python.fill_nodes()[0].node_id
+    got = _run({"h": deferred})["h"]
+    _assert_same(got, hist.Hist(axis, PT_AXIS).fill(c=constant, pt=PT))

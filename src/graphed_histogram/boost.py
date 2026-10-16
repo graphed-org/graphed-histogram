@@ -126,7 +126,7 @@ class FillEvaluator:
 
 
 #: the scalar fill values a deferred fill records as constants rather than as graph inputs
-_SCALARS = str | int | float | bool
+_SCALARS = (str, int, float, bool, np.integer, np.floating, np.bool_)
 
 
 def _place(rest: list[object], n: int, fixed: Mapping[int, object]) -> list[Any]:
@@ -134,16 +134,21 @@ def _place(rest: list[object], n: int, fixed: Mapping[int, object]) -> list[Any]
     return [fixed[i] if i in fixed else _flat(rest.pop(0)) for i in range(n)]
 
 
+def _plain(value: object) -> object:
+    """A numpy scalar as its Python value (``int``, ``float`` or ``bool``), which JSON encodes."""
+    return value.item() if isinstance(value, np.generic) else value
+
+
 def _constants(args: Sequence[object], factors: Sequence[object], sample: object) -> str | None:
     """The fill's scalar values by slot, JSON-encoded so node params, content hash and evaluator
     carry one identity (``1``, ``1.0``, ``True`` and ``"1"`` stay distinct); None when there are none."""
     fixed: dict[str, Any] = {}
     for key, column in (("axes", args), ("weights", factors)):
-        slots = [[i, v] for i, v in enumerate(column) if isinstance(v, _SCALARS)]
+        slots = [[i, _plain(v)] for i, v in enumerate(column) if isinstance(v, _SCALARS)]
         if slots:
             fixed[key] = slots
     if isinstance(sample, _SCALARS):
-        fixed["sample"] = [sample]
+        fixed["sample"] = [_plain(sample)]
     return json.dumps(fixed, sort_keys=True) if fixed else None
 
 
@@ -611,7 +616,7 @@ class Histogram(bh.Histogram):
         """
         if len(args) != len(self.axes):
             raise TypeError(f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays")
-        if not all(isinstance(a, Array | Varied | _SCALARS) for a in args):
+        if not all(isinstance(a, (Array, Varied, *_SCALARS)) for a in args):
             raise TypeError(
                 "deferred fills take graphed Arrays or scalar constants; use boost_histogram for eager data"
             )
@@ -629,9 +634,9 @@ class Histogram(bh.Histogram):
         # weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
         # a real graph input and evaluation multiplies them elementwise
         all_weights = _factor_list(weight)
-        if not all(isinstance(w, Array | Varied | _SCALARS) for w in all_weights):
+        if not all(isinstance(w, (Array, Varied, *_SCALARS)) for w in all_weights):
             raise TypeError("weights must be graphed Arrays or scalar constants")
-        if sample is not None and not isinstance(sample, Array | Varied | _SCALARS):
+        if sample is not None and not isinstance(sample, (Array, Varied, *_SCALARS)):
             raise TypeError("sample= must be a graphed Array or a scalar constant")
         weights = [w for w in all_weights if not isinstance(w, _SCALARS)]
         recorded_sample = None if isinstance(sample, _SCALARS) else sample
