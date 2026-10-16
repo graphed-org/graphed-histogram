@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, TypeVar
 
@@ -86,32 +86,70 @@ class FillEvaluator:
     has_sample: bool
     n_weights: int = 1  # multiple multiplicative weight inputs (the default keeps old pickles valid)
     variation: tuple[str, ...] | None = None  # axis-mode label loop (None keeps old pickles valid)
+    #: scalar fill values recorded in place of inputs, as :func:`_constants` encodes them (None
+    #: keeps old pickles valid); boost broadcasts each one, as an eager fill does
+    constants: str | None = None
 
     def __call__(self, *values: object) -> bh.Histogram:
         h = zero_of(self.spec)
-        weight: Any = None
+        fixed = json.loads(self.constants) if self.constants else {}
+        axis_fixed = dict(fixed.get("axes", []))
+        weight_fixed = dict(fixed.get("weights", []))
+        rest = list(values)
+
+        def weight_of() -> Any:
+            if not self.has_weight:
+                return None
+            factors = _place(rest, self.n_weights, weight_fixed)
+            weight = factors[0]
+            for factor in factors[1:]:
+                weight = weight * factor  # elementwise product of the weight factors
+            return weight
+
+        def sample_of() -> Any:
+            if not self.has_sample:
+                return None
+            return fixed["sample"][0] if "sample" in fixed else _flat(rest.pop(0))
+
+        axes = _place(rest, self.n_axes, axis_fixed)
         if self.variation is None:
-            axes = [_flat(v) for v in values[: self.n_axes]]
-            rest = list(values[self.n_axes :])
-            if self.has_weight:
-                weight = _flat(rest.pop(0))
-                for _ in range(self.n_weights - 1):
-                    weight = weight * _flat(rest.pop(0))  # elementwise product of the weight factors
-            sample = _flat(rest.pop(0)) if self.has_sample else None
-            h.fill(*axes, weight=weight, sample=sample)
+            weight = weight_of()
+            h.fill(*axes, weight=weight, sample=sample_of())
             return h
         # axis mode: [*value_axes, sample?, *per-label weight blocks]; value/sample fixed
-        rest = list(values)
-        axes = [_flat(rest.pop(0)) for _ in range(self.n_axes)]
-        sample = _flat(rest.pop(0)) if self.has_sample else None
+        sample = sample_of()
         for label in self.variation:
-            weight = None
-            if self.has_weight:
-                weight = _flat(rest.pop(0))
-                for _ in range(self.n_weights - 1):
-                    weight = weight * _flat(rest.pop(0))
-            h.fill(*axes, label, weight=weight, sample=sample)  # scalar category broadcasts (probe-verified)
+            h.fill(
+                *axes, label, weight=weight_of(), sample=sample
+            )  # scalar category broadcasts (probe-verified)
         return h
+
+
+#: the scalar fill values a deferred fill records as constants rather than as graph inputs
+_SCALARS = (str, int, float, bool, np.integer, np.floating, np.bool_)
+
+
+def _place(rest: list[object], n: int, fixed: Mapping[int, object]) -> list[Any]:
+    """``n`` fill columns: each constant in its own slot, the others flattened off ``rest``."""
+    return [fixed[i] if i in fixed else _flat(rest.pop(0)) for i in range(n)]
+
+
+def _plain(value: object) -> object:
+    """A numpy scalar as its Python value (``int``, ``float`` or ``bool``), which JSON encodes."""
+    return value.item() if isinstance(value, np.generic) else value
+
+
+def _constants(args: Sequence[object], factors: Sequence[object], sample: object) -> str | None:
+    """The fill's scalar values by slot, JSON-encoded so node params, content hash and evaluator
+    carry one identity (``1``, ``1.0``, ``True`` and ``"1"`` stay distinct); None when there are none."""
+    fixed: dict[str, Any] = {}
+    for key, column in (("axes", args), ("weights", factors)):
+        slots = [[i, _plain(v)] for i, v in enumerate(column) if isinstance(v, _SCALARS)]
+        if slots:
+            fixed[key] = slots
+    if isinstance(sample, _SCALARS):
+        fixed["sample"] = [_plain(sample)]
+    return json.dumps(fixed, sort_keys=True) if fixed else None
 
 
 #: the three execution-time row-space contracts. The two factor messages point at the fix (the
@@ -296,6 +334,7 @@ def _fill_chash(
     has_weight: bool,
     n_weights: int,
     variation: Sequence[str] | None = None,
+    constants: str | None = None,
 ) -> str:
     """The fill node's descriptor content hash — also its External evaluator's registry key
     (`evaluate_ir` resolves `externals[content_hash]`, and the group plan merges every histogram's
@@ -315,9 +354,29 @@ def _fill_chash(
         disc.append(f"n_weights={n_weights}")
     if variation is not None:
         disc.append("variation=" + json.dumps(list(variation)))
+    if constants is not None:
+        disc.append("constants=" + constants)
     if not disc:
         return content_hash(spec)
     return content_hash(spec + "\x00" + "\x00".join(disc))
+
+
+def _fill_params(
+    spec: str, shape: FillEvaluator, n_recorded: int, variation: Sequence[str] | None = None
+) -> dict[str, Any]:
+    """A fill node's params; ``n_axes`` counts the RECORDED axis inputs, which lead the node's inputs."""
+    return {
+        "spec": spec,
+        "n_axes": n_recorded,
+        "weighted": shape.has_weight,
+        "sampled": shape.has_sample,
+        **(
+            {} if variation is None else {"variation": json.dumps(list(variation))}
+        ),  # store params are scalars
+        # only multi-weight fills carry the param: single-weight node identity unchanged
+        **({"n_weights": shape.n_weights} if shape.n_weights > 1 else {}),
+        **({} if shape.constants is None else {"constants": shape.constants}),
+    }
 
 
 def _declare_axis_spec(hist: bh.Histogram, sorted_labels: Sequence[str]) -> str:
@@ -557,8 +616,15 @@ class Histogram(bh.Histogram):
         """
         if len(args) != len(self.axes):
             raise TypeError(f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays")
-        if not all(isinstance(a, Array | Varied) for a in args):
-            raise TypeError("deferred fills take graphed Arrays; use boost_histogram for eager data")
+        if not all(isinstance(a, (Array, Varied, *_SCALARS)) for a in args):
+            raise TypeError(
+                "deferred fills take graphed Arrays or scalar constants; use boost_histogram for eager data"
+            )
+        values = [a for a in args if not isinstance(a, _SCALARS)]
+        if not values:
+            raise TypeError(
+                "a deferred fill needs a graphed Array on some axis for its constants to broadcast against"
+            )
         del threads  # parallelism belongs to the executor, not the fill
         if unweighted and weight is not None:
             raise GraphedError(
@@ -567,11 +633,13 @@ class Histogram(bh.Histogram):
             )
         # weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
         # a real graph input and evaluation multiplies them elementwise
-        weights = _factor_list(weight)
-        if not all(isinstance(w, Array | Varied) for w in weights):
-            raise TypeError("weights must be graphed Arrays")
-        if sample is not None and not isinstance(sample, Array | Varied):
-            raise TypeError("sample= must be a graphed Array")
+        all_weights = _factor_list(weight)
+        if not all(isinstance(w, (Array, Varied, *_SCALARS)) for w in all_weights):
+            raise TypeError("weights must be graphed Arrays or scalar constants")
+        if sample is not None and not isinstance(sample, (Array, Varied, *_SCALARS)):
+            raise TypeError("sample= must be a graphed Array or a scalar constant")
+        weights = [w for w in all_weights if not isinstance(w, _SCALARS)]
+        recorded_sample = None if isinstance(sample, _SCALARS) else sample
 
         established = bool(self._fill_specs)  # any prior fill has fixed the mode
         if established and variation_axis != self._axis_mode:
@@ -588,16 +656,25 @@ class Histogram(bh.Histogram):
                 "drop the pre-existing 'variation' axis or use sibling fills"
             )
 
-        given = [*args, *weights, *([] if sample is None else [sample])]
+        given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
-        axes = [graphed.reindex_to(value, ctx) for value in args]
+        axes = [graphed.reindex_to(value, ctx) for value in values]
         factors = [graphed.reindex_to(value, ctx) for value in weights]  # the ambient one already is
-        sampled = None if sample is None else graphed.reindex_to(sample, ctx)
+        sampled = None if recorded_sample is None else graphed.reindex_to(recorded_sample, ctx)
 
         applied: list[Operand] = ([] if ambient is None else [ambient]) + factors
         labels = _fold_labels([*axes, *applied, *([] if sampled is None else [sampled])])
-        blame = _blame(args, ctx, ambient is not None, len(factors))
+        blame = _blame(values, ctx, ambient is not None, len(factors))
+        n_weights = len(applied) + len(all_weights) - len(weights)
+        shape = FillEvaluator(
+            spec=self._spec,
+            n_axes=len(args),
+            has_weight=n_weights > 0,
+            has_sample=sample is not None,
+            n_weights=max(n_weights, 1),
+            constants=_constants(args, ([] if ambient is None else [ambient]) + all_weights, sample),
+        )
         session = graphed.member_of(axes[0], "nominal").session
         # a fill whose factors already share the value's row space and carries neither a context
         # handle nor a `Varied` input records exactly as it did before variations existed: no
@@ -615,17 +692,16 @@ class Histogram(bh.Histogram):
                     f"{sorted(self._axis_labels)}; this fill declares {sorted(labels)} — the "
                     "variation axis (hence the spec) would disagree across fills. Match them."
                 )
-            self._record_axis_fill(session, axes, applied, sampled, blame, broadcast, labels)
+            self._record_axis_fill(session, shape, axes, applied, sampled, blame, broadcast, labels)
             return self
 
-        evaluator = FillEvaluator(
-            spec=self._spec,
-            n_axes=len(args),
-            has_weight=bool(applied),
-            has_sample=sample is not None,
-            n_weights=max(len(applied), 1),
+        evaluator = shape
+        chash = _fill_chash(
+            self._spec,
+            has_weight=shape.has_weight,
+            n_weights=shape.n_weights,
+            constants=shape.constants,
         )
-        chash = _fill_chash(self._spec, has_weight=bool(applied), n_weights=max(len(applied), 1))
         descriptor = PayloadDescriptor(
             kind="histogram",
             content_hash=chash,
@@ -634,14 +710,7 @@ class Histogram(bh.Histogram):
             io_schema="uhi",
             preprocessing_ref=None,
         )
-        params: dict[str, Any] = {
-            "spec": self._spec,
-            "n_axes": len(args),
-            "weighted": bool(applied),
-            "sampled": sample is not None,
-            # only multi-weight fills carry the param: single-weight node identity unchanged
-            **({"n_weights": len(applied)} if len(applied) > 1 else {}),
-        }
+        params = _fill_params(self._spec, shape, len(axes))
         per_label: dict[str, Array] = {}
         for label in labels:
             inputs: list[Array] = [graphed.member_of(value, label) for value in axes]
@@ -696,6 +765,7 @@ class Histogram(bh.Histogram):
     def _record_axis_fill(
         self,
         session: Any,
+        shape: FillEvaluator,
         axes: Sequence[Operand],
         applied: Sequence[Operand],
         sampled: Operand | None,
@@ -725,6 +795,7 @@ class Histogram(bh.Histogram):
         for group in groups.values():  # first-appearance order: nominal's group leads
             node = self._record_axis_node(
                 session,
+                shape,
                 axis_spec,
                 axes,
                 applied,
@@ -743,6 +814,7 @@ class Histogram(bh.Histogram):
     def _record_axis_node(
         self,
         session: Any,
+        shape: FillEvaluator,
         axis_spec: str,
         axes: Sequence[Operand],
         applied: Sequence[Operand],
@@ -769,19 +841,13 @@ class Histogram(bh.Histogram):
                     guarded = self._guard(session, narrowed, value, coordinate, message)
                     narrowed = graphed.broadcast_like(value, guarded)
                 inputs.append(narrowed)
-        evaluator = FillEvaluator(
-            spec=axis_spec,
-            n_axes=len(axes),
-            has_weight=bool(applied),
-            has_sample=sampled is not None,
-            n_weights=max(len(applied), 1),
-            variation=tuple(node_labels),
-        )
+        evaluator = replace(shape, spec=axis_spec, variation=tuple(node_labels))
         chash = _fill_chash(
             axis_spec,
-            has_weight=bool(applied),
-            n_weights=max(len(applied), 1),
+            has_weight=shape.has_weight,
+            n_weights=shape.n_weights,
             variation=node_labels,
+            constants=shape.constants,
         )
         descriptor = PayloadDescriptor(
             kind="histogram",
@@ -791,14 +857,7 @@ class Histogram(bh.Histogram):
             io_schema="uhi",
             preprocessing_ref=None,
         )
-        params: dict[str, Any] = {
-            "spec": axis_spec,
-            "n_axes": len(axes),
-            "weighted": bool(applied),
-            "sampled": sampled is not None,
-            "variation": json.dumps(list(node_labels)),  # store params are scalars; JSON-encode
-            **({"n_weights": len(applied)} if len(applied) > 1 else {}),
-        }
+        params = _fill_params(axis_spec, shape, len(axes), node_labels)
         node: Array = session.record_external(
             "histogram.fill",
             evaluator,
