@@ -29,10 +29,10 @@ N_PARTITIONS = 4
 DT = 0.1
 LOADER_MARK = "loader"
 
-RUNNERS: dict[str, Callable[[], Any]] = {
+RUNNERS: dict[str, Callable[..., Any]] = {
     "seq": SequentialRunner,
-    "procexec2": lambda: ProcessExecutor(max_workers=2),
-    "procpool3": lambda: ProcessPoolExecutor(max_workers=3),
+    "procexec2": lambda **kw: ProcessExecutor(max_workers=2, **kw),
+    "procpool3": lambda **kw: ProcessPoolExecutor(max_workers=3, **kw),
 }
 PROCESS_RUNNERS = ("procexec2", "procpool3")
 #: "all runners": every runner through both plan builders
@@ -116,12 +116,21 @@ def run(
     `build` returns the deferred histogram. `unpack=True` returns `gh.unpack(value)["h"]`.
     """
     stamp_dir = tempfile.mkdtemp(prefix="m64-")
-    session = Session(NumpyBackend())
-    src = ArraySource(data, stamp_dir, 0.0 if runner == "seq" else DT, reversed)
-    ev = session.source("ev", form=NumpyForm(data.dtype, shape=(None, *data.shape[1:])), data=src)
-    h = build(ev)
-    plan = h.plan(steps_per_file=n) if how == "h.plan" else gh.plan({"h": h}, steps_per_file=n)
-    value = RUNNERS[runner]().run(plan).value
+
+    def plan_of(src: ArraySource) -> Any:
+        session = Session(NumpyBackend())
+        ev = session.source("ev", form=NumpyForm(data.dtype, shape=(None, *data.shape[1:])), data=src)
+        h = build(ev)
+        return h.plan(steps_per_file=n) if how == "h.plan" else gh.plan({"h": h}, steps_per_file=n)
+
+    plan = plan_of(ArraySource(data, stamp_dir, 0.0 if runner == "seq" else DT, reversed))
+    if runner in PROCESS_RUNNERS:
+        # workers spawned lazily start ~DT apart and cancel the stagger: spawn them all untimed first
+        with RUNNERS[runner](persistent=True) as pool:
+            pool.run(plan_of(ArraySource(data, tempfile.mkdtemp(prefix="m64-warm-"))))
+            value = pool.run(plan).value
+    else:
+        value = RUNNERS[runner]().run(plan).value
     if how == "gh.plan":
         value = gh.unpack(value)["h"] if unpack else value["h"]
     names = os.listdir(stamp_dir)
