@@ -37,9 +37,9 @@ MiB = 1 << 20
 # probes/m69b/probe_histserv_memory{,.amd64,.gha,.gha-20261018}.txt and (PER_CONN)
 # probe_histserv_connections{,.amd64}.txt.
 # BASE adds the largest change in B between two GitHub runner images there, so the next image change fits.
-BASE = 228 * MiB
+BASE = 227 * MiB
 PER_HIST = 4000
-PER_TASK = 160
+PER_TASK = 170
 FILL_A = 5.5
 FILL_B = 3.5
 PER_CONN = 19 * 1024
