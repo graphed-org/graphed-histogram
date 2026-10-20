@@ -40,11 +40,12 @@ V = TypeVar("V")
 
 MiB = 1 << 20
 # The size model's constants, each the maximum over the MODEL lines of the plan's
-# probes/m69b/probe_histserv_memory.txt, probe_histserv_memory.amd64.txt and probe_histserv_memory.gha.txt,
-# and (_PER_CONN) probe_histserv_connections{,.amd64}.txt.
-_BASE = 164 * MiB
+# probes/m69b/probe_histserv_memory{,.amd64,.gha,.gha-20261018}.txt and (_PER_CONN)
+# probe_histserv_connections{,.amd64}.txt.
+# _BASE adds the largest change in B between two GitHub runner images there, so the next image change fits.
+_BASE = 227 * MiB
 _PER_HIST = 4000
-_PER_TASK = 160
+_PER_TASK = 170
 _FILL_A = 5.5
 _FILL_B = 3.5
 _PER_CONN = 19 * 1024
