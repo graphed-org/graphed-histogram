@@ -83,8 +83,8 @@ RUNNERS: dict[str, Callable[[], Any]] = {
 }
 
 
-def _bytes(h: bh.Histogram) -> tuple[bytes, list[Any]]:
-    return np.ascontiguousarray(h.view(flow=True)).tobytes(), [list(ax) for ax in h.axes]
+def _bytes(h: bh.Histogram) -> tuple[bytes, list[Any], bool]:
+    return np.ascontiguousarray(h.view(flow=True)).tobytes(), [list(ax) for ax in h.axes], h._variance_known
 
 
 def _flat(value: Mapping[Any, Any]) -> dict[Any, bh.Histogram]:
@@ -122,7 +122,7 @@ def test_a_partial_ships_chunked_and_reads_dense() -> None:
 def test_a_protocol_probe_keeps_it_chunked_and_any_other_read_densifies() -> None:
     h = _evaluate("growth str with initial categories", False)
     assert getattr(h, "__dask_graph__", None) is None and type(h) is Chunked
-    assert h._variance_known and type(h) is bh.Histogram  # a __dict__ attribute densifies too
+    assert h._variance_known is False and type(h) is bh.Histogram  # a __dict__ attribute densifies too
     Chunked._materialize(h)  # a caller that lost the race finds it done
     assert _bytes(h) == _bytes(_evaluate("growth str with initial categories", True))
 
@@ -159,6 +159,7 @@ CHUNKED: dict[str, tuple[list[Any], Any, list[Any], bool]] = {
     "Unlimited storage": ([R, IC([0, 1, 2])], ST.Unlimited(), [X, C], False),
     "AtomicInt64 storage": ([R, IC([0, 1])], ST.AtomicInt64(), [X, C], False),
     "no event": ([R, S([], growth=True)], ST.Double(), [X[:0], "a"], False),
+    "object-dtype labels": ([R, S(["a", "b"])], ST.Double(), [X, LABELS.astype(object)], False),
 }
 #: the dense fallbacks: what ChunkedHist cannot hold, holds for no gain, or values bh refuses
 DENSE: dict[str, tuple[list[Any], Any, list[Any], bool]] = {
@@ -173,7 +174,6 @@ DENSE: dict[str, tuple[list[Any], Any, list[Any], bool]] = {
     "growing Integer": ([bh.axis.Integer(0, 3, growth=True), S(["a"])], ST.Double(), [C, LABELS], False),
     "no category axis": ([R], ST.Double(), [X], True),
     "only category axes": ([S(["a"]), IC([], growth=True)], ST.Double(), [LABELS, C], False),
-    "object-dtype labels": ([R, S(["a", "b"])], ST.Double(), [X, LABELS.astype(object)], False),
 }
 
 
@@ -195,7 +195,11 @@ def test_a_fill_and_a_merge_are_the_dense_ones_byte_for_byte(case: str) -> None:
     assert _bytes(chunked) == _bytes(dense)
 
 
-@pytest.mark.parametrize("cols", [[X, LABELS[:10]], [X, C]], ids=["lengths differ", "int labels"])
+@pytest.mark.parametrize(
+    "cols",
+    [[X, LABELS[:10]], [X, C], [X, np.array([1, "a"] * (N // 2), dtype=object)]],
+    ids=["lengths differ", "int labels", "object labels, not all str"],
+)
 def test_values_bh_refuses_raise_as_a_dense_fill_does(cols: list[Any]) -> None:
     spec = gh.spec_of(bh.Histogram(R, S(["a", "b"])))
     with pytest.raises(Exception) as dense:

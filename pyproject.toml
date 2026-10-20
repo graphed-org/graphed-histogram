@@ -19,9 +19,9 @@ classifiers = [
 ]
 # graphed: the Plan + content-addressed task_id a fill records into. The 0.0.7 floor is
 # graphed.services, which histserv imports.
-# boost-histogram 1.4.1: 1.4.0 under numpy 2 decodes axes wrong, which the spec codec relies on.
-# hist 2.11: the first with hist.chunked, which holds the chunked partials.
-dependencies = ["graphed>=0.0.7", "boost-histogram>=1.4.1", "numpy>=1.24", "hist>=2.11"]
+# hist 2.11: the first with hist.chunked, which holds the chunked partials; it needs
+# boost-histogram >=1.7 (and caps it below 1.9).
+dependencies = ["graphed>=0.0.7", "boost-histogram>=1.7", "numpy>=1.24", "hist>=2.11"]
 
 [project.optional-dependencies]
 # the backends + corpus + exec-local exercise resume on a realistic HEP analysis end-to-end.

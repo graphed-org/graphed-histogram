@@ -685,12 +685,19 @@ its partials and merges chunked, as a ``hist.chunked.ChunkedHist``: one dense sl
 axes per category key the task filled. A task that filled 30 of the 600 combinations ships about
 30 slices, and a merge adds slice to slice.
 
-You never handle the chunked form. A partial is typed as the ``boost_histogram.Histogram`` it
-stands for, and the first time anything reads it as one (``values()``, a view, an axis, ``==``,
-``hist.Hist(...)``, plotting, UHI export) it becomes, in place, the plain dense histogram a dense
+You never handle the chunked form. A result is the class you instantiated:
+``boost_histogram.Histogram`` for ``gh.boost.Histogram``, and ``hist.Hist`` or ``hist.NamedHist``,
+with the histogram's ``name``, ``label`` and ``metadata``, for ``hist.graphed.Hist`` or
+``NamedHist``. Until something reads it, it is a subclass of that class holding the chunks, so
+``isinstance(result, hist.Hist)`` holds before the first read and ``type(result) is hist.Hist``
+after it. Its repr says it is chunked and that reading it makes it dense. Its ``axes``, a
+selection of one category bin (``graphed.universe`` on a variation axis), ``graphed.labels`` and
+pickling keep it chunked. The first read (``values()``, a view, ``==``, setting an attribute,
+``hist.Hist(...)``, plotting, UHI export) turns it, in place, into the dense histogram a dense
 fill would have given, bin for bin: same axes, same category order, undeclared labels in the
 overflow bin. A fill groups its events by category key, keeping their order within each key, so
-every bin adds the same values in the same order as a dense fill does.
+every bin adds the same values in the same order as a dense fill does. ``session.materialize``
+on a fill node still gives a ``boost_histogram.Histogram``.
 
 Partials stay dense where chunking cannot hold them or gains nothing: ``Mean`` and
 ``WeightedMean`` storage, a growing ``Regular`` or ``Integer`` axis, a histogram with no category
@@ -730,12 +737,15 @@ its graph and its result do not change.
     out = gh.unpack(SequentialRunner().run(
         gh.plan({"chunked": met(), "dense": gh.dense_backed(met())}, steps_per_file=3)
     ).value)
-    print(out["chunked"] == out["dense"], type(out["chunked"]).__name__)
-    print(out["chunked"].values(flow=True)[2])  # "emu" is undeclared: the overflow bin
+    chunked = out["chunked"]
+    print(repr(chunked).split(" # ")[1])
+    print(chunked == out["dense"], type(chunked) is bh.Histogram)  # == reads it
+    print(chunked.values(flow=True)[2])  # "emu" is undeclared: the overflow bin
 
 .. code-block:: text
 
-    True Histogram
+    chunked: 3 filled slices; reading it (e.g. .values()) makes it dense
+    True True
     [0. 0. 0. 0. 0. 1.]
 
 

@@ -9,6 +9,7 @@ from typing import Any
 
 import boost_histogram as bh
 import pytest
+from chunked_census import take
 from graphed.core.execution import LocalResources, SequentialRunner
 from graphed.services import resolve_services
 
@@ -50,6 +51,8 @@ def test_a_histserv_backed_slot_fills_dense_beside_a_chunked_one(tmp_path: Path)
         assert isinstance(partial["served"], histserv.Receipt) and type(partial["local"]) is Chunked
         value = run_bounded(lambda: SequentialRunner().run(bound).value)
         assert type(value["local"]) is Chunked
+        take()
         resolved = run_bounded(lambda: resolve_services(bound, value))
+        assert type(resolved["local"]) is Chunked and take() == []
     want = SequentialRunner().run(twin).value
     assert all(same(resolved[k], want[k]) for k in ("served", "local"))

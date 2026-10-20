@@ -116,11 +116,12 @@ def _restore_metadata(axis: Any, md: dict[str, str]) -> Any:
     return axis
 
 
-def _make_axis(spec: dict[str, Any]) -> Any:
+def _make_axis(spec: dict[str, Any], ns: Any = bh.axis) -> Any:
+    """The axis ``spec`` describes, from the axis namespace ``ns`` (``hist.axis`` for hist's own types)."""
     md = spec.get("metadata") or {}
     kind = spec["type"]
     if kind == "Regular":
-        ax = bh.axis.Regular(
+        ax = ns.Regular(
             spec["bins"],
             spec["start"],
             spec["stop"],
@@ -129,9 +130,9 @@ def _make_axis(spec: dict[str, Any]) -> Any:
             growth=spec.get("growth", False),
         )
     elif kind == "Variable":
-        ax = bh.axis.Variable(spec["edges"], underflow=spec["underflow"], overflow=spec["overflow"])
+        ax = ns.Variable(spec["edges"], underflow=spec["underflow"], overflow=spec["overflow"])
     elif kind == "Integer":
-        ax = bh.axis.Integer(
+        ax = ns.Integer(
             spec["start"],
             spec["stop"],
             underflow=spec["underflow"],
@@ -139,11 +140,11 @@ def _make_axis(spec: dict[str, Any]) -> Any:
             growth=spec.get("growth", False),
         )
     elif kind == "IntCategory":
-        ax = bh.axis.IntCategory(spec["categories"], growth=spec.get("growth", False))
+        ax = ns.IntCategory(spec["categories"], growth=spec.get("growth", False))
     elif kind == "StrCategory":
-        ax = bh.axis.StrCategory(spec["categories"], growth=spec.get("growth", False))
+        ax = ns.StrCategory(spec["categories"], growth=spec.get("growth", False))
     elif kind == "Boolean":
-        ax = bh.axis.Boolean()
+        ax = ns.Boolean()
     else:
         raise TypeError(f"unknown axis spec type {kind!r}")
     return _restore_metadata(ax, md)

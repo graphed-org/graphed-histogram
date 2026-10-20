@@ -28,7 +28,7 @@ from graphed.core import GraphStore, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key
 
-from ._chunked import Chunked, empty
+from ._chunked import BH, Chunked, Kind, as_kind, empty
 from ._spec import content_hash, spec_of, zero_of
 
 #: the plan-value key: a bare output name (no variation reaches it), ``(output, label)`` for a
@@ -287,9 +287,10 @@ class _WeightGuard:
 class _ZeroHist:
     spec: str
     dense: bool = False
+    kind: Kind = BH
 
     def __call__(self) -> bh.Histogram:
-        return zero_of(self.spec) if self.dense else empty(self.spec)
+        return as_kind(zero_of(self.spec), self.kind) if self.dense else empty(self.spec, self.kind)
 
 
 def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
@@ -435,7 +436,7 @@ def _union(x: Any, y: Any) -> Any:
 def _onto(hist: bh.Histogram, unions: Sequence[Any]) -> bh.Histogram:
     """``hist`` re-binned onto ``unions`` (``None`` keeps that axis), flow bins to flow bins."""
     axes = [ax if u is None else u for ax, u in zip(hist.axes, unions, strict=True)]
-    out = bh.Histogram(*axes, storage=hist.storage_type())
+    out = type(hist)(*axes, storage=hist.storage_type())
     out.__dict__.update(vars(hist))
     index = []
     for ax, u in zip(hist.axes, unions, strict=True):
@@ -457,10 +458,14 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
     the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
     merge chunked; any other pair is read dense first."""
-    if type(a) is Chunked and type(b) is Chunked and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]:
-        return Chunked(vars(a)["_gh_spec"], a.chunked + b.chunked)
+    if isinstance(a, Chunked):
+        if isinstance(b, Chunked) and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]:
+            return a._like(vars(a)["_gh_spec"], a.chunked + b.chunked, summed=True)
+        merged = None if isinstance(b, Chunked) else a._absorb(b)
+        if merged is not None:
+            return merged
     # a dense copy: a fill node two slots read is one object, and must stay chunked for the other
-    a, b = (x._dense() if type(x) is Chunked else x for x in (a, b))
+    a, b = (x._dense() if isinstance(x, Chunked) else x for x in (a, b))
     unions = [_union(x, y) for x, y in zip(a.axes, b.axes, strict=False)]
     # a rank mismatch skips the widening so native + refuses it with boost's own error
     if a.ndim == b.ndim and any(u is not None for u in unions):
@@ -483,12 +488,20 @@ _NO_POSITIONS = (
 
 
 def _sum_fills(
-    spec: str, node_ids: Sequence[int], positions: Mapping[int, int], fills: list[object], dense: bool = False
+    spec: str,
+    node_ids: Sequence[int],
+    positions: Mapping[int, int],
+    fills: list[object],
+    dense: bool = False,
+    kind: Kind = BH,
 ) -> Any:
-    """A dense slot sums into the dense zero, which densifies each chunked fill it adds."""
-    total = zero_of(spec) if dense else empty(spec)
+    """A slot's partial, as ``kind``: a dense slot sums into the dense zero, which densifies each
+    chunked fill it adds; a chunked slot adds each fill into the total it owns, in place."""
+    total = as_kind(zero_of(spec), kind) if dense else empty(spec, kind)
     for nid in node_ids:
-        total = add_histograms(total, fills[positions[nid]])
+        fill = fills[positions[nid]]
+        if not (isinstance(total, Chunked) and total.iadd(fill)):
+            total = add_histograms(total, fill)
     return total
 
 
@@ -501,9 +514,10 @@ class _SumFills:
     node_ids: tuple[int, ...]
     positions: dict[int, int] = field(default_factory=dict)
     dense: bool = False
+    kind: Kind = BH
 
     def __call__(self, fills: list[object]) -> bh.Histogram:
-        out: bh.Histogram = _sum_fills(self.spec, self.node_ids, self.positions, fills, self.dense)
+        out: bh.Histogram = _sum_fills(self.spec, self.node_ids, self.positions, fills, self.dense, self.kind)
         return out
 
 
@@ -517,18 +531,20 @@ class _GroupReduce:
     """Reduce one partition's evaluated fills to ``{slot: histogram}``: each slot sums its own
     fills, each read at its compiled position (``positions``, set by ``pieces.on_compiled``). A
     ``backed`` slot's sum is shipped to its histserv server and its value is the receipt; a
-    ``dense`` slot sums dense."""
+    ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's class."""
 
     layout: Layout
     backed: tuple[SlotKey, ...] = ()
     positions: dict[int, int] = field(default_factory=dict)
     dense: tuple[SlotKey, ...] = ()
+    kinds: tuple[tuple[SlotKey, Kind], ...] = ()
 
     def __call__(self, fills: list[object]) -> dict[SlotKey, Any]:
         if not self.positions:
             raise GraphedError(_NO_POSITIONS)
+        kinds = dict(self.kinds)
         out = {
-            key: _sum_fills(spec, ids, self.positions, fills, key in self.dense)
+            key: _sum_fills(spec, ids, self.positions, fills, key in self.dense, kinds.get(key, BH))
             for key, ids, spec in self.layout
         }
         if self.backed:
@@ -536,7 +552,7 @@ class _GroupReduce:
 
             backed = set(self.backed)
             out = {
-                key: _ship(key, spec, out[key]) if key in backed else out[key]
+                key: replace(_ship(key, spec, out[key]), kind=kinds.get(key)) if key in backed else out[key]
                 for key, _ids, spec in self.layout
             }
         return out
@@ -562,14 +578,20 @@ class _GroupZero:
     layout: Layout
     backed: tuple[SlotKey, ...] = ()
     dense: tuple[SlotKey, ...] = ()
+    kinds: tuple[tuple[SlotKey, Kind], ...] = ()
 
     def __call__(self) -> dict[SlotKey, Any]:
         if self.backed:
             from .histserv import Receipt  # noqa: PLC0415
-        return {
-            key: Receipt(spec) if key in self.backed else zero_of(spec) if key in self.dense else empty(spec)
-            for key, _ids, spec in self.layout
-        }
+        kinds = dict(self.kinds)
+
+        def zero(key: SlotKey, spec: str) -> Any:
+            kind = kinds.get(key, BH)
+            if key in self.backed:
+                return Receipt(spec, kind=kind)
+            return as_kind(zero_of(spec), kind) if key in self.dense else empty(spec, kind)
+
+        return {key: zero(key, spec) for key, _ids, spec in self.layout}
 
 
 class Histogram(bh.Histogram):
@@ -935,7 +957,10 @@ class Histogram(bh.Histogram):
                 "universes; plan it through graphed_histogram.plan({name: hist}), whose per-slot "
                 "results keep them apart"
             )
-        reduce = _SumFills(self._spec, tuple(n.node_id for n in self._fill_nodes), dense=self._dense)
+        kind = _kind(self)
+        reduce = _SumFills(
+            self._spec, tuple(n.node_id for n in self._fill_nodes), dense=self._dense, kind=kind
+        )
 
         def on_compiled(compiled: CompiledGraph) -> Any:
             reduce.positions = _positions(compiled, self._fill_nodes)
@@ -945,13 +970,20 @@ class Histogram(bh.Histogram):
             *self._fill_nodes,
             reduce=reduce,
             combine=add_histograms,
-            empty=_ZeroHist(self._spec, self._dense),
+            empty=_ZeroHist(self._spec, self._dense, kind),
             externals=self._evaluators,
             backend=backend,
             steps_per_file=steps_per_file,
             partitions=partitions,
             on_compiled=on_compiled,
         )
+
+
+def _kind(h: Histogram) -> Kind:
+    """What ``h``'s results are: the in-memory class its deferred class extends (``hist.Hist`` for
+    ``hist.graphed.Hist``), carrying the public attributes ``h`` set (None is every one's default)."""
+    cls = next(c for c in type(h).__mro__ if issubclass(c, bh.Histogram) and not issubclass(c, Histogram))
+    return cls, tuple((k, v) for k, v in vars(h).items() if not k.startswith("_") and v is not None)
 
 
 def _output_labels(hist: Histogram) -> tuple[str, ...]:
@@ -1063,11 +1095,12 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
         if h._dense or h._histserv is not None
         for key, _ids, _spec in _slots(name, h)
     )
+    kinds = tuple((key, _kind(h)) for name, h in items for key, _ids, _spec in _slots(name, h))
     return HistogramPieces(
         fill_nodes=tuple(n for _, h in items for n in h._fill_nodes),
-        reduce=_GroupReduce(layout, backed, dense=dense),
+        reduce=_GroupReduce(layout, backed, dense=dense, kinds=kinds),
         combine=_add_groups,
-        empty=_GroupZero(layout, backed, dense),
+        empty=_GroupZero(layout, backed, dense, kinds),
         externals=evaluators,
         items=items,
         backing=backing,

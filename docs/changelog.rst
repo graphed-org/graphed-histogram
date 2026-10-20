@@ -11,8 +11,13 @@ Changed
   filled category key (``hist.chunked.ChunkedHist``), so a task that fills a few of many category
   combinations ships and merges only those. The result is the same dense
   ``boost_histogram.Histogram``, bin for bin; partials stay dense where chunking cannot hold them
-  (:ref:`chunked-partials`). ``hist`` 2.11 or later is now a dependency.
+  (:ref:`chunked-partials`). ``hist`` 2.11 or later is now a dependency, and with it
+  ``boost-histogram`` 1.7 or later.
 * ``gh.dense_backed(h)`` keeps ``h``'s partials and merges dense.
+* A plan's result is the class you instantiated. ``hist.graphed.Hist`` and ``NamedHist`` results
+  are now ``hist.Hist`` and ``hist.NamedHist`` with the histogram's ``name``, ``label`` and
+  ``metadata``, and a ``gh.boost.Histogram(metadata=...)`` result keeps its ``metadata``; both
+  were a plain ``boost_histogram.Histogram`` without them.
 * A fill takes a scalar (``str``, ``int``, ``float``, ``bool`` or a numpy scalar) for any axis, ``weight=`` factor
   or ``sample=`` and broadcasts it per entry, as an eager fill does:
   ``h.fill(dataset="DYJets", pt=events.Muon.pt)``. Fills with different constants are different
