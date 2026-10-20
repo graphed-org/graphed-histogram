@@ -161,3 +161,57 @@ def test_the_read_hands_back_the_instantiated_type(runner: str) -> None:
         twin = value[key.replace("chunked", "dense")]
         assert got.axes == eager.axes and _public(got) == _public(eager) and vars(got) == vars(twin), key
         assert _bytes(got) == _bytes(twin)
+
+
+CUT = gh.spec_of(
+    bh.Histogram(
+        bh.axis.Regular(4, 0, 1),
+        bh.axis.IntCategory([0, 1, 2]),
+        bh.axis.StrCategory([], growth=True),
+        storage=bh.storage.Weight(),
+    )
+)
+LABELS = RNG.choice(["a", "b", "c"], N)
+
+
+def _outcome(h: bh.Histogram, index: Any) -> Any:
+    try:
+        got = h[index]
+    except Exception as e:
+        return type(e)
+    return _bytes(got), [list(a) for a in got.axes], got._variance_known
+
+
+@pytest.mark.parametrize(
+    ("index", "chunked"),
+    [
+        ({1: 0}, True),
+        ({1: -1}, True),
+        ({1: np.int64(2)}, True),
+        ({2: 1}, True),
+        ({2: -3}, True),
+        ({0: 1}, False),
+        ({1: 3}, False),
+        ({-1: 0}, False),
+        ({5: 0}, False),
+        ({1: bh.loc(1)}, False),
+        ({"x": 0}, False),
+        (0, False),
+    ],
+)
+def test_a_selection_is_the_dense_ones_and_one_category_bin_stays_chunked(index: Any, chunked: bool) -> None:
+    def partial() -> Any:
+        return gh.add_histograms(*(gh.FillEvaluator(CUT, 3, True, False)(X, C, LABELS, W) for _ in "ab"))
+
+    h, dense = partial(), partial()
+    dense.values()
+    got = _outcome(h, index)
+    assert (type(h) is Chunked) == chunked
+    assert got == _outcome(dense, index)
+
+
+def test_state_reads_densify_and_a_dense_fill_never_sums_in_place() -> None:
+    h = gh.FillEvaluator(CUT, 3, True, False)(X, C, LABELS, W)
+    assert not h.iadd(gh.zero_of(CUT)) and type(h) is Chunked
+    state = h.__getstate__()
+    assert type(h) is bh.Histogram and state == bh.Histogram.__getstate__(h)

@@ -2,17 +2,16 @@
 
 A ChunkedHist stores one dense slice of the non-category axes per filled category key, so a partial
 and every merge of partials cost what was filled rather than the whole category product.
-:class:`Chunked` is that partial wearing the ``boost_histogram.Histogram`` type: fills and
-:func:`~graphed_histogram.add_histograms` keep it chunked, and anything else that reads it first
-turns it, in place, into the plain dense histogram the spec describes, bin for bin what a dense fill
-gives. ChunkedHist takes one scalar key per fill, so :meth:`Chunked.fill` groups a fill's events by
+:class:`Chunked` is that partial wearing the type the user instantiated (``bh.Histogram``, or a
+per-class surrogate subclass for ``hist.Hist`` and kin): fills and
+:func:`~graphed_histogram.add_histograms` keep it chunked, and the first read turns it, in place,
+into that class's dense histogram, bin for bin what a dense fill gives. ChunkedHist takes one scalar key per fill, so :meth:`Chunked.fill` groups a fill's events by
 key, stably, which keeps every bin's sum in event order.
 """
 
 from __future__ import annotations
 
 import html
-import itertools
 import json
 import threading
 from typing import Any
@@ -22,7 +21,7 @@ import hist
 import numpy as np
 from hist.chunked import ChunkedHist
 
-from ._spec import _GROWTH_SPEC_VERSION, _STORAGES, SPEC_VERSION, _make_axis, spec_of, zero_of
+from ._spec import _GROWTH_SPEC_VERSION, _STORAGES, SPEC_VERSION, _make_axis, zero_of
 
 _CATEGORY = {"StrCategory": "U", "IntCategory": "iu"}  # axis type -> the dtype kinds bh fills it with
 _LOCK = threading.Lock()
@@ -87,10 +86,6 @@ def _target(cls: type) -> type:
 
 def _restore(cls: type, spec: str, chunked: ChunkedHist, attrs: tuple[tuple[str, Any], ...]) -> Chunked:
     return _surrogate(cls)(spec, chunked, attrs)
-
-
-def _nonzero(view: Any) -> bool:
-    return any(np.any(view[f]) for f in view.dtype.names) if view.dtype.names else bool(np.any(view))
 
 
 class Chunked(bh.Histogram):
@@ -224,7 +219,7 @@ class Chunked(bh.Histogram):
         if not (isinstance(j, int) and isinstance(i, int | np.integer) and 0 <= j < len(payload["axes"])):
             return None
         cut = payload["axes"][j]
-        n = len(cut["categories"])
+        n = len(cut.get("categories", ()))
         if cut["type"] not in _CATEGORY or not -n <= i < n:
             return None
         part = cut["categories"][i] if cut.get("growth") else int(i) % n
@@ -236,35 +231,6 @@ class Chunked(bh.Histogram):
             if key[c] == part:
                 out.chunked.add_dense_view(key[:c] + key[c + 1 :], chunk)
         return out
-
-    def _absorb(self, other: bh.Histogram) -> Chunked | None:
-        """``self + other`` for a dense ``other`` of this spec, kept chunked; None for another spec."""
-        payload, _ = self._grown()
-        theirs = json.loads(spec_of(other))
-        if theirs["storage"] != payload["storage"] or [
-            {**a, "categories": None} if a.get("growth") else a for a in theirs["axes"]
-        ] != [{**a, "categories": None} if a.get("growth") else a for a in payload["axes"]]:
-            return None
-        merged = self.chunked + self.chunked.empty_like()
-        chunk_axes = [spec.index for spec in merged.chunk_axes]
-        ours = [list(spec.known_keys) for spec in merged.chunk_axes]
-        labels = [list(other.axes[k]) for k in chunk_axes]
-        view = other.view(flow=True)
-        for bins in itertools.product(*(range(other.axes[k].extent) for k in chunk_axes)):
-            index: list[Any] = [slice(None)] * other.ndim
-            for k, b in zip(chunk_axes, bins, strict=True):
-                index[k] = b
-            chunk = np.asarray(view[tuple(index)])
-            if _nonzero(chunk):
-                key = tuple(
-                    names[b] if payload["axes"][k].get("growth") else b
-                    for k, b, names in zip(chunk_axes, bins, labels, strict=True)
-                )
-                merged.add_dense_view(key, chunk)
-        for spec, mine, names in zip(merged.chunk_axes, ours, labels, strict=True):
-            if spec.growth:  # dense order: ours, then theirs, empty categories included
-                spec.known_keys[:] = list(dict.fromkeys([*mine, *names]))
-        return self._like(self.__dict__["_gh_spec"], merged, summed=True)
 
     def __repr__(self) -> str:
         axes = ", ".join(repr(a) for a in self.axes)

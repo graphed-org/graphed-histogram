@@ -458,12 +458,8 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
     the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
     merge chunked; any other pair is read dense first."""
-    if isinstance(a, Chunked):
-        if isinstance(b, Chunked) and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]:
-            return a._like(vars(a)["_gh_spec"], a.chunked + b.chunked, summed=True)
-        merged = None if isinstance(b, Chunked) else a._absorb(b)
-        if merged is not None:
-            return merged
+    if isinstance(a, Chunked) and isinstance(b, Chunked) and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]:
+        return a._like(vars(a)["_gh_spec"], a.chunked + b.chunked, summed=True)
     # a dense copy: a fill node two slots read is one object, and must stay chunked for the other
     a, b = (x._dense() if isinstance(x, Chunked) else x for x in (a, b))
     unions = [_union(x, y) for x, y in zip(a.axes, b.axes, strict=False)]
