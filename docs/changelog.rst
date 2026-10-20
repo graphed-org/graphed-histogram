@@ -7,6 +7,12 @@ Unreleased
 Changed
 ~~~~~~~
 
+* A histogram with a category axis keeps its partials and merges chunked, one dense slice per
+  filled category key (``hist.chunked.ChunkedHist``), so a task that fills a few of many category
+  combinations ships and merges only those. The result is the same dense
+  ``boost_histogram.Histogram``, bin for bin; partials stay dense where chunking cannot hold them
+  (:ref:`chunked-partials`). ``hist`` 2.11 or later is now a dependency.
+* ``gh.dense_backed(h)`` keeps ``h``'s partials and merges dense.
 * A fill takes a scalar (``str``, ``int``, ``float``, ``bool`` or a numpy scalar) for any axis, ``weight=`` factor
   or ``sample=`` and broadcasts it per entry, as an eager fill does:
   ``h.fill(dataset="DYJets", pt=events.Muon.pt)``. Fills with different constants are different

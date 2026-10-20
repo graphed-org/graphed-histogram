@@ -20,4 +20,4 @@ autodoc_typehints = "description"
 autosummary_generate = True
 autosummary_imported_members = False
 # the dev-extra backends are not installed in the docs job; keep autodoc from importing them
-autodoc_mock_imports = ["numpy", "boost_histogram"]
+autodoc_mock_imports = ["numpy", "boost_histogram", "hist"]

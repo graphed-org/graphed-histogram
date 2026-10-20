@@ -28,6 +28,7 @@ from graphed.core import GraphStore, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key
 
+from ._chunked import Chunked, empty
 from ._spec import content_hash, spec_of, zero_of
 
 #: the plan-value key: a bare output name (no variation reaches it), ``(output, label)`` for a
@@ -37,6 +38,7 @@ SlotKey = str | tuple[str, str | None]
 Operand = Any  # an `Array`, or a `Varied` of them (which carries `Array`'s surface)
 
 V = TypeVar("V")
+H = TypeVar("H", bound="Histogram")
 
 #: this package's own version, recorded on the payloads it descriptors (the fill nodes carry
 #: boost-histogram's, being boost payloads; the row-space guard is ours)
@@ -91,7 +93,7 @@ class FillEvaluator:
     constants: str | None = None
 
     def __call__(self, *values: object) -> bh.Histogram:
-        h = zero_of(self.spec)
+        h = empty(self.spec)
         fixed = json.loads(self.constants) if self.constants else {}
         axis_fixed = dict(fixed.get("axes", []))
         weight_fixed = dict(fixed.get("weights", []))
@@ -284,9 +286,10 @@ class _WeightGuard:
 @dataclass(frozen=True)
 class _ZeroHist:
     spec: str
+    dense: bool = False
 
     def __call__(self) -> bh.Histogram:
-        return zero_of(self.spec)
+        return zero_of(self.spec) if self.dense else empty(self.spec)
 
 
 def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
@@ -452,7 +455,12 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
 
     Returns a new ``boost_histogram.Histogram`` carrying ``a``'s metadata; neither operand
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
-    the lower-keyed partitions (the docs' "Growth axes" section)."""
+    the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
+    merge chunked; any other pair is read dense first."""
+    if type(a) is Chunked and type(b) is Chunked and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]:
+        return Chunked(vars(a)["_gh_spec"], a.chunked + b.chunked)
+    # a dense copy: a fill node two slots read is one object, and must stay chunked for the other
+    a, b = (x._dense() if type(x) is Chunked else x for x in (a, b))
     unions = [_union(x, y) for x, y in zip(a.axes, b.axes, strict=False)]
     # a rank mismatch skips the widening so native + refuses it with boost's own error
     if a.ndim == b.ndim and any(u is not None for u in unions):
@@ -474,8 +482,11 @@ _NO_POSITIONS = (
 )
 
 
-def _sum_fills(spec: str, node_ids: Sequence[int], positions: Mapping[int, int], fills: list[object]) -> Any:
-    total = zero_of(spec)
+def _sum_fills(
+    spec: str, node_ids: Sequence[int], positions: Mapping[int, int], fills: list[object], dense: bool = False
+) -> Any:
+    """A dense slot sums into the dense zero, which densifies each chunked fill it adds."""
+    total = zero_of(spec) if dense else empty(spec)
     for nid in node_ids:
         total = add_histograms(total, fills[positions[nid]])
     return total
@@ -489,9 +500,10 @@ class _SumFills:
     spec: str
     node_ids: tuple[int, ...]
     positions: dict[int, int] = field(default_factory=dict)
+    dense: bool = False
 
     def __call__(self, fills: list[object]) -> bh.Histogram:
-        out: bh.Histogram = _sum_fills(self.spec, self.node_ids, self.positions, fills)
+        out: bh.Histogram = _sum_fills(self.spec, self.node_ids, self.positions, fills, self.dense)
         return out
 
 
@@ -504,16 +516,21 @@ Layout = tuple[tuple[SlotKey, tuple[int, ...], str], ...]
 class _GroupReduce:
     """Reduce one partition's evaluated fills to ``{slot: histogram}``: each slot sums its own
     fills, each read at its compiled position (``positions``, set by ``pieces.on_compiled``). A
-    ``backed`` slot's sum is shipped to its histserv server and its value is the receipt."""
+    ``backed`` slot's sum is shipped to its histserv server and its value is the receipt; a
+    ``dense`` slot sums dense."""
 
     layout: Layout
     backed: tuple[SlotKey, ...] = ()
     positions: dict[int, int] = field(default_factory=dict)
+    dense: tuple[SlotKey, ...] = ()
 
     def __call__(self, fills: list[object]) -> dict[SlotKey, Any]:
         if not self.positions:
             raise GraphedError(_NO_POSITIONS)
-        out = {key: _sum_fills(spec, ids, self.positions, fills) for key, ids, spec in self.layout}
+        out = {
+            key: _sum_fills(spec, ids, self.positions, fills, key in self.dense)
+            for key, ids, spec in self.layout
+        }
         if self.backed:
             from .histserv import _ship  # noqa: PLC0415  (only a backed slot ships)
 
@@ -544,14 +561,15 @@ def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, A
 class _GroupZero:
     layout: Layout
     backed: tuple[SlotKey, ...] = ()
+    dense: tuple[SlotKey, ...] = ()
 
     def __call__(self) -> dict[SlotKey, Any]:
-        if not self.backed:
-            return {key: zero_of(spec) for key, _ids, spec in self.layout}
-        from .histserv import Receipt  # noqa: PLC0415
-
-        backed = set(self.backed)
-        return {key: Receipt(spec) if key in backed else zero_of(spec) for key, _ids, spec in self.layout}
+        if self.backed:
+            from .histserv import Receipt  # noqa: PLC0415
+        return {
+            key: Receipt(spec) if key in self.backed else zero_of(spec) if key in self.dense else empty(spec)
+            for key, _ids, spec in self.layout
+        }
 
 
 class Histogram(bh.Histogram):
@@ -587,6 +605,8 @@ class Histogram(bh.Histogram):
         #: the `histserv.Context` whose servers fill this histogram (`histserv.backed`); outside
         #: graph identity
         self._histserv: Any = None
+        #: partials and merges dense (`dense_backed`); outside graph identity
+        self._dense: bool = False
 
     # ---- recording -------------------------------------------------------------------------
     def fill(
@@ -915,7 +935,7 @@ class Histogram(bh.Histogram):
                 "universes; plan it through graphed_histogram.plan({name: hist}), whose per-slot "
                 "results keep them apart"
             )
-        reduce = _SumFills(self._spec, tuple(n.node_id for n in self._fill_nodes))
+        reduce = _SumFills(self._spec, tuple(n.node_id for n in self._fill_nodes), dense=self._dense)
 
         def on_compiled(compiled: CompiledGraph) -> Any:
             reduce.positions = _positions(compiled, self._fill_nodes)
@@ -925,7 +945,7 @@ class Histogram(bh.Histogram):
             *self._fill_nodes,
             reduce=reduce,
             combine=add_histograms,
-            empty=_ZeroHist(self._spec),
+            empty=_ZeroHist(self._spec, self._dense),
             externals=self._evaluators,
             backend=backend,
             steps_per_file=steps_per_file,
@@ -1036,11 +1056,18 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
         for key, _ids, spec in _slots(name, h)
     )
     backed = tuple(key for key, _spec, _ctx in backing)
+    # a histserv server is dense, so its slot sums dense before it ships
+    dense = tuple(
+        key
+        for name, h in items
+        if h._dense or h._histserv is not None
+        for key, _ids, _spec in _slots(name, h)
+    )
     return HistogramPieces(
         fill_nodes=tuple(n for _, h in items for n in h._fill_nodes),
-        reduce=_GroupReduce(layout, backed),
+        reduce=_GroupReduce(layout, backed, dense=dense),
         combine=_add_groups,
-        empty=_GroupZero(layout, backed),
+        empty=_GroupZero(layout, backed, dense),
         externals=evaluators,
         items=items,
         backing=backing,
@@ -1150,6 +1177,15 @@ def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, b
         else:
             out.setdefault(name, {})[label] = hist
     return out
+
+
+def dense_backed(h: H) -> H:
+    """``h``, its partials and merges dense boost histograms from its next plan on; its graph is
+    unchanged. The default backing keeps a histogram with a category axis chunked: one dense slice
+    per filled category key (``hist.chunked.ChunkedHist``). Either way the result is the same dense
+    histogram, bin for bin."""
+    h._dense = True
+    return h
 
 
 def label_listing(histograms: Mapping[str, Histogram]) -> dict[str, list[str]]:

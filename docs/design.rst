@@ -673,6 +673,72 @@ A growing ``Variable`` axis raises ``TypeError``: its new edges come from the da
 partitions' axes share no grid to merge on.
 
 
+.. _chunked-partials:
+
+Chunked partials, and dense on request
+--------------------------------------
+
+A histogram with category axes is a product: ten datasets, twenty systematics and three regions
+over a 100 x 100 ``Weight`` grid is 600 slices of 160 kB, about 100 MB, and every task's partial
+carries all of it even when the task filled one dataset. So a histogram with a category axis keeps
+its partials and merges chunked, as a ``hist.chunked.ChunkedHist``: one dense slice of the other
+axes per category key the task filled. A task that filled 30 of the 600 combinations ships about
+30 slices, and a merge adds slice to slice.
+
+You never handle the chunked form. A partial is typed as the ``boost_histogram.Histogram`` it
+stands for, and the first time anything reads it as one (``values()``, a view, an axis, ``==``,
+``hist.Hist(...)``, plotting, UHI export) it becomes, in place, the plain dense histogram a dense
+fill would have given, bin for bin: same axes, same category order, undeclared labels in the
+overflow bin. A fill groups its events by category key, keeping their order within each key, so
+every bin adds the same values in the same order as a dense fill does.
+
+Partials stay dense where chunking cannot hold them or gains nothing: ``Mean`` and
+``WeightedMean`` storage, a growing ``Regular`` or ``Integer`` axis, a histogram with no category
+axis or with nothing but category axes, a histserv-backed histogram (the server is dense), and a
+fill whose category values bh would refuse (it raises as before). ``gh.dense_backed(h)`` asks for
+dense partials and merges for ``h`` from its next plan on, as ``histserv.backed`` asks for servers;
+its graph and its result do not change.
+
+.. code-block:: python
+
+    import awkward as ak
+    import boost_histogram as bh
+    import graphed_histogram as gh
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_parquet
+    from graphed.core.execution import SequentialRunner
+
+    ak.to_parquet(
+        ak.Array({
+            "channel": ["mumu", "mumu", "ee", "emu", "ee", "mumu"],
+            "met": [10.0, 40.0, 70.0, 260.0, 30.0, -20.0],
+            "w": [0.5, 1.0, 1.5, 1.0, 2.0, 0.25],
+        }),
+        "channels.parquet",
+    )
+    session = Session(AwkwardBackend())
+    events = from_parquet(session, "events", "channels.parquet", steps_per_file=3)
+
+    def met() -> gh.boost.Histogram:
+        h = gh.boost.Histogram(
+            bh.axis.StrCategory(["ee", "mumu"]),
+            bh.axis.Regular(4, 0.0, 200.0),
+            storage=bh.storage.Weight(),
+        )
+        return h.fill(events.channel, events.met, weight=events.w)
+
+    out = gh.unpack(SequentialRunner().run(
+        gh.plan({"chunked": met(), "dense": gh.dense_backed(met())}, steps_per_file=3)
+    ).value)
+    print(out["chunked"] == out["dense"], type(out["chunked"]).__name__)
+    print(out["chunked"].values(flow=True)[2])  # "emu" is undeclared: the overflow bin
+
+.. code-block:: text
+
+    True Histogram
+    [0. 0. 0. 0. 0. 1.]
+
+
 .. _histserv:
 
 Filling on histserv servers

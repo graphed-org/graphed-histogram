@@ -97,6 +97,11 @@ Run it
    ``a``'s followed by ``b``'s new ones (:ref:`growth-axes`). Runners use it to combine
    partial results; you need it only if you are merging results yourself.
 
+``gh.dense_backed(h)``
+   Returns ``h`` with dense partials and merges from its next plan on, in place of the chunked
+   default for histograms with a category axis (:ref:`chunked-partials`). Its graph and its
+   result do not change.
+
 What you get back, in one program
 ---------------------------------
 

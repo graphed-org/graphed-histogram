@@ -33,6 +33,9 @@ the reference in docs/design.rst "Growth axes" (lower-keyed partial on the LEFT)
   union for growing Regular axes); axes Regular/Variable/Integer/IntCategory/StrCategory/Boolean,
   growth on all but Variable (m64). **Phase 2 (do NOT build):** dask-style persist/delayed beyond
   Plan export.
+- Partials of a histogram with a category axis are `hist.chunked.ChunkedHist`-backed
+  (`_chunked.Chunked`), and read as the dense `bh.Histogram` bit for bit; `dense_backed(h)` opts a
+  histogram out (docs/design.rst "Chunked partials").
 
 ## Hard rules
 
