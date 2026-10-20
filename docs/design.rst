@@ -853,11 +853,13 @@ variation labels in axis mode, else 1. A server's predicted peak is::
 summed over the results it holds, ``tasks`` the plan's task count and ``M`` the largest ``stored``
 on it. The constants were measured on histserv 0.2.1 under CPython 3.11–3.14 on Linux arm64 and
 amd64, in containers without pandas and on GitHub's runners with it, each the largest seen: ``B`` =
-164 MiB (the server at rest, the announcer a batch job adds, and the driver's connection), ``O`` =
-4000 B per histogram, ``I`` = 160 B per histogram per task (its retry record), ``a`` = 5.5 and
+227 MiB (the server at rest, the announcer a batch job adds, and the driver's connection: 194 MiB,
+plus the 33 MiB one runner-image change added), ``O`` =
+4000 B per histogram, ``I`` = 170 B per histogram per task (its retry record), ``a`` = 5.5 and
 ``b`` = 3.5 (a fill's transient, in units of ``M``) and ``K`` = 19 KiB per worker connection. The
 server's environment sets ``B``: histserv imports ``hist``, which imports pandas and pyarrow when
-they are installed.
+they are installed, and the kernel decides how much of those libraries' mapped files the server's
+resident memory counts.
 
 Results are placed largest first, ties by name. Each lands on the first server of its context with
 room (the prediction with it added is at most the server's size), else on a new server at the

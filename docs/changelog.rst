@@ -22,6 +22,10 @@ Changed
   or ``sample=`` and broadcasts it per entry, as an eager fill does:
   ``h.fill(dataset="DYJets", pt=events.Muon.pt)``. Fills with different constants are different
   nodes. Every fill needs a graphed Array on at least one axis.
+* A histserv server's predicted size counts ``B`` = 227 MiB before any histogram (was 164 MiB) and
+  ``I`` = 170 B per histogram per task (was 160 B), so offered ``memory_mb`` sizes below 227 are
+  refused. GitHub's ubuntu-24.04 runner image 20261018 grew an idle server's resident memory by
+  33 MiB; ``B`` now leaves room for another change of that size.
 
 0.0.5
 -----
