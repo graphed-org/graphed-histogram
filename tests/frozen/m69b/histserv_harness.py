@@ -34,9 +34,10 @@ SERVER_START_S = 60.0
 
 MiB = 1 << 20
 # The size model's constants, each the maximum over the MODEL lines of the plan's
-# probes/m69b/probe_histserv_memory.txt, probe_histserv_memory.amd64.txt and probe_histserv_memory.gha.txt,
-# and (PER_CONN) probe_histserv_connections{,.amd64}.txt.
-BASE = 164 * MiB
+# probes/m69b/probe_histserv_memory{,.amd64,.gha,.gha-20261018}.txt and (PER_CONN)
+# probe_histserv_connections{,.amd64}.txt.
+# BASE adds the largest change in B between two GitHub runner images there, so the next image change fits.
+BASE = 228 * MiB
 PER_HIST = 4000
 PER_TASK = 160
 FILL_A = 5.5

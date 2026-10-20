@@ -32,17 +32,23 @@ jobs:
         run: |
           python -m pip install -q --upgrade pip
           python -m pip install -q "${{ env.GRAPHED }}" "${{ env.EXECLOCAL }}"
-          python -m pip install -q -e ".[dev,histserv]"
+          python -m pip install -q -e ".[dev,histserv]" psutil
+          sudo mkdir -p /p && sudo cp ci-probe/announce_db8fb0a.py /p/
       - name: Probe
         run: |
-          echo "PROBE image=$ImageVersion python=$(python -VV | tr '\n' ' ')"
-          python -c "import re;r=lambda:int(re.search(r'VmRSS:\s+(\d+)',open('/proc/self/status').read())[1])/1024;a=r();import grpc;b=r();import histserv.service;c=r();print(f'PROBE bare={a:.1f} +grpc={b:.1f} +histserv.service={c:.1f} MiB')"
-          pip list 2>/dev/null | grep -iE '^(grpcio|protobuf|numpy|histserv|hist|boost.histogram) ' | tr -s ' ' | sed 's/^/PROBE pkg /'
-          run() { PYTHONPATH=ci-probe python -m pytest -p probe_mem -p no:cacheprovider -q -s -rf tests/frozen/m69b/test_histserv_memory_model.py 2>&1 | grep -E '^PROBE|passed|failed|^FAILED|assert ' | sed "s/^/[$1] /"; }
-          run base
-          if [ -f ci-probe/new_test.py ]; then cp tests/frozen/m69b/test_histserv_memory_model.py /tmp/orig.py; cp ci-probe/new_test.py tests/frozen/m69b/test_histserv_memory_model.py; run new; cp /tmp/orig.py tests/frozen/m69b/test_histserv_memory_model.py; fi
+          echo "PROBE image=$ImageVersion kernel=$(uname -r) python=$(python -VV | tr '\n' ' ')"
+          python -c "import re;r=lambda k:int(re.search(k+r':\s+(\d+)',open('/proc/self/status').read())[1])/1024;f=lambda:' '.join(f'{k}={r(k):.1f}' for k in ('VmRSS','RssAnon','RssFile'));a=f();import grpc;b=f();import histserv.service;c=f();print(f'PROBE bare[{a}] +grpc[{b}] +histserv.service[{c}] MiB')"
+          cat /sys/kernel/mm/transparent_hugepage/enabled | sed 's/^/PROBE thp=/'
+          (cd ci-probe && python probe_histserv_memory.py) 2>&1 | grep -E 'A warm idle|^J |^MODEL' | sed 's/^/PROBE plan /'
+          run() { PYTHONPATH=ci-probe python -m pytest -p probe_mem -p no:cacheprovider -q -s -rf tests/frozen/m69b/test_histserv_memory_model.py 2>&1 | grep -E '^PROBE|passed|failed|^FAILED' | cut -c1-220 | sed "s/^/[$1] /"; }
+          base() { git checkout -q origin/main -- tests/frozen/m69b src; }
+          tip() { git checkout -q HEAD -- tests/frozen/m69b src; }
+          base; run base; tip; run new
           f=$(python -c "import histserv.chunked_hist as m;print(m.__file__)")
-          sed -i 's/^\(\s*\)self\._chunks\[key\] = np\.array(array, order="C")$/&\n\1self.__dict__.setdefault("_mutant", []).append(np.array(array, order="C"))/' "$f"
-          grep -c '_mutant' "$f" | sed 's/^/PROBE mutant lines=/'
-          run mutant-base
-          if [ -f ci-probe/new_test.py ]; then cp ci-probe/new_test.py tests/frozen/m69b/test_histserv_memory_model.py; run mutant-new; fi
+          cp "$f" /tmp/chunked_hist.orig
+          for k in 1 4; do
+            cp /tmp/chunked_hist.orig "$f"
+            sed -i "s/^\(\s*\)self\._chunks\[key\] = np\.array(array, order=\"C\")\$/&\n\1globals().setdefault(\"_MUTANT\", []).extend(np.array(array, order=\"C\") for _ in range($k))/" "$f"
+            grep -c '_MUTANT' "$f" | sed "s/^/PROBE mutant k=$k lines=/"
+            base; run mutant$k-base; tip; run mutant$k-new
+          done
