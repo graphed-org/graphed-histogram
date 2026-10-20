@@ -207,3 +207,18 @@ def test_values_bh_refuses_raise_as_a_dense_fill_does(cols: list[Any]) -> None:
 def test_transformed_regular_never_reaches_a_fill() -> None:
     with pytest.raises(TypeError, match="transform"):
         gh.spec_of(bh.Histogram(bh.axis.Regular(4, 1.0, 10.0, transform=bh.axis.transform.log), S(["a"])))
+
+
+def test_an_attribute_set_before_the_first_read_survives_it() -> None:
+    h = _evaluate("declared str, undeclared array labels", False)
+    assert type(h) is Chunked
+    h.metadata = "met"
+    assert type(h) is bh.Histogram and h.metadata == "met"
+    assert _bytes(h) == _bytes(_evaluate("declared str, undeclared array labels", True))
+
+
+def test_a_wrong_arity_fill_raises_as_a_dense_fill_does() -> None:
+    spec = gh.spec_of(bh.Histogram(R, S(["a", "b"])))
+    for cols in ([X], [X, LABELS, X]):
+        with pytest.raises(ValueError, match="Wrong number of args"):
+            Chunked(spec).fill(*cols)

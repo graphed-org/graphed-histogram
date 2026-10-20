@@ -20,7 +20,7 @@ import hist
 import numpy as np
 from hist.chunked import ChunkedHist
 
-from ._spec import _STORAGES, _make_axis, zero_of
+from ._spec import _GROWTH_SPEC_VERSION, _STORAGES, SPEC_VERSION, _make_axis, zero_of
 
 _CATEGORY = {"StrCategory": "U", "IntCategory": "iu"}  # axis type -> the dtype kinds bh fills it with
 _LOCK = threading.Lock()
@@ -32,7 +32,8 @@ def chunkable(spec: str) -> bool:
     payload = json.loads(spec)
     cat = [a["type"] in _CATEGORY for a in payload["axes"]]
     return (
-        payload["storage"] not in ("Mean", "WeightedMean")
+        payload["version"] in (SPEC_VERSION, _GROWTH_SPEC_VERSION)  # else zero_of refuses it
+        and payload["storage"] not in ("Mean", "WeightedMean")
         and any(cat)
         and not all(cat)
         and not any(a.get("growth") for a, c in zip(payload["axes"], cat, strict=True) if not c)
@@ -73,14 +74,14 @@ class Chunked(bh.Histogram):
     def _dense(self) -> bh.Histogram:
         payload, chunked = json.loads(self.__dict__["_gh_spec"]), self.chunked
         known = iter(c.known_keys for c in chunked.chunk_axes)
-        axes, where = [], []  # where: per category axis, label -> index (None: keyed by index)
+        where = []  # per category axis, label -> index (None: keyed by index)
         for a in payload["axes"]:
             if a["type"] in _CATEGORY:
                 keys = next(known)
                 where.append({k: j for j, k in enumerate(keys)} if a.get("growth") else None)
-                a = {**a, "categories": list(keys)} if a.get("growth") else a
-            axes.append(_make_axis(a))
-        out = bh.Histogram(*axes, storage=_STORAGES[payload["storage"]]())
+                if a.get("growth"):
+                    a["categories"] = list(keys)
+        out = zero_of(json.dumps(payload))
         view = out.view(flow=True)
         for key, chunk in chunked.items():
             index: list[Any] = [slice(None)] * out.ndim
@@ -97,25 +98,31 @@ class Chunked(bh.Histogram):
             dense = self._dense()
             bh.Histogram._hist.__set__(self, dense._hist)
             bh.Histogram.axes.__set__(self, dense.axes)
-            self.__class__ = bh.Histogram
-            self.__dict__.clear()
-            self.__dict__.update(vars(dense))
+            state = self.__dict__
+            state.update(vars(dense))  # before the swap: a reader that sees bh.Histogram finds its state
+            object.__setattr__(self, "__class__", bh.Histogram)  # past our __setattr__, which would re-lock
+            del state["_gh_spec"], state["_gh_chunked"]
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # only spec and ChunkedHist live on a Chunked, so a write lands on the dense histogram
+        Chunked._materialize(self)  # by class: another thread may have swapped ours
+        object.__setattr__(self, name, value)
 
     @property
     def _hist(self) -> Any:
-        self._materialize()
+        Chunked._materialize(self)
         return bh.Histogram._hist.__get__(self)
 
     @property
     def axes(self) -> Any:
-        self._materialize()
+        Chunked._materialize(self)
         return bh.Histogram.axes.__get__(self)
 
     def __getattr__(self, name: str) -> Any:
         # protocol probes (``__dask_graph__``, ...) must not densify a partial in transit
         if name.startswith(("__", "_gh_")):
             raise AttributeError(name)
-        self._materialize()
+        Chunked._materialize(self)
         return getattr(self, name)
 
     def fill(
@@ -156,6 +163,8 @@ def _codes(a: dict[str, Any], value: Any) -> tuple[Any, list[Any]] | None:
 def _groups(payload: dict[str, Any], args: Any, weight: Any) -> list[Any] | None:
     """``(key kwargs, dense kwargs, weight)`` per category key, in first-seen order; None when the
     values are not ones this grouping reproduces bh on."""
+    if len(args) != len(payload["axes"]):
+        return None
     cat = [i for i, a in enumerate(payload["axes"]) if a["type"] in _CATEGORY]
     coded = []
     for i in cat:
