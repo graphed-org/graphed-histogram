@@ -1,0 +1,48 @@
+name: probe-mem (temporary)
+on:
+  push:
+    branches: [fix/histserv-memory-baseline]
+env:
+  GRAPHED: "graphed[awkward,numpy]==0.0.8"
+  EXECLOCAL: "graphed-executors"
+jobs:
+  probe:
+    name: probe ${{ matrix.os }} py${{ matrix.python }} r${{ matrix.rep }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+        rep: [1]
+        include:
+          - {os: ubuntu-latest, python: "3.14", rep: 2}
+          - {os: ubuntu-latest, python: "3.14", rep: 3}
+          - {os: ubuntu-latest, python: "3.14", rep: 4}
+          - {os: ubuntu-latest, python: "3.14", rep: 5}
+          - {os: ubuntu-latest, python: "3.14", rep: 6}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: |
+          python -m pip install -q --upgrade pip
+          python -m pip install -q "${{ env.GRAPHED }}" "${{ env.EXECLOCAL }}"
+          python -m pip install -q -e ".[dev,histserv]"
+      - name: Probe
+        run: |
+          echo "PROBE image=$ImageVersion python=$(python -VV | tr '\n' ' ')"
+          python -c "import re;r=lambda:int(re.search(r'VmRSS:\s+(\d+)',open('/proc/self/status').read())[1])/1024;a=r();import grpc;b=r();import histserv.service;c=r();print(f'PROBE bare={a:.1f} +grpc={b:.1f} +histserv.service={c:.1f} MiB')"
+          pip list 2>/dev/null | grep -iE '^(grpcio|protobuf|numpy|histserv|hist|boost.histogram) ' | tr -s ' ' | sed 's/^/PROBE pkg /'
+          run() { PYTHONPATH=ci-probe python -m pytest -p probe_mem -p no:cacheprovider -q -s -rf tests/frozen/m69b/test_histserv_memory_model.py 2>&1 | grep -E '^PROBE|passed|failed|^FAILED|assert ' | sed "s/^/[$1] /"; }
+          run base
+          if [ -f ci-probe/new_test.py ]; then cp tests/frozen/m69b/test_histserv_memory_model.py /tmp/orig.py; cp ci-probe/new_test.py tests/frozen/m69b/test_histserv_memory_model.py; run new; cp /tmp/orig.py tests/frozen/m69b/test_histserv_memory_model.py; fi
+          f=$(python -c "import histserv.chunked_hist as m;print(m.__file__)")
+          sed -i 's/^\(\s*\)self\._chunks\[key\] = np\.array(array, order="C")$/&\n\1self.__dict__.setdefault("_mutant", []).append(np.array(array, order="C"))/' "$f"
+          grep -c '_mutant' "$f" | sed 's/^/PROBE mutant lines=/'
+          run mutant-base
+          if [ -f ci-probe/new_test.py ]; then cp ci-probe/new_test.py tests/frozen/m69b/test_histserv_memory_model.py; run mutant-new; fi
