@@ -21,7 +21,7 @@ import threading
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, TypeVar
 
 import boost_histogram as bh
@@ -32,6 +32,7 @@ from graphed.core.execution import Plan, WorkerResources
 from graphed.services import Bindable, Launch, Resolvable, ServiceSpec, UnboundService, split_endpoint
 
 from . import boost
+from ._chunked import as_kind
 from ._spec import _make_axis, zero_of
 from .boost import SlotKey
 
@@ -290,6 +291,8 @@ class Receipt:
     spec: str
     endpoint: str | None = None
     hist_id: str | None = None
+    #: the slot's result class and attributes (:func:`~graphed_histogram._chunked.as_kind`)
+    kind: Any = field(default=None, compare=False)
 
     def __add__(self, other: Receipt) -> Receipt:
         if other.hist_id is None or other == self:
@@ -304,7 +307,7 @@ class Receipt:
     def snapshot(self, *, delete: bool = False) -> Any:
         """The server histogram's contents as the slot's boost histogram (empty for the empty
         receipt); ``delete`` also drops it from the server."""
-        out = zero_of(self.spec)
+        out = zero_of(self.spec) if self.kind is None else as_kind(zero_of(self.spec), self.kind)
         if self.endpoint is None or self.hist_id is None:
             return out
         from histserv.protos import hist_pb2  # noqa: PLC0415

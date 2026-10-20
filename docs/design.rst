@@ -673,6 +673,82 @@ A growing ``Variable`` axis raises ``TypeError``: its new edges come from the da
 partitions' axes share no grid to merge on.
 
 
+.. _chunked-partials:
+
+Chunked partials, and dense on request
+--------------------------------------
+
+A histogram with category axes is a product: ten datasets, twenty systematics and three regions
+over a 100 x 100 ``Weight`` grid is 600 slices of 160 kB, about 100 MB, and every task's partial
+carries all of it even when the task filled one dataset. So a histogram with a category axis keeps
+its partials and merges chunked, as a ``hist.chunked.ChunkedHist``: one dense slice of the other
+axes per category key the task filled. A task that filled 30 of the 600 combinations ships about
+30 slices, and a merge adds slice to slice.
+
+You never handle the chunked form. A result is the class you instantiated:
+``boost_histogram.Histogram`` for ``gh.boost.Histogram``, and ``hist.Hist`` or ``hist.NamedHist``,
+with the histogram's ``name``, ``label`` and ``metadata``, for ``hist.graphed.Hist`` or
+``NamedHist``. Until something reads it, it is a subclass of that class holding the chunks, so
+``isinstance(result, hist.Hist)`` holds before the first read and ``type(result) is hist.Hist``
+after it. Its repr says it is chunked and that reading it makes it dense. Its ``axes``, a
+selection of one category bin (``graphed.universe`` on a variation axis), ``graphed.labels`` and
+pickling keep it chunked. The first read (``values()``, a view, ``==``, setting an attribute,
+``hist.Hist(...)``, plotting, UHI export) turns it, in place, into the dense histogram a dense
+fill would have given, bin for bin: same axes, same category order, undeclared labels in the
+overflow bin. A fill groups its events by category key, keeping their order within each key, so
+every bin adds the same values in the same order as a dense fill does. ``session.materialize``
+on a fill node still gives a ``boost_histogram.Histogram``.
+
+Partials stay dense where chunking cannot hold them or gains nothing: ``Mean`` and
+``WeightedMean`` storage, a growing ``Regular`` or ``Integer`` axis, a histogram with no category
+axis or with nothing but category axes, a histserv-backed histogram (the server is dense), and a
+fill whose category values bh would refuse (it raises as before). ``gh.dense_backed(h)`` asks for
+dense partials and merges for ``h`` from its next plan on, as ``histserv.backed`` asks for servers;
+its graph and its result do not change.
+
+.. code-block:: python
+
+    import awkward as ak
+    import boost_histogram as bh
+    import graphed_histogram as gh
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_parquet
+    from graphed.core.execution import SequentialRunner
+
+    ak.to_parquet(
+        ak.Array({
+            "channel": ["mumu", "mumu", "ee", "emu", "ee", "mumu"],
+            "met": [10.0, 40.0, 70.0, 260.0, 30.0, -20.0],
+            "w": [0.5, 1.0, 1.5, 1.0, 2.0, 0.25],
+        }),
+        "channels.parquet",
+    )
+    session = Session(AwkwardBackend())
+    events = from_parquet(session, "events", "channels.parquet", steps_per_file=3)
+
+    def met() -> gh.boost.Histogram:
+        h = gh.boost.Histogram(
+            bh.axis.StrCategory(["ee", "mumu"]),
+            bh.axis.Regular(4, 0.0, 200.0),
+            storage=bh.storage.Weight(),
+        )
+        return h.fill(events.channel, events.met, weight=events.w)
+
+    out = gh.unpack(SequentialRunner().run(
+        gh.plan({"chunked": met(), "dense": gh.dense_backed(met())}, steps_per_file=3)
+    ).value)
+    chunked = out["chunked"]
+    print(repr(chunked).split(" # ")[1])
+    print(chunked == out["dense"], type(chunked) is bh.Histogram)  # == reads it
+    print(chunked.values(flow=True)[2])  # "emu" is undeclared: the overflow bin
+
+.. code-block:: text
+
+    chunked: 3 filled slices; reading it (e.g. .values()) makes it dense
+    True True
+    [0. 0. 0. 0. 0. 1.]
+
+
 .. _histserv:
 
 Filling on histserv servers
