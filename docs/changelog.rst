@@ -1,8 +1,10 @@
 What changed
 ============
 
-Unreleased
-----------
+0.0.6
+-----
+
+Requires ``graphed`` 0.0.9 or later.
 
 Changed
 ~~~~~~~
