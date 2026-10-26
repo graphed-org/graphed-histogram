@@ -12,6 +12,8 @@ coordinates the fanout mints the joint from.
 
 from __future__ import annotations
 
+from typing import Any
+
 import graphed
 import pytest
 from m52_joint_fill_fixtures import (
@@ -52,7 +54,7 @@ def test_points_refuses_a_bare_axis_mode_histogram() -> None:
     """
     _session, events = partitioned()
     context = joint_context(events, select_joint=False)
-    executed = gh.unpack(execute({"h": three_role_fill(context, axis_mode=True)}))["h"]
+    executed: Any = gh.unpack(execute({"h": three_role_fill(context, axis_mode=True)}))["h"]
     # it really is the axis-mode shape: one axis entry per label the unpruned fanout minted
     assert executed.axes[var_index(executed)].size == len(GRID_LABELS)
 

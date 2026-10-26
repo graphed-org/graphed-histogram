@@ -15,6 +15,7 @@ Exercises the axis-mode slot/opt-in, absent at the m50 baseline: FAILS today at 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 import graphed
 import pytest
@@ -34,7 +35,7 @@ import graphed_histogram as gh
 WEIGHT_LABELS = ("nominal", "wgt_up", "wgt_down")
 
 
-def _four_output_plan() -> tuple[dict, dict]:
+def _four_output_plan() -> tuple[dict[Any, Any], dict[str, gh.boost.Histogram]]:
     """One plan: axis-mode varied, sibling-mode varied, unvaried, and axis-mode with NO
     variations.
     """
@@ -102,7 +103,7 @@ def test_the_axis_mode_no_variation_output_carries_a_one_bin_axis() -> None:
     variations lands a bare histogram with a 1-bin `{"nominal"}` axis — not a today's bare hist.
     """
     value, _hists = _four_output_plan()
-    axnovar = gh.unpack(value)["axnovar"]
+    axnovar: Any = gh.unpack(value)["axnovar"]
     axis = axnovar.axes[var_index(axnovar)]
     assert len(axis) == 1
     assert list(axis) == ["nominal"]

@@ -17,6 +17,8 @@ list instead overruns the shorter value list as an opaque worker-side `IndexErro
 
 from __future__ import annotations
 
+from typing import Any
+
 import graphed
 import numpy as np
 from graphed import compile_ir
@@ -27,7 +29,7 @@ from vary_hist_fixtures import in_memory_events, partitioned_events, weighted
 import graphed_histogram as gh
 
 
-def _merging(events: object) -> gh.boost.Histogram:
+def _merging(events: Any) -> gh.boost.Histogram:
     """`sig_up`'s member is `nominal * 1.0`: a DISTINCT record id the optimizer merges away."""
     factor = events.MET.pt * 0.01
     h = weighted()
@@ -35,7 +37,7 @@ def _merging(events: object) -> gh.boost.Histogram:
     return h
 
 
-def _deduping(events: object) -> gh.boost.Histogram:
+def _deduping(events: Any) -> gh.boost.Histogram:
     """`sig_up`'s member IS nominal's: §1.2's record-time dedup, which is supported."""
     factor = events.MET.pt * 0.01
     h = weighted()

@@ -88,7 +88,7 @@ def test_an_ancestor_value_is_re_indexed_per_label_by_that_labels_own_mask() -> 
         rows = ak.to_numpy(EVENTS.MET.pt[mask])
         want = eager_sampled_2d()
         want.fill(rows, rows, sample=ak.to_numpy(EVENTS.MET.phi[mask]))
-        got = session.materialize(per_label[label])
+        got: Any = session.materialize(per_label[label])
         for field in ("sum_of_weights", "value"):
             assert np.allclose(
                 got.view(flow=True)[field], want.view(flow=True)[field], rtol=1e-12, equal_nan=True

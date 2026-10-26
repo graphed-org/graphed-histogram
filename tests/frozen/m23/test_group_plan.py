@@ -33,7 +33,7 @@ class ChunkedSource:
     """
 
     data: np.ndarray
-    part_reads: list = field(default_factory=list)
+    part_reads: list[tuple[int, int]] = field(default_factory=list)
 
     def __call__(self) -> np.ndarray:
         raise AssertionError("the whole-dataset loader must never run during a plan")

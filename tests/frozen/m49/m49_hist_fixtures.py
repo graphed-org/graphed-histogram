@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import boost_histogram as bh
@@ -117,7 +117,7 @@ def stable(values: Array) -> Array:
     """The corpus's pre-fill 6-decimal rounding, as a recorded ufunc (`np.round`'s own lowering):
     neither gak nor graphed exposes `rint` or `round(x, decimals)`.
     """
-    return np.rint(values * 1e6) / 1e6
+    return cast(Array, np.rint(values * 1e6) / 1e6)
 
 
 def shift_jets(jets: Any) -> Any:
@@ -231,11 +231,11 @@ def content_seeded_normal(values: Array) -> Array:
 
     def hashed_uniform(x: Array, a: float, b: float) -> Array:
         raw = np.sin(x * a + b) * 43758.5453123
-        return raw - np.floor(raw)
+        return cast(Array, raw - np.floor(raw))
 
     u1 = hashed_uniform(values, 12.9898, 4.1414) * 0.9998 + 1e-4  # off the log's pole
     u2 = hashed_uniform(values, 78.233, 1.7182)
-    return np.sqrt(-2.0 * np.log(u1)) * np.cos(2.0 * np.pi * u2)
+    return cast(Array, np.sqrt(-2.0 * np.log(u1)) * np.cos(2.0 * np.pi * u2))
 
 
 def jer_program() -> tuple[Session, Any, dict[str, dict[str, Array]], Array, CountingSource]:

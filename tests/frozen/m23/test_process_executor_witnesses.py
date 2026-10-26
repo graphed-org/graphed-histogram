@@ -15,6 +15,7 @@ Weighted fills are HEP's most common case and behavior loss plagued distributed 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import boost_histogram as bh
 import numpy as np
@@ -36,7 +37,7 @@ WEIGHTS = RNG.uniform(0.1, 2.0, 600)
 @dataclass
 class ChunkedSource:
     data: object
-    whole_calls: list = field(default_factory=list)
+    whole_calls: list[int] = field(default_factory=list)
 
     def __call__(self) -> object:
         self.whole_calls.append(1)
@@ -101,7 +102,7 @@ def test_ragged_awkward_fill_survives_the_process_boundary() -> None:
     assert src.whole_calls == []
 
 
-def _behavior_session():  # type: ignore[no-untyped-def]
+def _behavior_session() -> tuple[Any, Any]:
     ak = pytest.importorskip("awkward")
     pytest.importorskip("graphed.awkward")
     from behavior_toy import BEHAVIOR, make_backend  # noqa: PLC0415

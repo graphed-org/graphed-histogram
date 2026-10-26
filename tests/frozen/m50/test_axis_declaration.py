@@ -15,6 +15,8 @@ Exercises the axis-mode opt-in, absent at the m50 baseline: each FAILS today at 
 
 from __future__ import annotations
 
+from typing import Any
+
 import graphed
 import pytest
 from graphed import GraphedError
@@ -37,7 +39,7 @@ EXPECTED_BINS = ["nominal", "wgt_down", "wgt_up"]
 
 def test_the_declared_axis_matches_the_inferred_label_set_exactly() -> None:
     _s, events, _src = partitioned()
-    z = gh.unpack(execute({"h": fill_weight_program(True, source=events)}))["h"]
+    z: Any = gh.unpack(execute({"h": fill_weight_program(True, source=events)}))["h"]
     vi = var_index(z)
     (value_axis,) = (i for i in range(len(z.axes)) if i != vi)
     projected = z[{value_axis: sum}]  # fold the value axis (with its flow) onto the variation axis

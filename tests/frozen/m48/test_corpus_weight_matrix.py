@@ -24,7 +24,7 @@ import json
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import boost_histogram as bh
@@ -92,7 +92,7 @@ def _stable(values: Array) -> Array:
     """The corpus's pre-fill 6-decimal rounding, as a recorded ufunc (`np.round`'s own
     lowering).
     """
-    return np.rint(values * 1e6) / 1e6
+    return cast(Array, np.rint(values * 1e6) / 1e6)
 
 
 def _ttbar(events: Any, region: str) -> tuple[Array, Array]:

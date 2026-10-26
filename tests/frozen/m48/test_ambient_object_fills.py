@@ -20,7 +20,7 @@ routes to `graphed-histogram`: asserting a fill's label set needs `Histogram.fil
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import graphed
 import numpy as np
@@ -168,7 +168,7 @@ def test_a_contexted_but_unvaried_fill_broadcasts_and_records_the_seam() -> None
     reference = eager_weighted(bins=20, lo=0.0, hi=400.0)
     reference.fill(flat(jet_pt), weight=broadcast_reference(jet_pt, explicit))
     for evaluated, fill_nodes in ((session, h.fill_nodes()), (plain_session, plain.fill_nodes())):
-        got = evaluated.materialize(fill_nodes[0])
+        got: Any = evaluated.materialize(fill_nodes[0])
         assert np.allclose(
             got.view(flow=True)["value"], reference.view(flow=True)["value"], rtol=1e-12
         )
@@ -217,7 +217,7 @@ def test_a_fill_from_the_pre_vary_context_carries_no_new_label() -> None:
 
     assert set(gh.fill_nodes_by_label(before)) == {"nominal"}
     assert set(gh.fill_nodes_by_label(after)) == {"nominal", "pu_up"}
-    assert session.materialize(gh.fill_nodes_by_label(before)["nominal"]).sum(
+    assert cast(Any, session.materialize(gh.fill_nodes_by_label(before)["nominal"])).sum(
         flow=True
     ).value == len(EVENTS)
 

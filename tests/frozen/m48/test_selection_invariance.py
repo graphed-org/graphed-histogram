@@ -110,7 +110,7 @@ def test_the_labels_occupy_the_same_bins_and_carry_different_contents() -> None:
     """
     session, h = _program()
     by_label = gh.fill_nodes_by_label(h)
-    filled = {label: session.materialize(by_label[label]) for label in LABELS}
+    filled: dict[str, Any] = {label: session.materialize(by_label[label]) for label in LABELS}
     nominal_occupied = np.asarray(filled["nominal"].values()) != 0
     assert nominal_occupied.any()
     for label in LABELS:

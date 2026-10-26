@@ -13,13 +13,13 @@ from typing import Any
 import awkward as ak
 
 
-class PlanarRecord(ak.Record):  # type: ignore[misc]
+class PlanarRecord(ak.Record):
     @property
     def mag(self) -> Any:
         return (self["x"] ** 2 + self["y"] ** 2) ** 0.5
 
 
-class PlanarArray(ak.Array):  # type: ignore[misc]
+class PlanarArray(ak.Array):
     @property
     def mag(self) -> Any:
         return (self["x"] ** 2 + self["y"] ** 2) ** 0.5

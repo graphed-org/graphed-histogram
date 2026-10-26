@@ -13,6 +13,8 @@ fixture), and any scoping to sibling mode (§6.1c: the refusal covers both merge
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import graphed
 import numpy as np
 import pytest
@@ -23,7 +25,7 @@ from vary_hist_fixtures import EVENTS, in_memory_events, partitioned_events, wei
 import graphed_histogram as gh
 
 
-def _varied(events: object, *, labels: int = 3) -> gh.boost.Histogram:
+def _varied(events: Any, *, labels: int = 3) -> gh.boost.Histogram:
     factor = events.MET.pt * 0.01
     knobs = {"up": factor * 1.2} if labels == 2 else {"up": factor * 1.2, "down": factor * 0.8}
     h = weighted()
@@ -89,4 +91,4 @@ def test_materialize_of_one_fill_node_is_untouched_by_the_refusal() -> None:
     session, events = in_memory_events()
     h = _varied(events)
     per_label = gh.fill_nodes_by_label(h)
-    assert session.materialize(per_label["sig_up"]).sum(flow=True).value > 0
+    assert cast(Any, session.materialize(per_label["sig_up"])).sum(flow=True).value > 0

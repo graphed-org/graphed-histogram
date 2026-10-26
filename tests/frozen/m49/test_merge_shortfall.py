@@ -19,7 +19,7 @@ position, so the one merged output is summed once per marked fill: two direct fi
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import boost_histogram as bh
@@ -80,7 +80,7 @@ def _single() -> gh.boost.Histogram:
 
 
 def _values(hist: bh.Histogram) -> np.ndarray:
-    return np.asarray(hist.view(flow=True)["value"])
+    return cast(np.ndarray, np.asarray(hist.view(flow=True)["value"]))
 
 
 def _twice() -> bh.Histogram:

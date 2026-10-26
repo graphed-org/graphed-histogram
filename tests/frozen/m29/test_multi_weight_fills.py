@@ -11,6 +11,8 @@ pre-M29 node identities, specs, and bundles are untouched.
 
 from __future__ import annotations
 
+from typing import Any
+
 import awkward as ak
 import boost_histogram as bh
 import numpy as np
@@ -29,7 +31,7 @@ EVENTS = ak.Array(
 )
 
 
-def _recorded(weight_spec):  # type: ignore[no-untyped-def]
+def _recorded(weight_spec: list[str]) -> tuple[Session, gh.boost.Histogram]:
     s = Session(AwkwardBackend())
     g = from_awkward(s, "events", EVENTS)
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 8.0), storage=bh.storage.Weight())
@@ -38,7 +40,7 @@ def _recorded(weight_spec):  # type: ignore[no-untyped-def]
     return s, h
 
 
-def _eager(weight_names):  # type: ignore[no-untyped-def]
+def _eager(weight_names: list[str]) -> bh.Histogram:
     h = bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), storage=bh.storage.Weight())
     w = np.ones(len(EVENTS))
     for n in weight_names:
@@ -49,7 +51,7 @@ def _eager(weight_names):  # type: ignore[no-untyped-def]
 
 def test_two_weights_multiply_via_materialize() -> None:
     s, h = _recorded(["w1", "w2"])
-    got = s.materialize(h.fill_nodes()[0])
+    got: Any = s.materialize(h.fill_nodes()[0])
     want = _eager(["w1", "w2"])
     assert np.array_equal(got.view(flow=True)["value"], want.view(flow=True)["value"])
     assert np.array_equal(got.view(flow=True)["variance"], want.view(flow=True)["variance"])
@@ -87,7 +89,7 @@ def test_three_weights_and_the_params_contract() -> None:
     assert int(node["params"]["n_weights"]) == 3
     assert bool(node["params"]["weighted"]) is True
     assert len(node["inputs"]) == 4  # one axis + three weights, ALL graph inputs
-    got = s.materialize(h.fill_nodes()[0])
+    got: Any = s.materialize(h.fill_nodes()[0])
     want = _eager(["w1", "w2", "w1"])
     assert np.array_equal(got.view(flow=True)["value"], want.view(flow=True)["value"])
 
@@ -96,7 +98,7 @@ def test_a_single_weight_records_exactly_as_before() -> None:
     s, h = _recorded(["w1"])
     node = next(n for n in s._store.nodes() if n["id"] == h.fill_nodes()[0].node_id)
     assert "n_weights" not in node["params"]  # pre-M29 node identity, byte-for-byte
-    got = s.materialize(h.fill_nodes()[0])
+    got: Any = s.materialize(h.fill_nodes()[0])
     want = _eager(["w1"])
     assert np.array_equal(got.view(flow=True)["value"], want.view(flow=True)["value"])
 
@@ -113,7 +115,7 @@ def test_jagged_weights_flatten_consistently() -> None:
     g = from_awkward(s, "events", events)
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Weight())
     h.fill(g.pt, weight=[g.sf1, g.sf2])
-    got = s.materialize(h.fill_nodes()[0])
+    got: Any = s.materialize(h.fill_nodes()[0])
     want = bh.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Weight())
     want.fill(
         np.asarray(ak.flatten(events.pt, axis=None)),

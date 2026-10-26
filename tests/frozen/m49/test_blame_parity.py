@@ -12,7 +12,7 @@ merged registry has the most room to answer with the wrong message.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import graphed
 import pytest
@@ -99,7 +99,7 @@ def test_a_matching_factor_raises_on_neither_path() -> None:
     to a non-empty result on both routes, so the refusals above report a real length fault.
     """
     session, root = in_memory(TOY_EVENTS)
-    assert session.materialize(_matching(root).fill_nodes()[0]).sum(flow=True).value > 0
+    assert cast(Any, session.materialize(_matching(root).fill_nodes()[0])).sum(flow=True).value > 0
 
     _plan_session, source, _data = partitioned(TOY_EVENTS)
     result = gh.unpack(

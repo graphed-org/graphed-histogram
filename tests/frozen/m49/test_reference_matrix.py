@@ -17,6 +17,7 @@ of this plan is where the milestone's transport either carries the program's lab
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -30,10 +31,10 @@ import graphed_histogram as gh
 #: the labels the program registers, nominal excluded (§8.2(i)'s nominal-exclusion rule)
 NON_NOMINAL = {"jes_up", "jes_down", "btag_up", "btag_down", "pho_up", "pho_down"}
 
-_RUN: dict[str, object] = {}
+_RUN: dict[str, Any] = {}
 
 
-def _run() -> dict[str, object]:
+def _run() -> dict[str, Any]:
     """ONE session, ONE plan, ONE pass — the run every anchor below reads."""
     if not _RUN:
         _session, hists, source = matrix_program()
@@ -42,7 +43,7 @@ def _run() -> dict[str, object]:
             unpacked=gh.unpack(SequentialRunner().run(plan).value),
             source=source,
             tasks=len(plan.tasks),
-            labels=plan.process.variation_labels,
+            labels=cast(Any, plan.process).variation_labels,
         )
     return _RUN
 
@@ -61,7 +62,7 @@ def test_every_reference_the_matrix_claims_is_actually_vendored() -> None:
 @pytest.mark.parametrize(("slot", "reference"), sorted(MATRIX.items()))
 def test_the_matrix_reproduces_its_corpus_reference(slot: tuple[str, str], reference: str) -> None:
     output, label = slot
-    got = _run()["unpacked"][output][label]  # type: ignore[index]
+    got = _run()["unpacked"][output][label]
     stored = json.loads((REFERENCES / f"{reference}.json").read_text(encoding="utf-8"))
     assert bin_values(got) == stored["values"], (
         f"{reference}: bin contents drifted from the corpus"
@@ -99,8 +100,8 @@ def test_the_matrix_run_reads_each_partition_exactly_once() -> None:
     run = _run()
     source = run["source"]
     assert run["tasks"] == N_PARTITIONS
-    assert len(source.part_reads) == N_PARTITIONS  # type: ignore[union-attr]
-    assert sorted(source.part_reads) == sorted(set(source.part_reads))  # type: ignore[union-attr]
+    assert len(source.part_reads) == N_PARTITIONS
+    assert sorted(source.part_reads) == sorted(set(source.part_reads))
 
 
 def test_a_second_independent_build_is_bit_for_bit_identical() -> None:
@@ -111,7 +112,7 @@ def test_a_second_independent_build_is_bit_for_bit_identical() -> None:
     again = gh.unpack(SequentialRunner().run(gh.plan(hists, steps_per_file=N_PARTITIONS)).value)
     first = _run()["unpacked"]
     for output, label in sorted(MATRIX):
-        left = first[output][label].view(flow=True)  # type: ignore[index]
+        left = first[output][label].view(flow=True)
         right = again[output][label].view(flow=True)
         assert np.array_equal(left, right), f"{output}/{label} is not run-to-run identical"
         assert left.sum() > 0, f"{output}/{label} is empty, so the comparison witnesses nothing"
@@ -124,6 +125,6 @@ def test_the_matrix_plan_ships_a_populated_variation_label_channel() -> None:
     payload = _run()["labels"]
     assert payload is not None, "the shipped closure carries no variation labels"
     seen: set[str] = set()
-    for _key, (labels, _frame) in payload:  # type: ignore[union-attr]
+    for _key, (labels, _frame) in payload:
         seen.update(labels)
     assert seen == NON_NOMINAL

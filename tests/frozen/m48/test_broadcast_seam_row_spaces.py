@@ -78,7 +78,7 @@ def test_an_awkward_scalar_weight_is_no_row_space_and_takes_no_seam() -> None:
 
     reference = eager_weighted(bins=20, lo=0.0, hi=400.0)
     reference.fill(flat(EVENTS.MET.pt), weight=ak.sum(EVENTS.MET.pt, axis=None))
-    got = session.materialize(h.fill_nodes()[0])
+    got: Any = session.materialize(h.fill_nodes()[0])
     assert np.allclose(
         got.view(flow=True)["value"], reference.view(flow=True)["value"], rtol=1e-12
     )
@@ -122,7 +122,7 @@ def test_the_numpy_idiom_records_no_seam_at_any_row_space(value_of: Any, factor_
     h.fill(value, weight=[factor])
     assert session.node_count() - before == 1
     assert _blames(session) == set()
-    got = session.materialize(h.fill_nodes()[0])
+    got: Any = session.materialize(h.fill_nodes()[0])
     assert float(got.view(flow=True)["value"].sum()) == 16.0
 
 
@@ -147,7 +147,7 @@ def test_an_already_flat_per_object_weight_fills_while_its_per_event_twin_takes_
     session, root = in_memory_events()
     h = weighted(bins=20, lo=0.0, hi=400.0)
     h.fill(root.Jet.pt, weight=[_at_the_jet_row_space(session, "flat_sf", np.full(n_jets, 2.0))])
-    got = session.materialize(h.fill_nodes()[0])
+    got: Any = session.materialize(h.fill_nodes()[0])
     reference = eager_weighted(bins=20, lo=0.0, hi=400.0)
     reference.fill(flat(EVENTS.Jet.pt), weight=np.full(n_jets, 2.0))
     assert np.array_equal(got.view(flow=True)["value"], reference.view(flow=True)["value"])
@@ -156,7 +156,7 @@ def test_an_already_flat_per_object_weight_fills_while_its_per_event_twin_takes_
     varying = 1.0 + np.arange(n_jets, dtype=float) / n_jets
     ordered = weighted(bins=20, lo=0.0, hi=400.0)
     ordered.fill(root.Jet.pt, weight=[_at_the_jet_row_space(session, "varying_sf", varying)])
-    ordered_got = session.materialize(ordered.fill_nodes()[0])
+    ordered_got: Any = session.materialize(ordered.fill_nodes()[0])
     ordered_ref = eager_weighted(bins=20, lo=0.0, hi=400.0)
     ordered_ref.fill(flat(EVENTS.Jet.pt), weight=varying)
     assert np.allclose(
@@ -167,7 +167,7 @@ def test_an_already_flat_per_object_weight_fills_while_its_per_event_twin_takes_
     per_event = weighted(bins=20, lo=0.0, hi=400.0)
     per_event.fill(event_root.Jet.pt, weight=[event_root.MET.pt * 0.5 + 1.0])
     assert _blames(event_session) == {"weight[0]"}
-    event_got = event_session.materialize(per_event.fill_nodes()[0])
+    event_got: Any = event_session.materialize(per_event.fill_nodes()[0])
     broadcast_ref = eager_weighted(bins=20, lo=0.0, hi=400.0)
     broadcast_ref.fill(
         flat(EVENTS.Jet.pt), weight=broadcast_reference(EVENTS.Jet.pt, EVENTS.MET.pt * 0.5 + 1.0)
@@ -209,7 +209,7 @@ def test_a_value_with_missing_entries_keeps_its_pre_seam_fill_and_still_blames(
     h.fill(value, weight=[at_the_leaf])
     assert session.node_count() - before == 1
     assert _blames(session) == set()
-    got = session.materialize(h.fill_nodes()[0])
+    got: Any = session.materialize(h.fill_nodes()[0])
     reference = eager_weighted(bins=20, lo=0.0, hi=400.0)
     reference.fill(flat(eager), weight=leaf)
     assert np.allclose(
@@ -241,7 +241,7 @@ def test_a_factor_deeper_than_the_value_records_no_seam_but_a_shallower_one_does
     h.fill(value, weight=[factor])
     assert session.node_count() - before == 1
     assert _blames(session) == set()
-    got = session.materialize(h.fill_nodes()[0])
+    got: Any = session.materialize(h.fill_nodes()[0])
     reference = eager_weighted(bins=20, lo=0.0, hi=400.0)
     reference.fill(flat(EVENTS.MET.pt), weight=flat(singleton))
     assert np.allclose(

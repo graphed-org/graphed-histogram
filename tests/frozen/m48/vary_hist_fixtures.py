@@ -14,7 +14,7 @@ computed eagerly from the same array, never against the fill's own machinery.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import boost_histogram as bh
@@ -120,7 +120,7 @@ def eager_weighted_2d(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> bh.
 
 def flat(values: Any) -> np.ndarray:
     """The evaluator's own per-input flatten (`boost.py::_flat`), for manual references."""
-    return ak.to_numpy(ak.flatten(values, axis=None))
+    return cast(np.ndarray, ak.to_numpy(ak.flatten(values, axis=None)))
 
 
 def broadcast_reference(value: Any, factor: Any) -> np.ndarray:

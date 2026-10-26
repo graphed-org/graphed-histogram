@@ -13,6 +13,7 @@ axes spec => one interned node.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import boost_histogram as bh
 import numpy as np
@@ -35,8 +36,8 @@ class ChunkedSource:
     """A PartitionedSource over an in-memory array, with the efficiency-witness counters."""
 
     data: np.ndarray
-    whole_calls: list = field(default_factory=list)
-    part_reads: list = field(default_factory=list)
+    whole_calls: list[int] = field(default_factory=list)
+    part_reads: list[tuple[int, int]] = field(default_factory=list)
 
     def __call__(self) -> np.ndarray:  # the whole-dataset loader: must NEVER run during a plan
         self.whole_calls.append(1)
@@ -202,7 +203,7 @@ def test_ir_is_deterministic_and_carries_the_descriptor() -> None:
     import graphed.core  # noqa: PLC0415
     from graphed import compile_ir  # noqa: PLC0415
 
-    def build() -> tuple[bytes, dict]:
+    def build() -> tuple[bytes, dict[str, Any]]:
         s = Session(NumpyBackend())
         x, _ = _source(s, "x", DATA)
         h = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0)).fill(x)

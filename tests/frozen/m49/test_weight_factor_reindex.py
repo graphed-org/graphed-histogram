@@ -81,7 +81,7 @@ def test_each_labels_weight_factor_is_re_indexed_by_that_labels_own_mask() -> No
     assert set(per_label) == set(JES)
     for label, node in per_label.items():
         want = _reference(label)
-        got = session.materialize(node)
+        got: Any = session.materialize(node)
         for field in ("value", "variance"):
             assert np.allclose(
                 got.view(flow=True)[field], want.view(flow=True)[field], rtol=1e-12

@@ -57,7 +57,7 @@ def test_an_unweighted_fill_equals_an_unweighted_eager_reference() -> None:
 
     want = eager_counts()
     want.fill(ak.to_numpy(EVENTS.MET.pt))
-    got = session.materialize(h.fill_nodes()[0])
+    got: Any = session.materialize(h.fill_nodes()[0])
     assert np.array_equal(got.view(flow=True), want.view(flow=True))
 
 

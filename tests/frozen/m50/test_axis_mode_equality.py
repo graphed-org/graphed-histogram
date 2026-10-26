@@ -12,6 +12,9 @@ each FAILS today at the opt-in keyword and passes once H1/H2 land.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 from m50_axis_fixtures import (
     execute,
@@ -44,12 +47,12 @@ WEIGHTS = ("wgt_up", "wgt_down")  # W
 MIXED_LABELS = ("nominal", *SIBLINGS, *WEIGHTS)
 
 
-def _axis_result(program_fn) -> object:
+def _axis_result(program_fn: Callable[..., gh.boost.Histogram]) -> Any:
     _s, events, _src = partitioned()
     return gh.unpack(execute({"h": program_fn(True, source=events)}))["h"]
 
 
-def _sibling_result(program_fn) -> dict:
+def _sibling_result(program_fn: Callable[..., gh.boost.Histogram]) -> dict[str, Any]:
     _s, events, _src = partitioned()
     return gh.unpack(execute({"h": program_fn(False, source=events)}))["h"]
 
