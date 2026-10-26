@@ -59,8 +59,10 @@ class HistogramForm:
 
 
 def _flat(values: object) -> object:
-    """Fill values flattened to 1-D: ragged arrays flatten completely (the corpus ``stable``
-    semantics); rectilinear arrays ravel; scalars pass through for boost broadcasting.
+    """Flatten fill values to 1-D.
+
+    Ragged arrays flatten completely (the corpus ``stable`` semantics); rectilinear arrays ravel;
+    scalars pass through for boost broadcasting.
     """
     if hasattr(values, "layout"):  # an awkward array, ragged or not (lazy import boundary)
         import awkward as ak  # noqa: PLC0415
@@ -74,13 +76,13 @@ def _flat(values: object) -> object:
 class FillEvaluator:
     """The External evaluator: fill ONE chunk into a fresh zero histogram (picklable).
 
-    Sibling mode (``variation is None``, the default — old pickles restore into it) fills once. In
-    variation-axis mode ``variation`` is the ordered tuple of labels this node writes: the value and
-    ``sample=`` columns are FIXED for the node and only the weight block varies across the loop, so
-    the evaluator fills each label's own weight block against that label's scalar category value on
-    the pre-declared ``"variation"`` axis. That is how every label resolving to the SAME value and
-    ``sample=`` members collapses into ONE node — the weight-only labels onto nominal's, a joint
-    label onto the shifted member its point names.
+    Sibling mode (``variation is None``, the default — old pickles restore into it) fills once.
+    In variation-axis mode ``variation`` is the ordered tuple of labels this node writes: the value
+    and ``sample=`` columns are FIXED for the node and only the weight block varies across the
+    loop, so the evaluator fills each label's own weight block against that label's scalar
+    category value on the pre-declared ``"variation"`` axis. That is how every label resolving to
+    the SAME value and ``sample=`` members collapses into ONE node — the weight-only labels onto
+    nominal's, a joint label onto the shifted member its point names.
     """
 
     spec: str
@@ -124,9 +126,8 @@ class FillEvaluator:
         # axis mode: [*value_axes, sample?, *per-label weight blocks]; value/sample fixed
         sample = sample_of()
         for label in self.variation:
-            h.fill(
-                *axes, label, weight=weight_of(), sample=sample
-            )  # scalar category broadcasts (probe-verified)
+            # scalar category broadcasts (probe-verified)
+            h.fill(*axes, label, weight=weight_of(), sample=sample)
         return h
 
 
@@ -140,13 +141,15 @@ def _place(rest: list[object], n: int, fixed: Mapping[int, object]) -> list[Any]
 
 
 def _plain(value: object) -> object:
-    """A numpy scalar as its Python value (``int``, ``float`` or ``bool``), which JSON encodes."""
+    """Return a numpy scalar as its Python value (``int``, ``float`` or ``bool``) for JSON."""
     return value.item() if isinstance(value, np.generic) else value
 
 
 def _constants(args: Sequence[object], factors: Sequence[object], sample: object) -> str | None:
-    """The fill's scalar values by slot, JSON-encoded so node params, content hash and evaluator
-    carry one identity (``1``, ``1.0``, ``True`` and ``"1"`` stay distinct); None when there are none.
+    """Encode the fill's scalar values by slot as JSON; None when there are none.
+
+    The encoding gives node params, content hash and evaluator one identity (``1``, ``1.0``,
+    ``True`` and ``"1"`` stay distinct).
     """
     fixed: dict[str, Any] = {}
     for key, column in (("axes", args), ("weights", factors)):
@@ -162,8 +165,8 @@ def _constants(args: Sequence[object], factors: Sequence[object], sample: object
 #: value was flattened, so nothing is left to broadcast against); the loose-value one must not —
 #: nothing was passed flattened, the value simply carries no handle to re-index it by.
 _UNFLATTEN = (
-    "pass the value unflattened (h.fill(sel.Jet.pt), never gak.flatten(...)), so the factor can be "
-    "broadcast to its structure"
+    "pass the value unflattened (h.fill(sel.Jet.pt), never gak.flatten(...)), so the factor can "
+    "be broadcast to its structure"
 )
 _AMBIENT_ROWS = "the ambient event weight is not at this fill's row space: " + _UNFLATTEN
 _FACTOR_ROWS = "weight[{index}] is not at this fill's row space: " + _UNFLATTEN
@@ -174,11 +177,13 @@ _LOOSE_ROWS = (
 
 
 def _depth(form: object) -> int | None:
-    """How many nested lengths a recorded form carries — a per-EVENT column is 1, a per-object one
-    2 — or ``None`` for NO row space at all: either the backend's form does not say (a rectilinear
-    idiom needs no broadcast) or the operand is a scalar, which broadcasts against anything. That
-    last case is `_rows`'s runtime contract read at record time; disagreeing with it would fire the
-    seam on a fill whose guard then provably cannot trip, moving a working program's graph.
+    """Count the nested lengths a recorded form carries; ``None`` for NO row space at all.
+
+    A per-EVENT column is 1, a per-object one 2. ``None`` means either the backend's form does not
+    say (a rectilinear idiom needs no broadcast) or the operand is a scalar, which broadcasts
+    against anything. That last case is `_rows`'s runtime contract read at record time;
+    disagreeing with it would fire the seam on a fill whose guard then provably cannot trip,
+    moving a working program's graph.
 
     Read off the form rather than off the data: the fill records, so this is the only handle on the
     row space at record time, and it is the one the awkward idiom already uses (``.tt.ndim``).
@@ -189,7 +194,7 @@ def _depth(form: object) -> int | None:
 
 
 def _option_anywhere(layout_form: object) -> bool:
-    """Does an awkward layout form carry a missing value at any level?
+    """Tell whether an awkward layout form carries a missing value at any level.
 
     Record and union forms nest through ``contents``; a list or option form through ``content``.
     The list is read first because a record form also answers to ``content`` — with a bound METHOD,
@@ -205,7 +210,7 @@ def _option_anywhere(layout_form: object) -> bool:
 
 
 def _drops_rows(value: object) -> bool:
-    """Does this value — a recorded form, or a chunk of one — carry MISSING entries?
+    """Tell whether this value — a recorded form, or a chunk of one — carries MISSING entries.
 
     `_flat` drops them, so such a value's leaf row space is not the one its structure counts out:
     a factor already flat at it cannot be re-nested into the value (the counts that would carry it
@@ -219,12 +224,13 @@ def _drops_rows(value: object) -> bool:
 
 
 def _mixed_row_spaces(session: Any, value: Operand, applied: Sequence[Operand]) -> bool:
-    """Does any applied weight factor sit SHALLOWER than the fill's value, where the seam repairs?
+    """Tell whether any applied weight factor sits SHALLOWER than the fill's value.
 
-    The evaluator flattens each input independently, so an un-broadcast per-event weight against a
-    per-object value reaches boost with the wrong length and dies there naming neither. Deciding on
-    the FORMS, not on the presence of a context or a `Varied`, is what makes the plain fill — the
-    one every non-systematics analysis writes — take the same seam.
+    That is where the seam repairs. The evaluator flattens each input independently, so an
+    un-broadcast per-event weight against a per-object value reaches boost with the wrong length
+    and dies there naming neither. Deciding on the FORMS, not on the presence of a context or a
+    `Varied`, is what makes the plain fill — the one every non-systematics analysis writes — take
+    the same seam.
 
     Only in that one direction, though. `broadcast_like` lines a shallower factor up with a deeper
     value and nothing else, so firing on a DEEPER factor (or on an idiom whose backend supplies no
@@ -245,7 +251,7 @@ def _mixed_row_spaces(session: Any, value: Operand, applied: Sequence[Operand]) 
 
 
 def _rows(values: object) -> int | None:
-    """A chunk's outer length, ``None`` for a scalar (which broadcasts against anything)."""
+    """Return a chunk's outer length, ``None`` for a scalar (which broadcasts against anything)."""
     try:
         return len(values)  # type: ignore[arg-type]
     except TypeError:
@@ -253,8 +259,9 @@ def _rows(values: object) -> int | None:
 
 
 def _renest(value: object, factor: object) -> object:
-    """`factor`, already flat at `value`'s LEAF row space, given the value's nesting so that the
-    broadcast downstream of the guard is the identity rather than a shape error.
+    """Give `factor`, already flat at `value`'s LEAF row space, the value's nesting.
+
+    The broadcast downstream of the guard is then the identity rather than a shape error.
 
     A rectilinear idiom needs nothing: its seam is the bound no-op and the evaluator ravels both.
     """
@@ -273,12 +280,12 @@ class _WeightGuard:
 
     That broadcast is a backend op, so an offending factor would otherwise die inside awkward's
     broadcast with a shape message naming neither the fill nor the factor. This node runs first
-    (the broadcast consumes its output) and carries the one thing only the fill knows: WHICH operand is
-    at the wrong row space. Record-time detection is impossible — a per-event value and a
-    flattened per-object value have identical 1-D forms — so the two row spaces a fill accepts are
-    told apart HERE, where both lengths are known: the value's OUTER one, which the broadcast then
-    lines up, and its LEAF one, an already-flat per-object factor the evaluator would multiply
-    elementwise unaided. Anything else is the blame.
+    (the broadcast consumes its output) and carries the one thing only the fill knows: WHICH
+    operand is at the wrong row space. Record-time detection is impossible — a per-event value and
+    a flattened per-object value have identical 1-D forms — so the two row spaces a fill accepts
+    are told apart HERE, where both lengths are known: the value's OUTER one, which the broadcast
+    then lines up, and its LEAF one, an already-flat per-object factor the evaluator would
+    multiply elementwise unaided. Anything else is the blame.
     """
 
     message: str
@@ -311,10 +318,12 @@ def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
 
 
 def _fold_labels(operands: Sequence[Operand]) -> tuple[str, ...]:
-    """The label union in a FIXED order, folded LEFT over the operands as given — axis values in
-    argument order, then the ambient weight, then explicit factors in list order, then ``sample=``
-    last. Leaving the order free would let two conforming implementations disagree on it for one
-    program, so the same script would give different label orders and a different result layout.
+    """Return the label union in a FIXED order, folded LEFT over the operands as given.
+
+    The order is axis values in argument order, then the ambient weight, then explicit factors in
+    list order, then ``sample=`` last. Leaving the order free would let two conforming
+    implementations disagree on it for one program, so the same script would give different label
+    orders and a different result layout.
     """
     out: dict[str, None] = {"nominal": None}
     for operand in operands:
@@ -327,7 +336,7 @@ def _fold_labels(operands: Sequence[Operand]) -> tuple[str, ...]:
 def _blame(
     args: Sequence[Operand], ctx: object, has_ambient: bool, n_factors: int
 ) -> tuple[tuple[str, str], ...]:
-    """One ``(coordinate, message)`` per APPLIED factor, in fold order.
+    """Return one ``(coordinate, message)`` per APPLIED factor, in fold order.
 
     The COORDINATE — ``ambient``, ``weight[i]``, ``value[0]`` — is the guard's identity: it enters
     the node's params and payload hash, so the diagnostic's wording can be improved without moving
@@ -355,17 +364,19 @@ def _fill_chash(
     variation: Sequence[str] | None = None,
     constants: str | None = None,
 ) -> str:
-    """The fill node's descriptor content hash — also its External evaluator's registry key
-    (`evaluate_ir` resolves `externals[content_hash]`, and the group plan merges every histogram's
-    evaluators into ONE dict keyed that way). Two same-spec fills whose evaluators DIFFER must get
+    """Return the fill node's descriptor content hash, also its External evaluator's registry key.
+
+    `evaluate_ir` resolves `externals[content_hash]`, and the group plan merges every histogram's
+    evaluators into ONE dict keyed that way. Two same-spec fills whose evaluators DIFFER must get
     distinct hashes, or both distinct nodes resolve to whichever evaluator registered last (a
     weighted fill silently evaluated unweighted — the four-output plan's `plain`/`sib` collision).
 
-    Within one spec the evaluator can differ in three ways: unweighted vs weighted, the weight-
-    factor count, and the axis-mode label loop. `has_sample` and `n_axes` cannot — `sample=` is only
-    valid on Mean/WeightedMean storage and the axis count is in the spec, both already spec-borne.
-    The CANONICAL single-weight sibling fill keeps `content_hash(spec)` verbatim, so graphs recorded
-    before variations existed keep their identity; any deviation folds a discriminator suffix in.
+    Within one spec the evaluator can differ in three ways: unweighted vs weighted, the
+    weight-factor count, and the axis-mode label loop. `has_sample` and `n_axes` cannot —
+    `sample=` is only valid on Mean/WeightedMean storage and the axis count is in the spec, both
+    already spec-borne. The CANONICAL single-weight sibling fill keeps `content_hash(spec)`
+    verbatim, so graphs recorded before variations existed keep their identity; any deviation
+    folds a discriminator suffix in.
     """
     disc: list[str] = []
     if not has_weight:
@@ -384,15 +395,17 @@ def _fill_chash(
 def _fill_params(
     spec: str, shape: FillEvaluator, n_recorded: int, variation: Sequence[str] | None = None
 ) -> dict[str, Any]:
-    """A fill node's params; ``n_axes`` counts the RECORDED axis inputs, which lead the node's inputs."""
+    """Return a fill node's params.
+
+    ``n_axes`` counts the RECORDED axis inputs, which lead the node's inputs.
+    """
     return {
         "spec": spec,
         "n_axes": n_recorded,
         "weighted": shape.has_weight,
         "sampled": shape.has_sample,
-        **(
-            {} if variation is None else {"variation": json.dumps(list(variation))}
-        ),  # store params are scalars
+        # store params are scalars
+        **({} if variation is None else {"variation": json.dumps(list(variation))}),
         # only multi-weight fills carry the param: single-weight node identity unchanged
         **({"n_weights": shape.n_weights} if shape.n_weights > 1 else {}),
         **({} if shape.constants is None else {"constants": shape.constants}),
@@ -400,20 +413,21 @@ def _fill_params(
 
 
 def _declare_axis_spec(hist: bh.Histogram, sorted_labels: Sequence[str]) -> str:
-    """Declare a non-growth, sorted `"variation"` StrCategory axis at FILL time from the inferred
-    label set, appended after the value axes. Returns the fill node's spec — identity-bearing, hence
-    byte-stable per partition, so every partition's result has the same variation axis to add on.
+    """Declare a sorted `"variation"` axis at FILL time and return the fill node's spec.
+
+    The non-growth StrCategory axis holds the inferred label set and is appended after the value
+    axes. The spec is identity-bearing, hence byte-stable per partition, so every partition's
+    result has the same variation axis to add on.
     """
-    var = bh.axis.StrCategory(
-        list(sorted_labels)
-    )  # non-growth by default; stored order = as given
+    # non-growth by default; stored order = as given
+    var = bh.axis.StrCategory(list(sorted_labels))
     var.__dict__["name"] = "variation"  # the `hist` name convention the spec codec round-trips
     declared = bh.Histogram(*hist.axes, var, storage=hist.storage_type())
     return spec_of(declared)
 
 
 def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
-    """Per-label fill nodes: ``{label: node}`` in fold order, nominal first.
+    """Return the per-label fill nodes, ``{label: node}`` in fold order, nominal first.
 
     ``Histogram.fill_nodes()`` is a flat list with no label attribution, and one `fill` call's
     siblings are the only place the correspondence exists — so a histogram carrying several fill
@@ -436,8 +450,10 @@ def _width(axis: Any) -> float:
 
 
 def _union(x: Any, y: Any) -> Any:
-    """The growing ``Regular`` axis spanning ``x`` and ``y``, or ``None`` when they are not two
-    differing growing ``Regular`` axes on one grid with equal metadata.
+    """Return the growing ``Regular`` axis spanning ``x`` and ``y``.
+
+    ``None`` when they are not two differing growing ``Regular`` axes on one grid with equal
+    metadata.
     """
     if not (_grows_regular(x) and _grows_regular(y) and vars(x) == vars(y) and x != y):
         return None
@@ -471,9 +487,11 @@ def _onto(hist: bh.Histogram, unions: Sequence[Any]) -> bh.Histogram:
 
 
 def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
-    """The combine: native ``+``, after widening each pair of growing ``Regular`` axes on one grid
-    (equal bin width, edges a whole number of bins apart, equal metadata) to their bin-aligned
-    union. Every pair native ``+`` refuses otherwise stays refused.
+    """Add two histograms: the plan's combine.
+
+    It is native ``+``, after widening each pair of growing ``Regular`` axes on one grid (equal
+    bin width, edges a whole number of bins apart, equal metadata) to their bin-aligned union.
+    Every pair native ``+`` refuses otherwise stays refused.
 
     Returns a new ``boost_histogram.Histogram`` carrying ``a``'s metadata; neither operand
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
@@ -496,17 +514,19 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
 
 
 def _positions(compiled: CompiledGraph, nodes: Sequence[Array]) -> dict[int, int]:
-    """Each marked fill's index among the values ``compiled`` evaluates to. The optimizer may merge
-    two marked fills into one output (``weight=[w]`` and ``weight=[w * 1.0]``); reading each fill at
-    its own position reads that output once per marked fill, which is what filling twice means.
+    """Return each marked fill's index among the values ``compiled`` evaluates to.
+
+    The optimizer may merge two marked fills into one output (``weight=[w]`` and
+    ``weight=[w * 1.0]``); reading each fill at its own position reads that output once per marked
+    fill, which is what filling twice means.
     """
     order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
     return {n.node_id: order[compiled.correspondence.node_map[n.node_id][0]] for n in nodes}
 
 
 _NO_POSITIONS = (
-    "this histogram reduce has no fill positions: its plan's aggregate_plan(on_compiled=) never fired; "
-    "pass on_compiled=pieces.on_compiled"
+    "this histogram reduce has no fill positions: its plan's aggregate_plan(on_compiled=) never "
+    "fired; pass on_compiled=pieces.on_compiled"
 )
 
 
@@ -518,8 +538,10 @@ def _sum_fills(
     dense: bool = False,
     kind: Kind = BH,
 ) -> Any:
-    """A slot's partial, as ``kind``: a dense slot sums into the dense zero, which densifies each
-    chunked fill it adds; a chunked slot adds each fill into the total it owns, in place.
+    """Sum a slot's fills into its partial, as ``kind``.
+
+    A dense slot sums into the dense zero, which densifies each chunked fill it adds; a chunked
+    slot adds each fill into the total it owns, in place.
     """
     total = as_kind(zero_of(spec), kind) if dense else empty(spec, kind)
     for nid in node_ids:
@@ -531,8 +553,10 @@ def _sum_fills(
 
 @dataclass
 class _SumFills:
-    """Reduce one partition's evaluated fills to a single histogram: the sum of this histogram's
-    staged fills, each read at its compiled position (``positions``, set by the plan's hook).
+    """Reduce one partition's evaluated fills to a single histogram.
+
+    That is the sum of this histogram's staged fills, each read at its compiled position
+    (``positions``, set by the plan's hook).
     """
 
     spec: str
@@ -555,10 +579,12 @@ Layout = tuple[tuple[SlotKey, tuple[int, ...], str], ...]
 
 @dataclass
 class _GroupReduce:
-    """Reduce one partition's evaluated fills to ``{slot: histogram}``: each slot sums its own
-    fills, each read at its compiled position (``positions``, set by ``pieces.on_compiled``). A
-    ``backed`` slot's sum is shipped to its histserv server and its value is the receipt; a
-    ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's class.
+    """Reduce one partition's evaluated fills to ``{slot: histogram}``.
+
+    Each slot sums its own fills, each read at its compiled position (``positions``, set by
+    ``pieces.on_compiled``). A ``backed`` slot's sum is shipped to its histserv server and its
+    value is the receipt; a ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's
+    class.
     """
 
     layout: Layout
@@ -590,7 +616,7 @@ class _GroupReduce:
         return out
 
     def resolve_services(self, value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
-        """``value`` with each receipt replaced by its server histogram, deleted from the server."""
+        """Replace each receipt in ``value`` by its server histogram, deleted from the server."""
         return {
             key: h if isinstance(h, bh.Histogram) else h.snapshot(delete=True)
             for key, h in value.items()
@@ -598,8 +624,9 @@ class _GroupReduce:
 
 
 def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
-    """Combine: histogram groups add key-wise, each pair through :func:`add_histograms`, and
-    receipts by their own ``+``.
+    """Add two slot groups key-wise: the group plan's combine.
+
+    Histograms add through :func:`add_histograms`, and receipts by their own ``+``.
     """
     return {
         key: add_histograms(a[key], b[key])
@@ -684,13 +711,13 @@ class Histogram(bh.Histogram):
         weight you registered once and then forgot about. ``unweighted=True`` opts out of BOTH
         weight sources and, applying no factor, carries none of their labels.
 
-        Default lowering is one SIBLING node per label. ``variation_axis=True`` opts
-        into AXIS mode: labels group by the value/``sample=`` member they RESOLVE to, and each group
-        folds into ONE evaluator-loop node over a frontend-declared ``"variation"`` StrCategory axis.
-        The group resolving to nominal's member is the weight-only collapse; a label whose point
-        names a shifted axis coordinate its own name does not leaves that group and joins the node of
-        the member it names (still `1 + |S|` nodes). The MODE is a property of the histogram — fixed
-        by the first fill and remembered; a later fill in the OTHER mode is a hard error.
+        Default lowering is one SIBLING node per label. ``variation_axis=True`` opts into AXIS
+        mode: labels group by the value/``sample=`` member they RESOLVE to, and each group folds
+        into ONE evaluator-loop node over a frontend-declared ``"variation"`` StrCategory axis. The
+        group resolving to nominal's member is the weight-only collapse; a label whose point names
+        a shifted axis coordinate its own name does not leaves that group and joins the node of the
+        member it names (still `1 + |S|` nodes). The MODE is a property of the histogram — fixed by
+        the first fill and remembered; a later fill in the OTHER mode is a hard error.
         """
         if len(args) != len(self.axes):
             raise TypeError(
@@ -698,12 +725,14 @@ class Histogram(bh.Histogram):
             )
         if not all(isinstance(a, (Array, Varied, *_SCALARS)) for a in args):
             raise TypeError(
-                "deferred fills take graphed Arrays or scalar constants; use boost_histogram for eager data"
+                "deferred fills take graphed Arrays or scalar constants; use boost_histogram for "
+                "eager data"
             )
         values = [a for a in args if not isinstance(a, _SCALARS)]
         if not values:
             raise TypeError(
-                "a deferred fill needs a graphed Array on some axis for its constants to broadcast against"
+                "a deferred fill needs a graphed Array on some axis for its constants to "
+                "broadcast against"
             )
         del threads  # parallelism belongs to the executor, not the fill
         if unweighted and weight is not None:
@@ -731,18 +760,17 @@ class Histogram(bh.Histogram):
             )
         if variation_axis and any(ax.__dict__.get("name") == "variation" for ax in self.axes):
             raise GraphedError(
-                "this histogram already carries an axis named 'variation'; the variation-axis fill "
-                "mode declares that axis itself, so passing variation_axis=True would collide — "
-                "drop the pre-existing 'variation' axis or use sibling fills"
+                "this histogram already carries an axis named 'variation'; the variation-axis "
+                "fill mode declares that axis itself, so passing variation_axis=True would "
+                "collide — drop the pre-existing 'variation' axis or use sibling fills"
             )
 
         given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
         axes = [graphed.reindex_to(value, ctx) for value in values]
-        factors = [
-            graphed.reindex_to(value, ctx) for value in weights
-        ]  # the ambient one already is
+        # the ambient one already is
+        factors = [graphed.reindex_to(value, ctx) for value in weights]
         sampled = None if recorded_sample is None else graphed.reindex_to(recorded_sample, ctx)
 
         applied: list[Operand] = ([] if ambient is None else [ambient]) + factors
@@ -866,13 +894,15 @@ class Histogram(bh.Histogram):
         broadcast: bool,
         labels: tuple[str, ...],
     ) -> None:
-        """Axis-mode lowering. A node's value and ``sample=`` columns are FIXED and only its weight
-        block loops, so the fold labels group by the value/`sample=` MEMBERS they resolve to: labels
-        sharing them share one evaluator-loop node, and the group whose members are nominal's is the
-        `W` collapse. Grouping on the RESOLVED member rather than on label membership is what lets a
-        joint label — one whose point names a shifted axis coordinate its own name does not — leave
-        the nominal loop and carry its own kinematics; on default points every label resolves to its
-        own member or to nominal, which is the `1 + |S|` split unchanged. Declare the sorted
+        """Lower one fill in axis mode.
+
+        A node's value and ``sample=`` columns are FIXED and only its weight block loops, so the
+        fold labels group by the value/`sample=` MEMBERS they resolve to: labels sharing them share
+        one evaluator-loop node, and the group whose members are nominal's is the `W` collapse.
+        Grouping on the RESOLVED member rather than on label membership is what lets a joint label
+        — one whose point names a shifted axis coordinate its own name does not — leave the nominal
+        loop and carry its own kinematics; on default points every label resolves to its own
+        member or to nominal, which is the `1 + |S|` split unchanged. Declare the sorted
         ``"variation"`` axis from the label set; each node's `content_hash((spec, variation))` is
         DISTINCT, so it resolves to its own evaluator.
         """
@@ -919,10 +949,12 @@ class Histogram(bh.Histogram):
         carrier: str,
         node_labels: tuple[str, ...],
     ) -> Array:
-        """One axis-mode fill node: value + `sample=` from `carrier` (fixed), one guarded and
-        broadcast weight block per label in `node_labels` (guard and broadcast recorded per COLUMN,
-        upstream of the loop). The evaluator writes each label's scalar category on the variation
-        axis; its content hash folds `node_labels` in so the node owns its evaluator.
+        """Record one axis-mode fill node.
+
+        Its value + `sample=` come from `carrier` (fixed), with one guarded and broadcast weight
+        block per label in `node_labels` (guard and broadcast recorded per COLUMN, upstream of the
+        loop). The evaluator writes each label's scalar category on the variation axis; its
+        content hash folds `node_labels` in so the node owns its evaluator.
         """
         value_members = [graphed.member_of(operand, carrier) for operand in axes]
         value = value_members[0]
@@ -982,15 +1014,14 @@ class Histogram(bh.Histogram):
         backend: Callable[[], Any] | str | None = None,
         partitions: Sequence[Partition] | None = None,
     ) -> Plan[bh.Histogram]:
-        """A plan: one fill task per partition, combined by :func:`add_histograms`. Run it later
-        with any runner.
+        """Build a plan: one fill task per partition, combined by :func:`add_histograms`.
 
-        Thin specialization of :func:`graphed.aggregate_plan` — this histogram's fills are the
-        outputs, summed per partition and added across them; ``backend`` is each worker's evaluation
-        backend (factory/class or ``"module:attr"`` import ref for behavior-carrying backends, which
-        do not pickle); ``partitions`` lets the caller shape partitioning itself. For several
-        histograms that share a sub-graph, plan them together with :func:`plan` so the shared work
-        runs ONCE.
+        Run it later with any runner. Thin specialization of :func:`graphed.aggregate_plan` — this
+        histogram's fills are the outputs, summed per partition and added across them; ``backend``
+        is each worker's evaluation backend (factory/class or ``"module:attr"`` import ref for
+        behavior-carrying backends, which do not pickle); ``partitions`` lets the caller shape
+        partitioning itself. For several histograms that share a sub-graph, plan them together with
+        :func:`plan` so the shared work runs ONCE.
         """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
@@ -1006,8 +1037,8 @@ class Histogram(bh.Histogram):
         # fall through into an opaque bh error. Not a fill COUNT — one varied fill refuses.
         if self._axis_mode or any(len(labels) > 1 for labels in self._label_maps):
             raise GraphedError(
-                "this histogram's fills carry variations (a variation axis or sibling labels), and "
-                ".plan() sums every staged fill into one histogram — which would merge the "
+                "this histogram's fills carry variations (a variation axis or sibling labels), "
+                "and .plan() sums every staged fill into one histogram — which would merge the "
                 "universes; plan it through graphed_histogram.plan({name: hist}), whose per-slot "
                 "results keep them apart"
             )
@@ -1034,8 +1065,11 @@ class Histogram(bh.Histogram):
 
 
 def _kind(h: Histogram) -> Kind:
-    """What ``h``'s results are: the in-memory class its deferred class extends (``hist.Hist`` for
-    ``hist.graphed.Hist``), carrying the public attributes ``h`` set (None is every one's default).
+    """Return what ``h``'s results are.
+
+    That is the in-memory class its deferred class extends (``hist.Hist`` for
+    ``hist.graphed.Hist``), carrying the public attributes ``h`` set (None is every one's
+    default).
     """
     cls = next(
         c for c in type(h).__mro__ if issubclass(c, bh.Histogram) and not issubclass(c, Histogram)
@@ -1046,7 +1080,7 @@ def _kind(h: Histogram) -> Kind:
 
 
 def _output_labels(hist: Histogram) -> tuple[str, ...]:
-    """The fold-ordered union of the labels reaching one output, over all its fill calls."""
+    """Return the fold-ordered union of the labels reaching one output, over all its fills."""
     out: dict[str, None] = {"nominal": None}
     for per_label in hist._label_maps:
         for label in per_label:
@@ -1055,13 +1089,15 @@ def _output_labels(hist: Histogram) -> tuple[str, ...]:
 
 
 def _slots(name: str, hist: Histogram) -> Layout:
-    """The plan-value keying for ONE output: a bare `name` when no variation reaches it — which is
-    what keeps unvaried programs' plan values exactly as they were — and one `(name, label)` slot
-    per label otherwise, each gathering that label's node from every fill call (the fallback: a
-    fill that does not carry the label contributes its central one). Axis mode is the third key
-    form: ONE `(name, None)` slot gathering every fill-node index, whatever the label count —
-    the MODE decides the key (the bare-name rule is sibling-scoped), the value is the bare
-    variation-axis histogram, the combine is the same `add_histograms`.
+    """Return the plan-value keying for ONE output.
+
+    That is a bare `name` when no variation reaches it — which is what keeps unvaried programs'
+    plan values exactly as they were — and one `(name, label)` slot per label otherwise, each
+    gathering that label's node from every fill call (the fallback: a fill that does not carry the
+    label contributes its central one). Axis mode is the third key form: ONE `(name, None)` slot
+    gathering every fill-node index, whatever the label count — the MODE decides the key (the
+    bare-name rule is sibling-scoped), the value is the bare variation-axis histogram, the combine
+    is the same `add_histograms`.
     """
     spec = hist._fill_specs[0]  # the FILL node's spec (axis mode forces one per output)
     if hist._axis_mode:
@@ -1084,7 +1120,7 @@ def _slots(name: str, hist: Histogram) -> Layout:
 
 @dataclass
 class HistogramPieces:
-    """The histogram half of one plan, for a plan that composes these fills with outputs of its own.
+    """The histogram half of one plan, for a plan composing these fills with outputs of its own.
 
     Mark the plan's own outputs, then ``fill_nodes``; hand ``reduce`` the whole value list and
     forward ``reduce.resolve_services``; pass ``combine``, ``empty`` and ``externals`` as they are
@@ -1103,27 +1139,30 @@ class HistogramPieces:
     served: bool = False
 
     def on_compiled(self, compiled: CompiledGraph) -> Any:
-        """The plan's ``aggregate_plan(on_compiled=)`` hook: records where each fill landed and
-        returns the variation-label payload the shipped closure carries.
+        """Record where each fill landed: the plan's ``aggregate_plan(on_compiled=)`` hook.
+
+        Returns the variation-label payload the shipped closure carries.
         """
         if self.reduce.positions:
             raise GraphedError(
-                "these pieces already fed a plan; graphed_histogram.boost.pieces(...) belongs to one "
-                "plan, so build fresh pieces for another"
+                "these pieces already fed a plan; graphed_histogram.boost.pieces(...) belongs to "
+                "one plan, so build fresh pieces for another"
             )
         self.reduce.positions = _positions(compiled, self.fill_nodes)
         return _variation_labels(self.items, compiled)
 
     def serve(self, plan: Plan[V]) -> Plan[V]:
-        """``plan`` with its histserv-backed slots sized, packed onto servers and declared in
-        ``plan.services``; ``plan`` itself when no slot is backed.
+        """Return ``plan`` with its histserv-backed slots served.
+
+        The slots are sized, packed onto servers and declared in ``plan.services``; ``plan`` itself
+        comes back when no slot is backed.
         """
         if not self.backing:
             return plan
         if self.served:
             raise GraphedError(
-                "these pieces already served a plan; graphed_histogram.boost.pieces(...) belongs to "
-                "one plan, so build fresh pieces for another"
+                "these pieces already served a plan; graphed_histogram.boost.pieces(...) belongs "
+                "to one plan, so build fresh pieces for another"
             )
         from .histserv import _serve  # noqa: PLC0415  (histserv's sizing only for backed slots)
 
@@ -1133,7 +1172,7 @@ class HistogramPieces:
 
 
 def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> HistogramPieces:
-    """The parts :func:`plan` builds its plan from, for a plan that adds outputs of its own."""
+    """Return the parts :func:`plan` builds its plan from, for a plan with outputs of its own."""
     items = tuple(
         [(str(k), v) for k, v in histograms.items()]
         if isinstance(histograms, Mapping)
@@ -1257,7 +1296,7 @@ def _variation_labels(
 
 
 def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
-    """The result unpacker: the executed plan's flat slot-keyed value as the per-output shape.
+    """Unpack the executed plan's flat slot-keyed value into the per-output shape.
 
     The shape is decided by the KEY FORM, which is total and per output — a bare output name is
     that output's bare histogram, ``(output, label)`` keys gather into ``{label: hist}``, and
@@ -1282,18 +1321,21 @@ def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, b
 
 
 def dense_backed(h: H) -> H:
-    """``h``, its partials and merges dense boost histograms from its next plan on; its graph is
-    unchanged. The default backing keeps a histogram with a category axis chunked: one dense slice
-    per filled category key (``hist.chunked.ChunkedHist``). Either way the result is the same dense
-    histogram, bin for bin.
+    """Return ``h``, its partials and merges dense boost histograms from its next plan on.
+
+    Its graph is unchanged. The default backing keeps a histogram with a category axis chunked:
+    one dense slice per filled category key (``hist.chunked.ChunkedHist``). Either way the result
+    is the same dense histogram, bin for bin.
     """
     h._dense = True
     return h
 
 
 def label_listing(histograms: Mapping[str, Histogram]) -> dict[str, list[str]]:
-    """The plan-level ``{output: [labels]}`` listing: each output → its variation labels in FOLD
-    order (nominal first, then vary-tag insertion order); an unvaried output → ``["nominal"]``.
+    """List each output's variation labels: the plan-level ``{output: [labels]}`` listing.
+
+    Each output maps to its variation labels in FOLD order (nominal first, then vary-tag insertion
+    order); an unvaried output maps to ``["nominal"]``.
 
     MODE-INDEPENDENT: an axis-mode output lists the SAME labels as its sibling twin, because both
     modes populate ``_label_maps`` with the same fold-ordered set. The labels come from the fill's
@@ -1310,8 +1352,9 @@ def factory(
     weight: Array | None = None,
     sample: Array | None = None,
 ) -> Histogram:
-    """A deferred histogram from a reference histogram's axes/storage plus one staged fill
-    (the dask-histogram ``factory`` shape).
+    """Build a deferred histogram from a reference histogram's axes/storage plus one staged fill.
+
+    This is the dask-histogram ``factory`` shape.
     """
     out = Histogram(*histref.axes, storage=histref.storage_type())
     return out.fill(*arrays, weight=weight, sample=sample)
@@ -1339,7 +1382,10 @@ def _regular_axes(
 def histogram(
     x: Array, *, bins: int = 10, range: Sequence[float] | None = None, weights: Array | None = None
 ) -> Histogram:
-    """numpy-like 1-D entry point: a deferred Regular-axis histogram (Int64-exact when unweighted)."""
+    """Fill a deferred Regular-axis histogram: the numpy-like 1-D entry point.
+
+    Its storage is Int64, exact, when unweighted.
+    """
     (axis,) = _regular_axes(bins, range, 1)
     storage = bh.storage.Weight() if weights is not None else bh.storage.Int64()
     return Histogram(axis, storage=storage).fill(x, weight=weights)

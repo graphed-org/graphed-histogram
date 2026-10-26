@@ -32,7 +32,7 @@ from .boost import (
 
 
 def spec_of(hist: object) -> str:
-    """The canonical spec string of a (deferred or eager) boost histogram."""
+    """Return the canonical spec string of a (deferred or eager) boost histogram."""
     import boost_histogram as bh  # noqa: PLC0415
 
     assert isinstance(hist, bh.Histogram)
@@ -40,8 +40,9 @@ def spec_of(hist: object) -> str:
 
 
 def evaluators(*histograms: Histogram) -> dict[str, Callable[..., object]]:
-    """Merged ``{content hash: evaluator}`` registry, for wiring these fills into a graph you
-    evaluate yourself.
+    """Merge the histograms' ``{content hash: evaluator}`` registries.
+
+    The result wires these fills into a graph you evaluate yourself.
     """
     out: dict[str, Callable[..., object]] = {}
     for h in histograms:

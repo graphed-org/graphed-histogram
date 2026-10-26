@@ -50,7 +50,8 @@ MiB = 1 << 20
 # The size model's constants, each the maximum over the MODEL lines of the plan's
 # probes/m69b/probe_histserv_memory{,.amd64,.gha,.gha-20261018}.txt and (_PER_CONN)
 # probe_histserv_connections{,.amd64}.txt.
-# _BASE adds the largest change in B between two GitHub runner images there, so the next image change fits.
+# _BASE adds the largest change in B between two GitHub runner images there, so the next image
+# change fits.
 _BASE = 227 * MiB
 _PER_HIST = 4000
 _PER_TASK = 170
@@ -93,16 +94,17 @@ class _Size:
 
 
 def _predict(sizes: Sequence[_Size], workers: int) -> float:
-    """A server's predicted peak bytes while it holds ``sizes`` and ``workers`` worker processes
-    dial it.
-    """
+    """Predict a server's peak bytes while it holds ``sizes`` and ``workers`` processes dial it."""
     m = max(s.stored for s in sizes)
     held = sum(_PER_HIST + _PER_TASK * s.tasks + (s.chunks + 1) * s.dense for s in sizes)
     return _BASE + held + (_FILL_A + _FILL_B * workers) * m + _PER_CONN * workers
 
 
 def _labels(key: SlotKey, spec: str) -> tuple[str, ...] | None:
-    """An axis-mode slot's variation labels, the chunks it is filled in; ``None`` for any other."""
+    """Return an axis-mode slot's variation labels, the chunks it is filled in.
+
+    ``None`` for any other slot.
+    """
     if not (isinstance(key, tuple) and key[1] is None):
         return None
     return tuple(json.loads(spec)["axes"][-1]["categories"])
@@ -138,8 +140,10 @@ class _Pack:
         return (self.memory_mb, self.workers, self.ports, self.timeout_s)
 
     def place(self, size: _Size) -> int:
-        """First fit over the open servers in index order, else a new server at the smallest
-        offered size that holds the slot alone, else one sized to it.
+        """Place a slot on a server and return the server's index.
+
+        First fit over the open servers in index order, else a new server at the smallest offered
+        size that holds the slot alone, else one sized to it.
         """
         for i, server in enumerate(self.servers):
             if (
@@ -165,11 +169,12 @@ _PACKS: dict[str, _Pack] = {}
 class Context:
     """The servers a set of histograms fills on, sized before the run.
 
-    ``memory_mb`` is the server sizes offered, in MiB (one or several); ``workers`` bounds the fills
-    in flight to one server and the worker processes that dial it. A ``name`` holds one packing
-    state for the life of the process: a second context under that name with equal arguments
-    shares it (and warns), one with other arguments is refused. Server ``i`` is the service
-    ``f"{name}-{i}"`` listening on a port in ``ports``; ``timeout_s`` is its start-up bound.
+    ``memory_mb`` is the server sizes offered, in MiB (one or several); ``workers`` bounds the
+    fills in flight to one server and the worker processes that dial it. A ``name`` holds one
+    packing state for the life of the process: a second context under that name with equal
+    arguments shares it (and warns), one with other arguments is refused. Server ``i`` is the
+    service ``f"{name}-{i}"`` listening on a port in ``ports``; ``timeout_s`` is its start-up
+    bound.
     """
 
     def __init__(
@@ -202,8 +207,8 @@ class Context:
                     f"histserv Context name {name!r} is held in this process by memory_mb="
                     f"{list(held.memory_mb)}, workers={held.workers}, ports={held.ports}, "
                     f"timeout_s={held.timeout_s}; this one asks for memory_mb={list(offered)}, "
-                    f"workers={pack.workers}, ports={pack.ports}, timeout_s={pack.timeout_s}. Pass a "
-                    "fresh name= or use a new process"
+                    f"workers={pack.workers}, ports={pack.ports}, timeout_s={pack.timeout_s}. "
+                    "Pass a fresh name= or use a new process"
                 )
             warnings.warn(
                 f"histserv Context {name!r} already exists in this process with these arguments; "
@@ -274,8 +279,10 @@ class Histogram(boost.Histogram):
 
 
 class HistservError(GraphedError):
-    """A histserv RPC failed: the server's ``endpoint``, the gRPC status ``code`` name and its
-    ``details``. Unlike grpc's own error, it pickles, so it crosses a process boundary intact.
+    """A histserv RPC failed.
+
+    It carries the server's ``endpoint``, the gRPC status ``code`` name and its ``details``.
+    Unlike grpc's own error, it pickles, so it crosses a process boundary intact.
     """
 
     def __init__(self, endpoint: str, code: str, details: str) -> None:
@@ -294,8 +301,9 @@ _CLIENTS_LOCK = threading.Lock()
 
 
 def _call(endpoint: str, rpc: Callable[[Any], V]) -> V:
-    """``rpc(client)`` against ``endpoint``'s cached client, a gRPC error raised as a
-    :class:`HistservError`.
+    """Run ``rpc(client)`` against ``endpoint``'s cached client.
+
+    A gRPC error is raised as a :class:`HistservError`.
     """
     import grpc  # noqa: PLC0415  (only a bound run talks to a server)
 
@@ -314,8 +322,10 @@ def _call(endpoint: str, rpc: Callable[[Any], V]) -> V:
 
 @dataclass(frozen=True)
 class Receipt:
-    """A backed slot's value between its reduce and ``resolve_services``: the server histogram
-    holding it. Receipts add by identity; one without ``hist_id`` is the empty value.
+    """A backed slot's value between its reduce and ``resolve_services``.
+
+    It names the server histogram holding that value. Receipts add by identity; one without
+    ``hist_id`` is the empty value.
     """
 
     spec: str
@@ -330,13 +340,14 @@ class Receipt:
         if self.hist_id is None:
             return other
         raise GraphedError(
-            f"receipts of two histserv histograms do not add: {self.hist_id} at {self.endpoint} and "
-            f"{other.hist_id} at {other.endpoint}"
+            f"receipts of two histserv histograms do not add: {self.hist_id} at {self.endpoint} "
+            f"and {other.hist_id} at {other.endpoint}"
         )
 
     def snapshot(self, *, delete: bool = False) -> Any:
-        """The server histogram's contents as the slot's boost histogram (empty for the empty
-        receipt); ``delete`` also drops it from the server.
+        """Return the server histogram's contents as the slot's boost histogram.
+
+        The empty receipt gives an empty histogram; ``delete`` also drops it from the server.
         """
         out = zero_of(self.spec) if self.kind is None else as_kind(zero_of(self.spec), self.kind)
         if self.endpoint is None or self.hist_id is None:
@@ -357,9 +368,10 @@ _RPC_TIMEOUT_S = 600
 
 
 def _template(key: SlotKey, spec: str) -> Any:
-    """The server-side histogram of a slot: a no-flow ``Regular`` per non-variation axis over its
-    flow extent, so category and boolean flow bins survive, and the variation axis as the chunk
-    axis.
+    """Build the server-side histogram of a slot.
+
+    It has a no-flow ``Regular`` per non-variation axis over its flow extent, so category and
+    boolean flow bins survive, and the variation axis as the chunk axis.
     """
     import hist  # noqa: PLC0415
     from histserv.chunked_hist import ChunkedHist  # noqa: PLC0415
@@ -385,8 +397,10 @@ _SCOPE: ContextVar[tuple[str, dict[SlotKey, tuple[str, str]]] | None] = ContextV
 
 
 def _ship(key: SlotKey, spec: str, partial: Any) -> Receipt:
-    """One partition's partial of a backed slot, sent as one ``FillMany`` keyed by the partition
-    (a chunk per variation label); a replay of that partition is ``ALREADY_EXISTS``, already done.
+    """Send one partition's partial of a backed slot to its server and return its receipt.
+
+    It goes as one ``FillMany`` keyed by the partition (a chunk per variation label); a replay of
+    that partition is ``ALREADY_EXISTS``, already done.
     """
     scope = _SCOPE.get()
     if scope is None or key not in scope[1]:
@@ -460,8 +474,9 @@ class _Handles:
 
 @dataclass(frozen=True)
 class _Served:
-    """A served plan's process: the plan's own, around which each task's backed slots know their
-    server histograms. Those are created on the first call or the first pickle, which every runner
+    """A served plan's process: the plan's own, around which backed slots know their histograms.
+
+    Those server histograms are created on the first call or the first pickle, which every runner
     reaches in the driver, so a worker receives their ids and creates none.
     """
 
@@ -474,7 +489,7 @@ class _Served:
         return sorted({home.name for _key, home in self.slots})
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Served:
-        """A copy bound to ``endpoints`` over those it holds, with fresh handles; no RPC."""
+        """Return a copy bound to ``endpoints`` over those it holds, with fresh handles; no RPC."""
         merged = {**(self.endpoints or {}), **endpoints}
         missing = [name for name in self._names() if name not in merged]
         if missing:
@@ -528,8 +543,8 @@ def _serve(
     for task in plan.tasks:
         if str(task.partition) in seen:
             raise GraphedError(
-                f"histserv keys each fill by its partition, and partition {task.partition} is in two "
-                "of this plan's tasks: give each task its own partition"
+                f"histserv keys each fill by its partition, and partition {task.partition} is in "
+                "two of this plan's tasks: give each task its own partition"
             )
         seen.add(str(task.partition))
     sized = [(key, spec, ctx, _size(key, spec, len(plan.tasks))) for key, spec, ctx in backing]

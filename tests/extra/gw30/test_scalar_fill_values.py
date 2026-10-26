@@ -1,4 +1,6 @@
-"""A scalar fill value (``h.fill(dataset="x", pt=arr)``) broadcasts per entry, as an eager fill does."""
+"""A scalar fill value (``h.fill(dataset="x", pt=arr)``) broadcasts per entry, as an eager fill
+does.
+"""
 
 from __future__ import annotations
 

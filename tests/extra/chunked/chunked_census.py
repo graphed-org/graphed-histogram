@@ -1,4 +1,6 @@
-"""Counts densifies of chunked partials, in this process and in every worker that unpickles `Events`."""
+"""Counts densifies of chunked partials, in this process and in every worker that unpickles
+`Events`.
+"""
 
 from __future__ import annotations
 

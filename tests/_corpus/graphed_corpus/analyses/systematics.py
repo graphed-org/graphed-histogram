@@ -111,10 +111,11 @@ def ttbar_joint_reference(
     observable and binning are `ttbar_region`'s. Contents are returned unrounded — rounding is the
     comparison helpers' job (:func:`~graphed_corpus.histograms.bin_values`).
 
-    The two knobs isolate where the two axes' cross term comes from: `pt_dependent=False` falls back
-    to the flat +-3% rule, leaving only JES selection migration; `freeze_selection=True` additionally
-    takes the jet and event selection from nominal kinematics while still evaluating the observable
-    and the SF at the shifted pT, which removes the migration too and so leaves no cross term at all.
+    The two knobs isolate where the two axes' cross term comes from: `pt_dependent=False` falls
+    back to the flat +-3% rule, leaving only JES selection migration; `freeze_selection=True`
+    additionally takes the jet and event selection from nominal kinematics while still evaluating
+    the observable and the SF at the shifted pT, which removes the migration too and so leaves no
+    cross term at all.
     """
     shifted = _apply_jes(events.Jet, variation=jes)
     selector = events.Jet if freeze_selection else shifted

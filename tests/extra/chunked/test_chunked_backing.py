@@ -1,4 +1,6 @@
-"""The chunked default and the dense opt-in give the same histograms, byte for byte, on every route."""
+"""The chunked default and the dense opt-in give the same histograms, byte for byte, on every
+route.
+"""
 
 from __future__ import annotations
 
@@ -123,9 +125,8 @@ def test_chunked_and_dense_backings_agree_byte_for_byte(runner: str) -> None:
     for key in chunked:
         assert _bytes(chunked[key]) == _bytes(dense[key]), key
         assert type(chunked[key]) is bh.Histogram  # read, it is the plain dense histogram
-    assert (
-        chunked[("weight", "nominal")].view(flow=True)["value"][:, 3, 2].sum() > 0
-    )  # both overflows filled
+    # both overflows filled
+    assert chunked[("weight", "nominal")].view(flow=True)["value"][:, 3, 2].sum() > 0
 
 
 def test_a_partial_ships_chunked_and_reads_dense() -> None:
@@ -142,9 +143,8 @@ def test_a_partial_ships_chunked_and_reads_dense() -> None:
 def test_a_protocol_probe_keeps_it_chunked_and_any_other_read_densifies() -> None:
     h = _evaluate("growth str with initial categories", False)
     assert getattr(h, "__dask_graph__", None) is None and type(h) is Chunked
-    assert (
-        h._variance_known is False and type(h) is bh.Histogram
-    )  # a __dict__ attribute densifies too
+    # a __dict__ attribute densifies too
+    assert h._variance_known is False and type(h) is bh.Histogram
     Chunked._materialize(h)  # a caller that lost the race finds it done
     assert _bytes(h) == _bytes(_evaluate("growth str with initial categories", True))
 

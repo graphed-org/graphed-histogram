@@ -1,5 +1,5 @@
-"""m69b histserv sizing beyond the frozen rows: flow extents and chunks per slot kind, refusals that
-leave the packing untouched, and a served plan keeping the services it already had.
+"""m69b histserv sizing beyond the frozen rows: flow extents and chunks per slot kind, refusals
+that leave the packing untouched, and a served plan keeping the services it already had.
 """
 
 from __future__ import annotations

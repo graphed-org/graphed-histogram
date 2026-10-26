@@ -34,9 +34,11 @@ _STORAGES: dict[str, Any] = {
 
 
 def _metadata_of(axis: Any) -> dict[str, str]:
-    """Axis identity metadata: boost axes carry user attributes in ``__dict__`` (hist puts
-    ``name``/``label`` there). Everything is coerced to str for the canonical encoding; only
-    str-valued entries restore as-is (enough for hist's named axes).
+    """Return the axis identity metadata.
+
+    Boost axes carry user attributes in ``__dict__`` (hist puts ``name``/``label`` there).
+    Everything is coerced to str for the canonical encoding; only str-valued entries restore as-is
+    (enough for hist's named axes).
     """
     extras = getattr(axis, "__dict__", None) or {}
     out = {str(k): str(v) for k, v in sorted(extras.items()) if v is not None}
@@ -97,7 +99,7 @@ def _encode_axis(axis: Any) -> dict[str, Any]:
 
 
 def _axis_spec(axis: Any) -> dict[str, Any]:
-    """The axis entry, refused when decoding it would lose a transform or a trait."""
+    """Return the axis entry, refused when decoding it would lose a transform or a trait."""
     spec = _encode_axis(axis)
     lost = ["transform"] if getattr(axis, "transform", None) is not None else []
     rebuilt = _make_axis(spec).traits
@@ -120,7 +122,10 @@ def _restore_metadata(axis: Any, md: dict[str, str]) -> Any:
 
 
 def _make_axis(spec: dict[str, Any], ns: Any = bh.axis) -> Any:
-    """The axis ``spec`` describes, from the axis namespace ``ns`` (``hist.axis`` for hist's own types)."""
+    """Build the axis ``spec`` describes.
+
+    It comes from the axis namespace ``ns`` (``hist.axis`` for hist's own types).
+    """
     md = spec.get("metadata") or {}
     kind = spec["type"]
     if kind == "Regular":
@@ -154,7 +159,7 @@ def _make_axis(spec: dict[str, Any], ns: Any = bh.axis) -> Any:
 
 
 def spec_of(hist: bh.Histogram) -> str:
-    """The canonical spec string of a histogram's axes + storage (its content identity)."""
+    """Return the canonical spec string of a histogram's axes + storage (its content identity)."""
     payload = {
         "version": _GROWTH_SPEC_VERSION
         if any(ax.traits.growth for ax in hist.axes)
@@ -170,8 +175,10 @@ def content_hash(spec: str) -> str:
 
 
 def zero_of(spec: str) -> bh.Histogram:
-    """An EMPTY histogram rebuilt from the canonical spec: the combine's starting value, a bitwise
-    identity under ``+`` in every storage but ``Mean`` and ``WeightedMean``.
+    """Rebuild an EMPTY histogram from the canonical spec.
+
+    It is the combine's starting value, a bitwise identity under ``+`` in every storage but
+    ``Mean`` and ``WeightedMean``.
     """
     payload = json.loads(spec)
     if payload["version"] not in (SPEC_VERSION, _GROWTH_SPEC_VERSION):

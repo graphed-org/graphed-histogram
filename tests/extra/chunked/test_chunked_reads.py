@@ -1,4 +1,6 @@
-"""Nothing densifies a chunked partial before the user reads it, and the read hands back the type instantiated."""
+"""Nothing densifies a chunked partial before the user reads it, and the read hands back the type
+instantiated.
+"""
 
 from __future__ import annotations
 
@@ -83,9 +85,8 @@ def test_nothing_densifies_a_partial_before_the_users_first_read(runner: str) ->
     take()
     RUNNERS[runner]().run(gh.plan(_census_hists(True), steps_per_file=4))
     control = take()
-    assert control and (
-        runner == "sequential" or set(control) - {os.getpid()}
-    )  # the counter reaches workers
+    # the counter reaches workers
+    assert control and (runner == "sequential" or set(control) - {os.getpid()})
     blob = pickle.dumps(
         RUNNERS[runner]().run(gh.plan(_census_hists(False), steps_per_file=4)).value
     )
@@ -162,15 +163,13 @@ def test_the_read_hands_back_the_instantiated_type(runner: str) -> None:
         RUNNERS[runner]().run(gh.plan({k: v[0] for k, v in typed.items()}, steps_per_file=3)).value
     )
     lazy = [k for k, v in value.items() if type(v) is not type(typed[k][1])]
-    assert sorted(lazy) == sorted(
-        k for k in typed if k.endswith("Weight-chunked")
-    )  # chunked until read
+    # chunked until read
+    assert sorted(lazy) == sorted(k for k in typed if k.endswith("Weight-chunked"))
     for key, (_, eager) in typed.items():
         got = value[key]
         assert isinstance(got, type(eager)), key  # before the read, too
-        np.testing.assert_allclose(
-            got.values(), eager.values(), rtol=1e-13
-        )  # three partials, one fill
+        # three partials, one fill
+        np.testing.assert_allclose(got.values(), eager.values(), rtol=1e-13)
         assert type(got) is type(eager), key
         twin = value[key.replace("chunked", "dense")]
         assert (

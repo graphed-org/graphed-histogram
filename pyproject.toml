@@ -86,14 +86,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415", "N", "D"]
 convention = "pep257"
 
 [tool.ruff.lint.per-file-ignores]
-# A test's name states what it checks, and its docstring, when it has one, states the property
-# under test rather than a command.
-"tests/**" = ["D1", "D401"]
-# TEMPORARY: cleared by the hand-rewrap and docstring commits that follow.
-"src/**" = ["E501", "D1", "D205", "D400", "D401"]
+# A test's name is its summary line: its docstring, when it has one, elaborates the property under
+# test as one paragraph rather than issuing a command.
+"tests/**" = ["D1", "D205", "D401"]
+# TEMPORARY: cleared by the docstring commit that follows.
+"src/**" = ["D1"]
 "scripts/**" = ["D1"]
-"tests/extra/**" = ["E501", "D205", "N806"]
-"tests/_corpus/**" = ["E501", "D205"]
 
 [tool.ruff.format]
 # ruff formats python blocks inside .md, which reflows the README's examples (aligned trailing

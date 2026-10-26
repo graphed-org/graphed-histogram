@@ -96,9 +96,8 @@ class CorpusEvents:
     part_reads: list[tuple[int, int]] = field(default_factory=list)
 
     def __call__(self) -> ak.Array:
-        return (
-            self.data
-        )  # the whole-dataset loader, used only by the eager `materialize` reference
+        # the whole-dataset loader, used only by the eager `materialize` reference
+        return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
         return tuple(
@@ -190,7 +189,8 @@ def test_the_three_universes_are_distinct() -> None:
     assert not np.array_equal(nominal, up)
     assert not np.array_equal(nominal, down)
     assert not np.array_equal(up, down)
-    # up scales weights >= 1, down <= 1: the total yields bracket nominal (the SF was actually read)
+    # up scales weights >= 1, down <= 1: the total yields bracket nominal
+    # (the SF was actually read)
     assert up.sum() > nominal.sum() > down.sum()
 
 
@@ -198,17 +198,18 @@ def test_the_process_pool_agrees_with_the_sequential_run() -> None:
     """The correctionlib evaluator must pickle and re-load in a worker: the distributed path is the
     whole point. A non-picklable evaluator (the pre-fix local closure) raised on plan submission.
     """
-    ProcessPoolExecutor = pytest.importorskip("graphed_exec_local").ProcessPoolExecutor
+    pool = pytest.importorskip("graphed_exec_local").ProcessPoolExecutor
     seq = _run(SequentialRunner())["ht"]
-    par = _run(ProcessPoolExecutor(max_workers=2))["ht"]
+    par = _run(pool(max_workers=2))["ht"]
     assert sorted(par) == sorted(seq)
     for label in seq:
         assert np.allclose(_values(par[label]), _values(seq[label]), rtol=1e-12, atol=0)
 
 
 def test_each_universe_matches_its_eager_reference() -> None:
-    """Distinctness alone could be three WRONG numbers; pin the values to the in-process `materialize`
-    of the same recorded program (partition summation vs one pass → float tolerance, not bit-equal).
+    """Distinctness alone could be three WRONG numbers; pin the values to the in-process
+    `materialize` of the same recorded program (partition summation vs one pass → float tolerance,
+    not bit-equal).
     """
     seq = _run(SequentialRunner())["ht"]
     reference = _eager_reference()
