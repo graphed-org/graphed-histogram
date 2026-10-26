@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import boost_histogram as bh
+
 from . import boost
 from ._spec import content_hash, zero_of
 from ._spec import spec_of as _spec_of_hist
@@ -33,8 +35,6 @@ from .boost import (
 
 def spec_of(hist: object) -> str:
     """Return the canonical spec string of a (deferred or eager) boost histogram."""
-    import boost_histogram as bh  # noqa: PLC0415
-
     assert isinstance(hist, bh.Histogram)
     return _spec_of_hist(hist)
 

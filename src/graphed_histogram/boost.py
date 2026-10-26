@@ -29,11 +29,8 @@ from graphed.core.execution import Plan
 from graphed.execute import Key
 
 from ._chunked import BH, Chunked, Kind, as_kind, empty
+from ._histserv import Receipt, SlotKey, _serve, _ship
 from ._spec import content_hash, spec_of, zero_of
-
-#: the plan-value key: a bare output name (no variation reaches it), ``(output, label)`` for a
-#: varied sibling output, ``(output, None)`` for variation-axis mode.
-SlotKey = str | tuple[str, str | None]
 
 Operand = Any  # an `Array`, or a `Varied` of them (which carries `Array`'s surface)
 
@@ -66,7 +63,7 @@ def _flat(values: object) -> object:
     scalars pass through for boost broadcasting.
     """
     if hasattr(values, "layout"):  # an awkward array, ragged or not (lazy import boundary)
-        import awkward as ak  # noqa: PLC0415
+        import awkward as ak
 
         return ak.to_numpy(ak.flatten(values, axis=None))
     arr = np.asarray(values)
@@ -269,7 +266,7 @@ def _renest(value: object, factor: object) -> object:
     """
     if not hasattr(value, "layout"):  # an awkward array (the `_flat` lazy-import boundary)
         return factor
-    import awkward as ak  # noqa: PLC0415
+    import awkward as ak
 
     for axis in range(int(getattr(value, "ndim", 1)) - 1, 0, -1):
         factor = ak.unflatten(factor, ak.flatten(ak.num(value, axis=axis), axis=None))
@@ -603,8 +600,6 @@ class _GroupReduce:
             for key, ids, spec in self.layout
         }
         if self.backed:
-            from .histserv import _ship  # noqa: PLC0415  (only a backed slot ships)
-
             backed = set(self.backed)
             out = {
                 key: replace(_ship(key, spec, out[key]), kind=kinds.get(key))
@@ -643,8 +638,6 @@ class _GroupZero:
     kinds: tuple[tuple[SlotKey, Kind], ...] = ()
 
     def __call__(self) -> dict[SlotKey, Any]:
-        if self.backed:
-            from .histserv import Receipt  # noqa: PLC0415
         kinds = dict(self.kinds)
 
         def zero(key: SlotKey, spec: str) -> Any:
@@ -1166,8 +1159,6 @@ class HistogramPieces:
                 "these pieces already served a plan; graphed_histogram.boost.pieces(...) belongs "
                 "to one plan, so build fresh pieces for another"
             )
-        from .histserv import _serve  # noqa: PLC0415  (histserv's sizing only for backed slots)
-
         served = _serve(plan, self.fill_nodes[0].session, self.backing)
         self.served = True
         return served
