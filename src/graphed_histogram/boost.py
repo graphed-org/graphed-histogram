@@ -1103,10 +1103,10 @@ def _slots(name: str, hist: Histogram) -> Layout:
     """
     spec = hist._fill_specs[0]  # the FILL node's spec (axis mode forces one per output)
     if hist._axis_mode:
-        return (((name, None), tuple(node.node_id for node in hist._fill_nodes), spec),)
+        return (((name, None), tuple(node.node_id for node in hist.fill_nodes()), spec),)
     labels = _output_labels(hist)
     if len(labels) == 1:
-        return ((name, tuple(node.node_id for node in hist._fill_nodes), spec),)
+        return ((name, tuple(node.node_id for node in hist.fill_nodes()), spec),)
     return tuple(
         (
             (name, label),
@@ -1182,12 +1182,12 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     )
     if not items:
         raise ValueError("plan() needs at least one histogram")
-    if any(not h._fill_nodes for _, h in items):
+    if any(not h.staged_fills() for _, h in items):
         raise ValueError("every histogram must have at least one staged fill before planning")
     layout = tuple(slot for name, hist in items for slot in _slots(name, hist))
     evaluators: dict[str, Callable[..., object]] = {}
     for _, h in items:
-        evaluators.update(h._evaluators)
+        evaluators.update(h.evaluators())
     backing = tuple(
         (key, spec, h._histserv)
         for name, h in items
@@ -1204,7 +1204,7 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     )
     kinds = tuple((key, _kind(h)) for name, h in items for key, _ids, _spec in _slots(name, h))
     return HistogramPieces(
-        fill_nodes=tuple(n for _, h in items for n in h._fill_nodes),
+        fill_nodes=tuple(n for _, h in items for n in h.fill_nodes()),
         reduce=_GroupReduce(layout, backed, dense=dense, kinds=kinds),
         combine=_add_groups,
         empty=_GroupZero(layout, backed, dense, kinds),
