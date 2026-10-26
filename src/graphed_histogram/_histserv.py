@@ -226,7 +226,9 @@ class Context:
                 for i, s in enumerate(self._pack.servers)
             )
 
-    def _spec(self, i: int) -> ServiceSpec:
+    def _place(self, size: _Size) -> ServiceSpec:
+        """Place a slot on one of this context's servers and return that server's service."""
+        i = self._pack.place(size)
         return ServiceSpec(
             f"{self.name}-{i}",
             kind="histserv",
@@ -516,17 +518,15 @@ def _serve(
                 f"({size.stored} bytes stored + 64 KiB), past histserv's {CEILING}-byte message "
                 "ceiling: split it into smaller histograms"
             )
-    homes: dict[SlotKey, tuple[Context, int]] = {}
+    homes: dict[SlotKey, ServiceSpec] = {}
     with _LOCK:
         for key, _spec, ctx, size in sorted(sized, key=lambda s: (-s[3].stored, str(s[0]))):
-            homes[key] = (ctx, ctx._pack.place(size))
-        landed = {f"{ctx.name}-{i}": ctx._spec(i) for ctx, i in homes.values()}
+            homes[key] = ctx._place(size)
+    landed = {home.name: home for home in homes.values()}
     for spec in landed.values():
         session.declare_service(spec)
     services = {s.name: s for s in plan.services} | landed
-    slots = tuple(
-        (key, _Home(f"{homes[key][0].name}-{homes[key][1]}", spec)) for key, spec, _ctx in backing
-    )
+    slots = tuple((key, _Home(homes[key].name, spec)) for key, spec, _ctx in backing)
     return replace(
         plan,
         process=_Served(plan.process, slots),

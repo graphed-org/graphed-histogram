@@ -40,7 +40,7 @@ def backed(h: H, context: Context) -> H:
     storage = type(h.storage_type()).__name__
     if storage not in _STORAGES:
         raise TypeError(f"histserv holds {', '.join(_STORAGES)} storage, not {storage}")
-    h._histserv = context
+    h.hold_partials(histserv=context)
     return h
 
 

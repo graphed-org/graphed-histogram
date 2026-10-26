@@ -46,6 +46,22 @@ except PackageNotFoundError:  # a src-only PYTHONPATH run: degrade the field, ne
 
 
 @dataclass(frozen=True)
+class Recording:
+    """What a histogram's fills recorded and how its partials are held, as planning reads them."""
+
+    #: one ``{label: node}`` per ``fill`` call, in fold order
+    label_maps: tuple[Mapping[str, Array], ...]
+    #: the spec each ``fill`` call recorded
+    fill_specs: tuple[str, ...]
+    #: whether the fills carry their variations on an axis
+    axis_mode: bool
+    #: the ``histserv.Context`` whose servers fill it, or None
+    histserv: Any
+    #: whether its partials and merges are dense
+    dense: bool
+
+
+@dataclass(frozen=True)
 class HistogramForm:
     """The recorded form of a fill node: a histogram, identified by its spec hash."""
 
@@ -432,12 +448,13 @@ def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
     siblings are the only place the correspondence exists — so a histogram carrying several fill
     calls has no single answer and says so rather than hiding one of them.
     """
-    if len(hist._label_maps) != 1:
+    label_maps = hist.recording().label_maps
+    if len(label_maps) != 1:
         raise GraphedError(
             f"fill_nodes_by_label reads ONE fill call's sibling nodes; this histogram has "
-            f"{len(hist._label_maps)} of them — read the flat list from Histogram.fill_nodes()"
+            f"{len(label_maps)} of them — read the flat list from Histogram.fill_nodes()"
         )
-    return dict(hist._label_maps[0])
+    return dict(label_maps[0])
 
 
 def _grows_regular(axis: Any) -> bool:
@@ -1002,6 +1019,26 @@ class Histogram(bh.Histogram):
         """Content hash -> evaluator, for resolving this histogram's External nodes."""
         return dict(self._evaluators)
 
+    def recording(self) -> Recording:
+        """Return what this histogram's fills recorded and how its partials are held."""
+        return Recording(
+            tuple(self._label_maps),
+            tuple(self._fill_specs),
+            self._axis_mode,
+            self._histserv,
+            self._dense,
+        )
+
+    def hold_partials(self, *, histserv: Any = None, dense: bool = False) -> None:
+        """From the next plan on, fill on ``histserv``'s servers, or keep partials ``dense``.
+
+        Its graph is unchanged. ``histserv.backed`` checks the histogram fits a server first.
+        """
+        if histserv is not None:
+            self._histserv = histserv
+        if dense:
+            self._dense = True
+
     # ---- aggregation -----------------------------------------------------------------------
     def plan(
         self,
@@ -1078,7 +1115,7 @@ def _kind(h: Histogram) -> Kind:
 def _output_labels(hist: Histogram) -> tuple[str, ...]:
     """Return the fold-ordered union of the labels reaching one output, over all its fills."""
     out: dict[str, None] = {"nominal": None}
-    for per_label in hist._label_maps:
+    for per_label in hist.recording().label_maps:
         for label in per_label:
             out.setdefault(label, None)
     return tuple(out)
@@ -1095,8 +1132,9 @@ def _slots(name: str, hist: Histogram) -> Layout:
     bare-name rule is sibling-scoped), the value is the bare variation-axis histogram, the combine
     is the same `add_histograms`.
     """
-    spec = hist._fill_specs[0]  # the FILL node's spec (axis mode forces one per output)
-    if hist._axis_mode:
+    recording = hist.recording()
+    spec = recording.fill_specs[0]  # the FILL node's spec (axis mode forces one per output)
+    if recording.axis_mode:
         return (((name, None), tuple(node.node_id for node in hist.fill_nodes()), spec),)
     labels = _output_labels(hist)
     if len(labels) == 1:
@@ -1106,7 +1144,7 @@ def _slots(name: str, hist: Histogram) -> Layout:
             (name, label),
             tuple(
                 per_label.get(label, per_label["nominal"]).node_id
-                for per_label in hist._label_maps
+                for per_label in recording.label_maps
             ),
             spec,
         )
@@ -1181,9 +1219,9 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     for _, h in items:
         evaluators.update(h.evaluators())
     backing = tuple(
-        (key, spec, h._histserv)
+        (key, spec, h.recording().histserv)
         for name, h in items
-        if h._histserv is not None
+        if h.recording().histserv is not None
         for key, _ids, spec in _slots(name, h)
     )
     backed = tuple(key for key, _spec, _ctx in backing)
@@ -1191,7 +1229,7 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     dense = tuple(
         key
         for name, h in items
-        if h._dense or h._histserv is not None
+        if h.recording().dense or h.recording().histserv is not None
         for key, _ids, _spec in _slots(name, h)
     )
     kinds = tuple((key, _kind(h)) for name, h in items for key, _ids, _spec in _slots(name, h))
@@ -1276,7 +1314,7 @@ def _variation_labels(
         for label in _output_labels(hist):
             if label == "nominal":
                 continue
-            for per_label in hist._label_maps:
+            for per_label in hist.recording().label_maps:
                 node = per_label.get(label, per_label["nominal"])
                 for nid in _cone(node):
                     # total on this cone: every node feeding a MARKED fill survives DCE
@@ -1321,7 +1359,7 @@ def dense_backed(h: H) -> H:
     one dense slice per filled category key (``hist.chunked.ChunkedHist``). Either way the result
     is the same dense histogram, bin for bin.
     """
-    h._dense = True
+    h.hold_partials(dense=True)
     return h
 
 
