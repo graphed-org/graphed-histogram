@@ -145,7 +145,7 @@ def test_a_protocol_probe_keeps_it_chunked_and_any_other_read_densifies() -> Non
     assert getattr(h, "__dask_graph__", None) is None and type(h) is Chunked
     # a __dict__ attribute densifies too
     assert h._variance_known is False and type(h) is bh.Histogram
-    Chunked._materialize(h)  # a caller that lost the race finds it done
+    Chunked._densify(h)  # a caller that lost the race finds it done
     assert _bytes(h) == _bytes(_evaluate("growth str with initial categories", True))
 
 
@@ -262,3 +262,13 @@ def test_a_wrong_arity_fill_raises_as_a_dense_fill_does() -> None:
     for cols in ([X], [X, LABELS, X]):
         with pytest.raises(ValueError, match="Wrong number of args"):
             Chunked(spec).fill(*cols)
+
+
+def test_only_partials_of_one_spec_merge_chunked() -> None:
+    spec = gh.spec_of(bh.Histogram(R, S(["a", "b"])))
+    a, b = Chunked(spec), Chunked(spec)
+    a.fill(X, LABELS)
+    b.fill(X, LABELS)
+    assert type(a.merged(b)) is Chunked
+    assert a.merged(Chunked(gh.spec_of(bh.Histogram(R, S(["a"]))))) is None
+    assert a.merged(bh.Histogram(R, S(["a", "b"]))) is None

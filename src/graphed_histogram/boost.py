@@ -500,14 +500,11 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
     merge chunked; any other pair is read dense first.
     """
-    if (
-        isinstance(a, Chunked)
-        and isinstance(b, Chunked)
-        and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]
-    ):
-        return a._like(vars(a)["_gh_spec"], a.chunked + b.chunked, summed=True)
+    merged = a.merged(b) if isinstance(a, Chunked) else None
+    if merged is not None:
+        return merged
     # a dense copy: a fill node two slots read is one object, and must stay chunked for the other
-    a, b = (x._dense() if isinstance(x, Chunked) else x for x in (a, b))
+    a, b = (x.dense_copy() if isinstance(x, Chunked) else x for x in (a, b))
     unions = [_union(x, y) for x, y in zip(a.axes, b.axes, strict=False)]
     # a rank mismatch skips the widening so native + refuses it with boost's own error
     if a.ndim == b.ndim and any(u is not None for u in unions):
