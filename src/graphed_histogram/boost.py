@@ -649,6 +649,20 @@ class _GroupZero:
         return {key: zero(key, spec) for key, _ids, spec in self.layout}
 
 
+@dataclass(frozen=True)
+class _Lowering:
+    """What lowering one fill reads, in either mode, once its operands are unified."""
+
+    session: Any
+    shape: FillEvaluator
+    axes: Sequence[Operand]
+    applied: Sequence[Operand]
+    sampled: Operand | None
+    blame: Sequence[tuple[str, str]]
+    broadcast: bool
+    labels: tuple[str, ...]
+
+
 class Histogram(bh.Histogram):
     """A ``boost_histogram.Histogram`` whose fills are DEFERRED graphed computations.
 
@@ -712,51 +726,10 @@ class Histogram(bh.Histogram):
         member it names (still `1 + |S|` nodes). The MODE is a property of the histogram — fixed by
         the first fill and remembered; a later fill in the OTHER mode is a hard error.
         """
-        if len(args) != len(self.axes):
-            raise TypeError(
-                f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays"
-            )
-        if not all(isinstance(a, (Array, Varied, *_SCALARS)) for a in args):
-            raise TypeError(
-                "deferred fills take graphed Arrays or scalar constants; use boost_histogram for "
-                "eager data"
-            )
-        values = [a for a in args if not isinstance(a, _SCALARS)]
-        if not values:
-            raise TypeError(
-                "a deferred fill needs a graphed Array on some axis for its constants to "
-                "broadcast against"
-            )
         del threads  # parallelism belongs to the executor, not the fill
-        if unweighted and weight is not None:
-            raise GraphedError(
-                "unweighted=True suppresses the ambient event weight AND every weight= factor, so "
-                "passing weight= in the same call contradicts it — drop one"
-            )
-        # weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
-        # a real graph input and evaluation multiplies them elementwise
-        all_weights = _factor_list(weight)
-        if not all(isinstance(w, (Array, Varied, *_SCALARS)) for w in all_weights):
-            raise TypeError("weights must be graphed Arrays or scalar constants")
-        if sample is not None and not isinstance(sample, (Array, Varied, *_SCALARS)):
-            raise TypeError("sample= must be a graphed Array or a scalar constant")
-        weights = [w for w in all_weights if not isinstance(w, _SCALARS)]
-        recorded_sample = None if isinstance(sample, _SCALARS) else sample
-
-        established = bool(self._fill_specs)  # any prior fill has fixed the mode
-        if established and variation_axis != self._axis_mode:
-            prior, now = ("axis", "sibling") if self._axis_mode else ("sibling", "axis")
-            raise GraphedError(
-                f"this histogram's mode is fixed to {prior}-fill by its first fill; this fill is "
-                f"{now}-mode — the variation-axis MODE is a property of the histogram, not one "
-                "fill() call (mixing them would key one output two different ways). Use one mode."
-            )
-        if variation_axis and any(ax.__dict__.get("name") == "variation" for ax in self.axes):
-            raise GraphedError(
-                "this histogram already carries an axis named 'variation'; the variation-axis "
-                "fill mode declares that axis itself, so passing variation_axis=True would "
-                "collide — drop the pre-existing 'variation' axis or use sibling fills"
-            )
+        values, all_weights, weights, recorded_sample = self._checked_operands(
+            args, weight, sample, unweighted=unweighted, variation_axis=variation_axis
+        )
 
         given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
@@ -790,28 +763,77 @@ class Histogram(bh.Histogram):
             or _mixed_row_spaces(session, axes[0], applied)
         )
 
+        low = _Lowering(session, shape, axes, applied, sampled, blame, broadcast, labels)
         if variation_axis:
-            if (
-                established
-                and self._axis_labels is not None
-                and set(labels) != set(self._axis_labels)
-            ):
-                raise GraphedError(
-                    f"this axis-mode histogram's first fill declared variations "
-                    f"{sorted(self._axis_labels)}; this fill declares {sorted(labels)} — the "
-                    "variation axis (hence the spec) would disagree across fills. Match them."
-                )
-            self._record_axis_fill(
-                session, shape, axes, applied, sampled, blame, broadcast, labels
-            )
-            return self
+            self._record_axis_fill(low)
+        else:
+            self._record_sibling_fill(low)
+        return self
 
-        evaluator = shape
+    def _checked_operands(
+        self,
+        args: Sequence[Operand],
+        weight: Operand | Sequence[Operand] | None,
+        sample: Operand | None,
+        *,
+        unweighted: bool,
+        variation_axis: bool,
+    ) -> tuple[list[Operand], list[Operand], list[Operand], Operand | None]:
+        """Refuse a malformed fill; return its values, weight factors, graph factors and sample."""
+        if len(args) != len(self.axes):
+            raise TypeError(
+                f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays"
+            )
+        if not all(isinstance(a, (Array, Varied, *_SCALARS)) for a in args):
+            raise TypeError(
+                "deferred fills take graphed Arrays or scalar constants; use boost_histogram for "
+                "eager data"
+            )
+        values = [a for a in args if not isinstance(a, _SCALARS)]
+        if not values:
+            raise TypeError(
+                "a deferred fill needs a graphed Array on some axis for its constants to "
+                "broadcast against"
+            )
+        if unweighted and weight is not None:
+            raise GraphedError(
+                "unweighted=True suppresses the ambient event weight AND every weight= factor, so "
+                "passing weight= in the same call contradicts it — drop one"
+            )
+        # weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
+        # a real graph input and evaluation multiplies them elementwise
+        all_weights = _factor_list(weight)
+        if not all(isinstance(w, (Array, Varied, *_SCALARS)) for w in all_weights):
+            raise TypeError("weights must be graphed Arrays or scalar constants")
+        if sample is not None and not isinstance(sample, (Array, Varied, *_SCALARS)):
+            raise TypeError("sample= must be a graphed Array or a scalar constant")
+        weights = [w for w in all_weights if not isinstance(w, _SCALARS)]
+        recorded_sample = None if isinstance(sample, _SCALARS) else sample
+
+        if self._fill_specs and variation_axis != self._axis_mode:
+            prior, now = ("axis", "sibling") if self._axis_mode else ("sibling", "axis")
+            raise GraphedError(
+                f"this histogram's mode is fixed to {prior}-fill by its first fill; this fill is "
+                f"{now}-mode — the variation-axis MODE is a property of the histogram, not one "
+                "fill() call (mixing them would key one output two different ways). Use one mode."
+            )
+        if variation_axis and any(ax.__dict__.get("name") == "variation" for ax in self.axes):
+            raise GraphedError(
+                "this histogram already carries an axis named 'variation'; the variation-axis "
+                "fill mode declares that axis itself, so passing variation_axis=True would "
+                "collide — drop the pre-existing 'variation' axis or use sibling fills"
+            )
+
+        return values, all_weights, weights, recorded_sample
+
+    def _record_sibling_fill(self, low: _Lowering) -> None:
+        """Lower one fill in sibling mode: one node per label."""
+        evaluator = low.shape
         chash = _fill_chash(
             self._spec,
-            has_weight=shape.has_weight,
-            n_weights=shape.n_weights,
-            constants=shape.constants,
+            has_weight=low.shape.has_weight,
+            n_weights=low.shape.n_weights,
+            constants=low.shape.constants,
         )
         descriptor = PayloadDescriptor(
             kind="histogram",
@@ -821,20 +843,20 @@ class Histogram(bh.Histogram):
             io_schema="uhi",
             preprocessing_ref=None,
         )
-        params = _fill_params(self._spec, shape, len(axes))
+        params = _fill_params(self._spec, low.shape, len(low.axes))
         per_label: dict[str, Array] = {}
-        for label in labels:
-            inputs: list[Array] = [graphed.member_of(value, label) for value in axes]
+        for label in low.labels:
+            inputs: list[Array] = [graphed.member_of(value, label) for value in low.axes]
             value = inputs[0]
-            for (coordinate, message), factor in zip(blame, applied, strict=True):
+            for (coordinate, message), factor in zip(low.blame, low.applied, strict=True):
                 narrowed = graphed.member_of(factor, label)
-                if broadcast:
-                    guarded = self._guard(session, narrowed, value, coordinate, message)
+                if low.broadcast:
+                    guarded = self._guard(low.session, narrowed, value, coordinate, message)
                     narrowed = graphed.broadcast_like(value, guarded)
                 inputs.append(narrowed)
-            if sampled is not None:
-                inputs.append(graphed.member_of(sampled, label))
-            per_label[label] = session.record_external(
+            if low.sampled is not None:
+                inputs.append(graphed.member_of(low.sampled, label))
+            per_label[label] = low.session.record_external(
                 "histogram.fill",
                 evaluator,
                 inputs,
@@ -846,7 +868,6 @@ class Histogram(bh.Histogram):
         self._label_maps.append(per_label)
         self._fill_specs.append(evaluator.spec)
         self._evaluators[chash] = evaluator
-        return self
 
     def _guard(
         self, session: Any, factor: Array, value: Array, coordinate: str, message: str
@@ -876,17 +897,7 @@ class Histogram(bh.Histogram):
             form=session.form(factor),
         )
 
-    def _record_axis_fill(
-        self,
-        session: Any,
-        shape: FillEvaluator,
-        axes: Sequence[Operand],
-        applied: Sequence[Operand],
-        sampled: Operand | None,
-        blame: Sequence[tuple[str, str]],
-        broadcast: bool,
-        labels: tuple[str, ...],
-    ) -> None:
+    def _record_axis_fill(self, low: _Lowering) -> None:
         """Lower one fill in axis mode.
 
         A node's value and ``sample=`` columns are FIXED and only its weight block loops, so the
@@ -899,48 +910,38 @@ class Histogram(bh.Histogram):
         ``"variation"`` axis from the label set; each node's `content_hash((spec, variation))` is
         DISTINCT, so it resolves to its own evaluator.
         """
+        if (
+            self._fill_specs
+            and self._axis_labels is not None
+            and set(low.labels) != set(self._axis_labels)
+        ):
+            raise GraphedError(
+                f"this axis-mode histogram's first fill declared variations "
+                f"{sorted(self._axis_labels)}; this fill declares {sorted(low.labels)} — the "
+                "variation axis (hence the spec) would disagree across fills. Match them."
+            )
         self._axis_mode = True
-        self._axis_labels = labels
-        fixed = [*axes, *([] if sampled is None else [sampled])]
+        self._axis_labels = low.labels
+        fixed = [*low.axes, *([] if low.sampled is None else [low.sampled])]
         groups: dict[tuple[int, ...], list[str]] = {}
-        for label in labels:
+        for label in low.labels:
             key = tuple(graphed.member_of(operand, label).node_id for operand in fixed)
             groups.setdefault(key, []).append(label)
 
-        axis_spec = _declare_axis_spec(self, sorted(labels))
+        axis_spec = _declare_axis_spec(self, sorted(low.labels))
         by_label: dict[str, Array] = {}
         for group in groups.values():  # first-appearance order: nominal's group leads
             node = self._record_axis_node(
-                session,
-                shape,
-                axis_spec,
-                axes,
-                applied,
-                sampled,
-                blame,
-                broadcast,
-                carrier=group[0],
-                node_labels=tuple(group),
+                low, axis_spec, carrier=group[0], node_labels=tuple(group)
             )
             self._fill_nodes.append(node)
             by_label.update(dict.fromkeys(group, node))
         # fold order, nominal first — the label listing and `_output_labels` read these keys
-        self._label_maps.append({label: by_label[label] for label in labels})
+        self._label_maps.append({label: by_label[label] for label in low.labels})
         self._fill_specs.append(axis_spec)
 
     def _record_axis_node(
-        self,
-        session: Any,
-        shape: FillEvaluator,
-        axis_spec: str,
-        axes: Sequence[Operand],
-        applied: Sequence[Operand],
-        sampled: Operand | None,
-        blame: Sequence[tuple[str, str]],
-        broadcast: bool,
-        *,
-        carrier: str,
-        node_labels: tuple[str, ...],
+        self, low: _Lowering, axis_spec: str, *, carrier: str, node_labels: tuple[str, ...]
     ) -> Array:
         """Record one axis-mode fill node.
 
@@ -949,25 +950,25 @@ class Histogram(bh.Histogram):
         loop). The evaluator writes each label's scalar category on the variation axis; its
         content hash folds `node_labels` in so the node owns its evaluator.
         """
-        value_members = [graphed.member_of(operand, carrier) for operand in axes]
+        value_members = [graphed.member_of(operand, carrier) for operand in low.axes]
         value = value_members[0]
         inputs: list[Array] = list(value_members)
-        if sampled is not None:
-            inputs.append(graphed.member_of(sampled, carrier))
+        if low.sampled is not None:
+            inputs.append(graphed.member_of(low.sampled, carrier))
         for label in node_labels:
-            for (coordinate, message), factor in zip(blame, applied, strict=True):
+            for (coordinate, message), factor in zip(low.blame, low.applied, strict=True):
                 narrowed = graphed.member_of(factor, label)
-                if broadcast:
-                    guarded = self._guard(session, narrowed, value, coordinate, message)
+                if low.broadcast:
+                    guarded = self._guard(low.session, narrowed, value, coordinate, message)
                     narrowed = graphed.broadcast_like(value, guarded)
                 inputs.append(narrowed)
-        evaluator = replace(shape, spec=axis_spec, variation=tuple(node_labels))
+        evaluator = replace(low.shape, spec=axis_spec, variation=tuple(node_labels))
         chash = _fill_chash(
             axis_spec,
-            has_weight=shape.has_weight,
-            n_weights=shape.n_weights,
+            has_weight=low.shape.has_weight,
+            n_weights=low.shape.n_weights,
             variation=node_labels,
-            constants=shape.constants,
+            constants=low.shape.constants,
         )
         descriptor = PayloadDescriptor(
             kind="histogram",
@@ -977,8 +978,8 @@ class Histogram(bh.Histogram):
             io_schema="uhi",
             preprocessing_ref=None,
         )
-        params = _fill_params(axis_spec, shape, len(axes), node_labels)
-        node: Array = session.record_external(
+        params = _fill_params(axis_spec, low.shape, len(low.axes), node_labels)
+        node: Array = low.session.record_external(
             "histogram.fill",
             evaluator,
             inputs,
