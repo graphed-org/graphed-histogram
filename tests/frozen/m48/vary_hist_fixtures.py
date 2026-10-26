@@ -42,9 +42,13 @@ class ChunkedEvents:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -75,7 +79,8 @@ def counts(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> gh.boost.Histo
 
 def sampled(bins: int = 20, lo: float = 0.0, hi: float = 200.0) -> gh.boost.Histogram:
     """`sample=` needs a Mean/WeightedMean storage: bh 1.8.0 raises
-    `TypeError: Keyword(s) sample not expected` on Double() and on Weight()."""
+    `TypeError: Keyword(s) sample not expected` on Double() and on Weight().
+    """
     return gh.boost.Histogram(bh.axis.Regular(bins, lo, hi), storage=bh.storage.WeightedMean())
 
 
@@ -120,7 +125,8 @@ def flat(values: Any) -> np.ndarray:
 
 def broadcast_reference(value: Any, factor: Any) -> np.ndarray:
     """§6.1d's manual-broadcast reference: the per-event factor broadcast to the per-object value's
-    structure BEFORE either is flattened — what `graphed.broadcast_like` records."""
+    structure BEFORE either is flattened — what `graphed.broadcast_like` records.
+    """
     broadcast, _ = ak.broadcast_arrays(factor, value)
     return flat(broadcast)
 

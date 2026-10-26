@@ -1,14 +1,15 @@
 """m52/C5 — §5.1/§6.2: sibling mode and axis mode resolve a joint label by the same rule.
 
 The private fallback rule had SEVEN call sites: one session read, three for the sibling-mode fill
-(axis value, weight factor, `sample=`) and the same three again for the axis-mode fill. Routing only
-the sibling branch through the point-aware accessor leaves the axis-mode sites on the old rule, and
-the joint bin is then wrong in one mode and right in the other — which per-universe equality between
-the two modes is exactly what catches. It is also what carries diff coverage over both branches.
+(axis value, weight factor, `sample=`) and the same three again for the axis-mode fill. Routing
+only the sibling branch through the point-aware accessor leaves the axis-mode sites on the old
+rule, and the joint bin is then wrong in one mode and right in the other — which per-universe
+equality between the two modes is exactly what catches. It is also what carries diff coverage over
+both branches.
 
-Axis mode collapses weight-borne labels into one loop node against a FIXED axis column, so the joint
-label — borne by the ambient b-tag weight — has to leave that loop (or the loop has to group by
-resolved member) for its shifted kinematics to reach the fill at all.
+Axis mode collapses weight-borne labels into one loop node against a FIXED axis column, so the
+joint label — borne by the ambient b-tag weight — has to leave that loop (or the loop has to group
+by resolved member) for its shifted kinematics to reach the fill at all.
 
 Parity alone would also be satisfied by two identically-wrong modes, so each mode is separately
 witnessed to resolve the joint's axis value to the shifted member before the two are compared. That
@@ -74,7 +75,8 @@ def _axis() -> Any:
 def test_the_fill_carries_all_three_operand_roles() -> None:
     """The premise of the anchors below: the recorded sibling fill node holds one axis value and
     three further operands — the ambient b-tag weight, the extra weight factor and `sample=` — so
-    every role the resolution rule is reached from is genuinely engaged by this program."""
+    every role the resolution rule is reached from is genuinely engaged by this program.
+    """
     session, events = in_memory()
     by_label = gh.fill_nodes_by_label(three_role_fill(joint_context(events), axis_mode=False))
     assert list(by_label) == list(LABELS)
@@ -89,9 +91,10 @@ def test_each_mode_moves_the_joint_universe_off_the_btag_only_one() -> None:
     The structural half is the one that isolates §5.1: the joint's AXIS VALUE is the observable's
     shifted member in each mode, the b-tag-only label's is nominal. In axis mode that is the joint
     leaving the nominal weight loop — its recorded node is the shifted group's. The executed half
-    only adds that each mode ran three distinct universes end to end; the fanout gives the joint its
-    own ambient weight member, so those inequalities survive a wrong axis value and cannot stand in
-    for the structural half."""
+    only adds that each mode ran three distinct universes end to end; the fanout gives the joint
+    its own ambient weight member, so those inequalities survive a wrong axis value and cannot
+    stand in for the structural half.
+    """
     for axis_mode in (False, True):
         recorded = _recorded(axis_mode=axis_mode)
         assert recorded.shifted != recorded.nominal, "the candidate axis members must be distinct"
@@ -109,7 +112,8 @@ def test_each_mode_moves_the_joint_universe_off_the_btag_only_one() -> None:
 
 def test_both_fill_modes_resolve_the_joint_label_alike() -> None:
     """§6.2's equality, extended to the joint label: the axis-mode histogram sliced at each label
-    equals the sibling fill for that label bin-for-bin, flow included, on a WeightedMean storage."""
+    equals the sibling fill for that label bin-for-bin, flow included, on a WeightedMean storage.
+    """
     axis = _axis()
     sibling = _sibling()
     assert set(sibling) == set(LABELS)

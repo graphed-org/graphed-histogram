@@ -77,7 +77,6 @@ show_missing = true
 line-length = 99
 src = ["src", "tests"]
 target-version = "py311"
-extend-exclude = ["tests/frozen"]  # TEMPORARY: restyled in its own commit
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415", "N", "D"]
@@ -89,6 +88,14 @@ convention = "pep257"
 # A test's name is its summary line: its docstring, when it has one, elaborates the property under
 # test as one paragraph rather than issuing a command.
 "tests/**" = ["D1", "D205", "D401"]
+# These frozen test names are test IDs, which capitalize words for emphasis.
+"tests/frozen/m48/test_ambient_object_fills.py" = ["N802"]
+"tests/frozen/m48/test_fill_flatten_refusals.py" = ["N802"]
+"tests/frozen/m48/test_fill_reindexing.py" = ["N802"]
+"tests/frozen/m48/test_fill_unweighted.py" = ["N802"]
+"tests/frozen/m48/test_varied_result_shapes.py" = ["N802"]
+"tests/frozen/m49/test_merge_shortfall.py" = ["N802"]
+"tests/frozen/m49/test_variation_labels_payload.py" = ["N802"]
 
 [tool.ruff.format]
 # ruff formats python blocks inside .md, which reflows the README's examples (aligned trailing

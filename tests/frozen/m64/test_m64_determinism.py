@@ -1,4 +1,6 @@
-"""G16: a pool rerun reproduces inexact growth-axis sums bit for bit, whatever the completion order."""
+"""G16: a pool rerun reproduces inexact growth-axis sums bit for bit, whatever the completion
+order.
+"""
 
 from __future__ import annotations
 
@@ -34,12 +36,15 @@ def _build(ev: Any) -> Any:
 
 def test_g16_pool_reruns_are_bitwise_identical() -> None:
     parts = [
-        eager(_empty, CATS[s], (KS[s] + 0.5) * 0.25, weight=WK[s] * 0.001 + 0.0137) for s in slices(len(CATS))
+        eager(_empty, CATS[s], (KS[s] + 0.5) * 0.25, weight=WK[s] * 0.001 + 0.0137)
+        for s in slices(len(CATS))
     ]
     left = reduce(gh.add_histograms, parts)
     right = reduce(lambda acc, h: gh.add_histograms(h, acc), reversed(parts))
     assert [axis_state(a) for a in left.axes] == [axis_state(a) for a in right.axes]
-    assert np.asarray(left.view(flow=True)).tobytes() != np.asarray(right.view(flow=True)).tobytes()
+    assert (
+        np.asarray(left.view(flow=True)).tobytes() != np.asarray(right.view(flow=True)).tobytes()
+    )
 
     raw = np.stack([CATS, KS, WK], axis=1)
     first = run(raw, _build, "procpool3", "h.plan")

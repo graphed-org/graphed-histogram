@@ -58,7 +58,8 @@ def test_the_four_operand_kinds_fold_in_the_bound_order() -> None:
 
 def test_a_varied_sample_is_accepted_and_expanded_rather_than_raising() -> None:
     """Its label reaches the fill, which is only possible if `sample=` went through the same
-    expansion as the axis values instead of being appended unchecked."""
+    expansion as the axis values instead of being appended unchecked.
+    """
     _session, h = _four_way()
     labels = gh.fill_nodes_by_label(h)
     assert "smp_up" in labels
@@ -67,7 +68,8 @@ def test_a_varied_sample_is_accepted_and_expanded_rather_than_raising() -> None:
 
 def test_each_operand_slot_contributes_its_own_label_exactly_once() -> None:
     """The instrument for the order assertion: an implementation that dropped one operand kind
-    would still produce an ordered list, just a shorter one."""
+    would still produce an ordered list, just a shorter one.
+    """
     _session, h = _four_way()
     labels = list(gh.fill_nodes_by_label(h))
     assert len(labels) == len(set(labels)) == len(FOLD_ORDER)
@@ -77,7 +79,8 @@ def test_each_operand_slot_contributes_its_own_label_exactly_once() -> None:
 def test_the_storage_pin_is_load_bearing_and_the_fixture_evaluates() -> None:
     """The one evaluation. A `Double()` or `Weight()` fixture records identically and raises
     `TypeError: Keyword(s) sample not expected` here, so the record-time assertions above would be
-    frozen over a program that can never run."""
+    frozen over a program that can never run.
+    """
     session, h = _four_way()
     filled = session.materialize(gh.fill_nodes_by_label(h)["nominal"])
     assert np.nansum(filled.view(flow=True)["sum_of_weights"]) > 0

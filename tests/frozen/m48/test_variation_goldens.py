@@ -46,7 +46,8 @@ PARAMS = {"spec", "n_axes", "weighted", "sampled"}
 
 def _fill() -> tuple[Session, gh.boost.Histogram]:
     """The §6.3 case: NO context handle and NO `Varied` input, so §6.1d's broadcast seam is not
-    triggered and this graph must record exactly as it did before m48."""
+    triggered and this graph must record exactly as it did before m48.
+    """
     session = Session(AwkwardBackend())
     events = from_awkward(session, "events", EVENTS)
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 8.0), storage=bh.storage.Weight())
@@ -70,7 +71,8 @@ def test_the_unvaried_fill_graph_still_serializes_to_the_pre_m48_golden() -> Non
 
 def test_the_golden_carries_no_version_bytes_of_its_own() -> None:
     """The instrument for the assertion above: a golden committed UNSTRIPPED would agree with a
-    live blob stripped by a pattern that never matched, and both legs would pass vacuously."""
+    live blob stripped by a pattern that never matched, and both legs would pass vacuously.
+    """
     blob = live_blob()
     pattern = len(bh.__version__).to_bytes(4, "little") + bh.__version__.encode()
     assert blob.count(pattern) == 1
@@ -86,14 +88,16 @@ def test_the_unvaried_single_weight_fill_records_exactly_these_params() -> None:
 def test_the_comparison_survives_a_boost_histogram_version_bump(monkeypatch: Any) -> None:
     """§6.3's closing leg. Each side is stripped of the version IT carries, so a bh release moves
     the live blob and the golden still matches; an implementation that strips both sides with one
-    live-derived pattern reds here the moment the two versions differ."""
+    live-derived pattern reds here the moment the two versions differ.
+    """
     monkeypatch.setattr(bh, "__version__", "0.0.0.dev-m48")
     assert GOLDEN.read_bytes() == strip_version(live_blob(), bh.__version__)
 
 
 def test_the_stripping_is_what_makes_the_two_sides_agree() -> None:
     """Without it the live blob differs from the golden, so the assertions above are not passing
-    on a pair that was equal anyway."""
+    on a pair that was equal anyway.
+    """
     assert live_blob() != GOLDEN.read_bytes()
 
 

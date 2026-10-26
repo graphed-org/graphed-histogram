@@ -18,7 +18,14 @@ import graphed
 import numpy as np
 from graphed.awkward import gak, gnano
 from graphed.core.execution import SequentialRunner
-from m49_hist_fixtures import JES, TOY_EVENTS, eager_jes_mask, eager_weighted, in_memory, partitioned
+from m49_hist_fixtures import (
+    JES,
+    TOY_EVENTS,
+    eager_jes_mask,
+    eager_weighted,
+    in_memory,
+    partitioned,
+)
 
 import graphed_histogram as gh
 
@@ -61,7 +68,8 @@ def _reference(label: str) -> Any:
 
 def test_the_row_sets_really_differ_so_the_re_indexing_is_observable() -> None:
     """The instrument: were every label's mask the same rows, weighting by nominal's slice would
-    be indistinguishable from weighting per label."""
+    be indistinguishable from weighting per label.
+    """
     rows = {label: int(ak.sum(eager_jes_mask(TOY_EVENTS, label, N_JETS))) for label in JES}
     assert len(set(rows.values())) == len(rows), rows
     assert all(0 < n < len(TOY_EVENTS) for n in rows.values())
@@ -75,9 +83,9 @@ def test_each_labels_weight_factor_is_re_indexed_by_that_labels_own_mask() -> No
         want = _reference(label)
         got = session.materialize(node)
         for field in ("value", "variance"):
-            assert np.allclose(got.view(flow=True)[field], want.view(flow=True)[field], rtol=1e-12), (
-                f"{label}: the weight factor was not re-indexed to this label's rows"
-            )
+            assert np.allclose(
+                got.view(flow=True)[field], want.view(flow=True)[field], rtol=1e-12
+            ), f"{label}: the weight factor was not re-indexed to this label's rows"
 
 
 def test_the_plan_path_agrees_with_the_per_label_reference_too() -> None:

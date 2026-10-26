@@ -1,4 +1,5 @@
-"""m49/F5 — §2.4/§6.1b: a mixed shift+weight fill records `1 + |S| + |W|` siblings, never a product.
+"""m49/F5 — §2.4/§6.1b: a mixed shift+weight fill records `1 + |S| + |W|` siblings, never a
+product.
 
 Scoped to SIBLING mode, which is what m48 and m49 lower to. §6.2's axis mode records `1 + |S|`
 over the same definitions and lands at m50, so the count is asserted against the program's own
@@ -45,7 +46,8 @@ def test_a_mixed_fill_records_one_sibling_per_label_and_not_their_product() -> N
 
 def test_each_sibling_is_a_distinct_node_carrying_its_own_label() -> None:
     """The count alone is satisfied by an implementation that records one node N times, which the
-    §6.1c slot layout then sums into the wrong universes."""
+    §6.1c slot layout then sums into the wrong universes.
+    """
     _observable, weight, hist = _mixed()
     per_label = gh.fill_nodes_by_label(hist)
     assert set(per_label) == set(graphed.labels(weight))
@@ -55,7 +57,8 @@ def test_each_sibling_is_a_distinct_node_carrying_its_own_label() -> None:
 def test_the_labels_reach_the_fill_from_two_different_operands() -> None:
     """§2.4's alignment: shift labels fill with the central weight AS EVALUATED IN THEIR OWN
     universe, weight labels with NOMINAL kinematics. A fixture whose classes both came from the
-    weight would count `1 + |S| + |W|` without ever exercising the no-cross-product rule."""
+    weight would count `1 + |S| + |W|` without ever exercising the no-cross-product rule.
+    """
     observable, weight, _hist = _mixed()
     assert set(graphed.labels(observable)) == {"nominal", "jes_up", "jes_down"}
     assert set(graphed.labels(weight)) == {"nominal", "jes_up", "jes_down", "btag_up", "btag_down"}

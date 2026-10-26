@@ -42,7 +42,8 @@ JES = {"nominal": 1.0, "jes_up": 1.05, "jes_down": 0.95}
 
 def _ambient(source: Any, scale: float) -> Any:
     """A per-EVENT pileup-style weight — deliberately not constant, so a reference re-indexed or
-    broadcast the wrong way compares unequal."""
+    broadcast the wrong way compares unequal.
+    """
     return source.MET.pt * 0.01 * scale
 
 
@@ -58,7 +59,8 @@ def _shifted_jets(source: Any, scale: float) -> Any:
 
 def _program() -> tuple[Any, Any, gh.boost.Histogram]:
     """Ambient pileup weight registered first, then a JES shift on the Jet collection: the fill's
-    label set is the §2.4 union of the VALUE's labels and the AMBIENT weight's."""
+    label set is the §2.4 union of the VALUE's labels and the AMBIENT weight's.
+    """
     session, root = in_memory_events()
     events = gnano.events(root)
     ambient = _ambient(events, 1.0)
@@ -78,7 +80,8 @@ def _program() -> tuple[Any, Any, gh.boost.Histogram]:
 def _reference(label: str) -> Any:
     """The manual reference for one label: the per-object value that label sees, weighted by the
     ambient factor AND the explicit factor, each broadcast to the value's structure before the
-    evaluator flattens them."""
+    evaluator flattens them.
+    """
     jet_pt = EVENTS.Jet.pt * JES.get(label, 1.0)
     ambient = EVENTS.MET.pt * 0.01 * PU.get(label, 1.0)
     explicit = EVENTS.MET.pt * 0.5 + 1.0
@@ -97,19 +100,23 @@ def test_a_per_object_fill_carries_the_value_labels_UNION_the_ambient_labels() -
 def test_every_labels_contents_equal_the_manual_broadcast_reference() -> None:
     """Both factors are per-EVENT against a per-OBJECT value, so an implementation that forgets to
     broadcast either one length-mismatches, and one that broadcasts only the ambient factor gets
-    the wrong contents rather than an error."""
+    the wrong contents rather than an error.
+    """
     session, _shifted, h = _program()
     per_label = gh.fill_nodes_by_label(h)
     for label in per_label:
         got = session.materialize(per_label[label])
         want = _reference(label)
         assert np.allclose(got.view(flow=True)["value"], want.view(flow=True)["value"], rtol=1e-12)
-        assert np.allclose(got.view(flow=True)["variance"], want.view(flow=True)["variance"], rtol=1e-12)
+        assert np.allclose(
+            got.view(flow=True)["variance"], want.view(flow=True)["variance"], rtol=1e-12
+        )
 
 
 def test_the_labels_are_not_all_the_same_histogram() -> None:
     """The instrument for the reference comparison: if every label produced nominal's contents the
-    assertions above would pass under an implementation that never applied a variation."""
+    assertions above would pass under an implementation that never applied a variation.
+    """
     session, _shifted, h = _program()
     per_label = gh.fill_nodes_by_label(h)
     nominal = np.asarray(session.materialize(per_label["nominal"]).view(flow=True)["value"])
@@ -121,7 +128,8 @@ def test_the_labels_are_not_all_the_same_histogram() -> None:
 
 def _unvaried_contexted() -> tuple[Any, gh.boost.Histogram, int]:
     """§6.3(2)'s context-handle-only case: a context with NO registrations, no `Varied` input, a
-    per-object value and an explicit per-event factor."""
+    per-object value and an explicit per-event factor.
+    """
     session, root = in_memory_events()
     events = gnano.events(root)
     value, factor = events.Jet.pt, _explicit(events)
@@ -138,7 +146,8 @@ def test_a_contexted_but_unvaried_fill_broadcasts_and_records_the_seam() -> None
     fill — same per-object value, same per-event factor, no handle and no `Varied` anywhere —
     records the same seam and evaluates to the same histogram. Without it the plain fill records
     one node and dies inside boost on lengths it never broadcast, which is the shape every
-    non-systematics analysis writes."""
+    non-systematics analysis writes.
+    """
     session, h, contexted_delta = _unvaried_contexted()
 
     plain_session, plain_root = in_memory_events()
@@ -149,7 +158,9 @@ def test_a_contexted_but_unvaried_fill_broadcasts_and_records_the_seam() -> None
     plain.fill(value, weight=[factor])
     plain_delta = plain_session.node_count() - before
 
-    assert plain_delta == contexted_delta, "the plain fill did not record the contexted fill's seam"
+    assert plain_delta == contexted_delta, (
+        "the plain fill did not record the contexted fill's seam"
+    )
     assert plain_delta > 1, "neither fill recorded a broadcast seam node"
 
     jet_pt = EVENTS.Jet.pt
@@ -158,14 +169,17 @@ def test_a_contexted_but_unvaried_fill_broadcasts_and_records_the_seam() -> None
     reference.fill(flat(jet_pt), weight=broadcast_reference(jet_pt, explicit))
     for evaluated, fill_nodes in ((session, h.fill_nodes()), (plain_session, plain.fill_nodes())):
         got = evaluated.materialize(fill_nodes[0])
-        assert np.allclose(got.view(flow=True)["value"], reference.view(flow=True)["value"], rtol=1e-12)
+        assert np.allclose(
+            got.view(flow=True)["value"], reference.view(flow=True)["value"], rtol=1e-12
+        )
 
 
 # --- the three label-set assertions §10/m48 routes here from the §2.6 bullet -------------------
 def test_the_contexts_labels_are_the_CONTEXT_BORNE_half_of_a_fills_label_set() -> None:
     """§2.2's superset clause, on the shift-varied-collection program: `graphed.labels(ctx)` is a
     superset of the context-borne half, NOT of the whole label set, which also carries the value's
-    own labels — here a loose `lumi` variation the context never saw."""
+    own labels — here a loose `lumi` variation the context never saw.
+    """
     _session, root = in_memory_events()
     events = gnano.events(root)
     shifted = graphed.vary(
@@ -188,27 +202,35 @@ def test_the_contexts_labels_are_the_CONTEXT_BORNE_half_of_a_fills_label_set() -
 
 def test_a_fill_from_the_pre_vary_context_carries_no_new_label() -> None:
     """§2.6b: `vary` returns a NEW context and leaves its input alone, which is observable at the
-    sink — the pre-`vary` fill must not acquire the registration made after it."""
+    sink — the pre-`vary` fill must not acquire the registration made after it.
+    """
     session, root = in_memory_events()
     events = gnano.events(root)
     before = weighted()
     before.fill(events.MET.pt)
 
-    weighted_ctx = graphed.vary(events, "pu", _ambient(events, 1.0), is_weight=True, up=_ambient(events, 1.1))
+    weighted_ctx = graphed.vary(
+        events, "pu", _ambient(events, 1.0), is_weight=True, up=_ambient(events, 1.1)
+    )
     after = weighted()
     after.fill(weighted_ctx.MET.pt)
 
     assert set(gh.fill_nodes_by_label(before)) == {"nominal"}
     assert set(gh.fill_nodes_by_label(after)) == {"nominal", "pu_up"}
-    assert session.materialize(gh.fill_nodes_by_label(before)["nominal"]).sum(flow=True).value == len(EVENTS)
+    assert session.materialize(gh.fill_nodes_by_label(before)["nominal"]).sum(
+        flow=True
+    ).value == len(EVENTS)
 
 
 def test_the_origination_pair_has_one_node_id_and_two_fill_label_sets() -> None:
     """§2.3e's origination rule at the sink: the merge-from-inputs rule alone gets this wrong, and
-    the two reads are indistinguishable by node id — only the handle separates them."""
+    the two reads are indistinguishable by node id — only the handle separates them.
+    """
     _session, root = in_memory_events()
     events = gnano.events(root)
-    weighted_ctx = graphed.vary(events, "pu", _ambient(events, 1.0), is_weight=True, up=_ambient(events, 1.1))
+    weighted_ctx = graphed.vary(
+        events, "pu", _ambient(events, 1.0), is_weight=True, up=_ambient(events, 1.1)
+    )
 
     through_parent = events.MET.pt
     through_child = weighted_ctx.MET.pt

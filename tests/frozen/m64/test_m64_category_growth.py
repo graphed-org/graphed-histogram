@@ -1,4 +1,6 @@
-"""G5-G6: growth categories and growing Integer axes over a partitioned source equal one eager fill."""
+"""G5-G6: growth categories and growing Integer axes over a partitioned source equal one eager
+fill.
+"""
 
 from __future__ import annotations
 
@@ -20,20 +22,26 @@ LAYOUTS = {
     "overlapping": np.array([9, 7, 9, 7, 7, 5, 9, 5, 5, 3, 7, 3, 3, 1, 9, 1]),
 }
 
-AXES: dict[str, tuple[Callable[[], Any], Callable[[np.ndarray[Any, Any]], np.ndarray[Any, Any]]]] = {
+AXES: dict[
+    str, tuple[Callable[[], Any], Callable[[np.ndarray[Any, Any]], np.ndarray[Any, Any]]]
+] = {
     "IntCategory": (lambda: bh.axis.IntCategory([], growth=True), lambda a: a.astype(np.int64)),
     "StrCategory": (lambda: bh.axis.StrCategory([], growth=True), lambda a: a.astype(str)),
 }
 
 
-def _partition_categories(empty: Callable[[], bh.Histogram], data: np.ndarray[Any, Any]) -> list[list[Any]]:
+def _partition_categories(
+    empty: Callable[[], bh.Histogram], data: np.ndarray[Any, Any]
+) -> list[list[Any]]:
     return [list(eager(empty, data[s]).axes[0]) for s in slices(len(data))]
 
 
 @pytest.mark.parametrize(("runner", "how"), ALL)
 @pytest.mark.parametrize("layout", LAYOUTS)
 @pytest.mark.parametrize("axis", AXES)
-def test_g5_growth_categories_equal_one_eager_fill(axis: str, layout: str, runner: str, how: str) -> None:
+def test_g5_growth_categories_equal_one_eager_fill(
+    axis: str, layout: str, runner: str, how: str
+) -> None:
     make, cast = AXES[axis]
     data = cast(LAYOUTS[layout])
 
@@ -68,11 +76,15 @@ def test_g6_growing_integer_equals_one_eager_fill(runner: str, how: str) -> None
     def empty() -> bh.Histogram:
         return bh.Histogram(bh.axis.Integer(0, 4, growth=True), storage=bh.storage.Int64())
 
-    edges = [eager(empty, INTEGER_DATA[s]).axes[0].edges.tobytes() for s in slices(len(INTEGER_DATA))]
+    edges = [
+        eager(empty, INTEGER_DATA[s]).axes[0].edges.tobytes() for s in slices(len(INTEGER_DATA))
+    ]
     assert len(set(edges)) == len(edges)
 
     def build(ev: Any) -> Any:
-        return gh.boost.Histogram(bh.axis.Integer(0, 4, growth=True), storage=bh.storage.Int64()).fill(ev)
+        return gh.boost.Histogram(
+            bh.axis.Integer(0, 4, growth=True), storage=bh.storage.Int64()
+        ).fill(ev)
 
     got = run(INTEGER_DATA, build, runner, how)
     want = eager(empty, INTEGER_DATA)

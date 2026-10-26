@@ -68,12 +68,16 @@ class ArraySource:
 
     def __call__(self) -> np.ndarray[Any, Any]:
         # a marker file, because a counter on this object stays in each worker's own copy
-        with open(os.path.join(self.stamp_dir, f"{LOADER_MARK}-{os.getpid()}-{time.time_ns()}"), "w"):
+        with open(
+            os.path.join(self.stamp_dir, f"{LOADER_MARK}-{os.getpid()}-{time.time_ns()}"), "w"
+        ):
             pass
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://m64", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://m64", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(
         self, partition: Partition, columns: Any, resources: WorkerResources
@@ -95,7 +99,9 @@ class Run:
 
     def scrambled(self) -> bool:
         """Some partition completed before a lower-keyed one."""
-        return any(self.stamps[j] < self.stamps[i] for i in self.stamps for j in self.stamps if j > i)
+        return any(
+            self.stamps[j] < self.stamps[i] for i in self.stamps for j in self.stamps if j > i
+        )
 
     def order(self) -> list[int]:
         return sorted(self.stamps, key=self.stamps.__getitem__)
@@ -119,13 +125,16 @@ def run(
 
     def plan_of(src: ArraySource) -> Any:
         session = Session(NumpyBackend())
-        ev = session.source("ev", form=NumpyForm(data.dtype, shape=(None, *data.shape[1:])), data=src)
+        ev = session.source(
+            "ev", form=NumpyForm(data.dtype, shape=(None, *data.shape[1:])), data=src
+        )
         h = build(ev)
         return h.plan(steps_per_file=n) if how == "h.plan" else gh.plan({"h": h}, steps_per_file=n)
 
     plan = plan_of(ArraySource(data, stamp_dir, 0.0 if runner == "seq" else DT, reversed))
     if runner in PROCESS_RUNNERS:
-        # workers spawned lazily start ~DT apart and cancel the stagger: spawn them all untimed first
+        # workers spawned lazily start ~DT apart and cancel the stagger: spawn them all untimed
+        # first
         with RUNNERS[runner](persistent=True) as pool:
             pool.run(plan_of(ArraySource(data, tempfile.mkdtemp(prefix="m64-warm-"))))
             value = pool.run(plan).value
@@ -153,7 +162,8 @@ def slices(n_rows: int, n: int = N_PARTITIONS) -> list[slice]:
 
 def reference(empty: Callable[[], bh.Histogram], chunks: Sequence[Sequence[Fill]]) -> bh.Histogram:
     """D5's fold: per partition in key order, each fill node's chunk filled into a fresh empty
-    histogram and added in recording order; the partitions then added left to right."""
+    histogram and added in recording order; the partitions then added left to right.
+    """
     acc = empty()
     for nodes in chunks:
         part = empty()

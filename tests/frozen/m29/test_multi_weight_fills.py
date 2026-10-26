@@ -76,7 +76,9 @@ def test_two_weights_multiply_through_the_plan_path(tmp_path) -> None:  # type: 
     # equal to the single-pass eager fill up to float-summation order
     assert np.array_equal(result.view(flow=True)["value"], again.view(flow=True)["value"])
     assert np.allclose(result.view(flow=True)["value"], want.view(flow=True)["value"], rtol=1e-12)
-    assert np.allclose(result.view(flow=True)["variance"], want.view(flow=True)["variance"], rtol=1e-12)
+    assert np.allclose(
+        result.view(flow=True)["variance"], want.view(flow=True)["variance"], rtol=1e-12
+    )
 
 
 def test_three_weights_and_the_params_contract() -> None:

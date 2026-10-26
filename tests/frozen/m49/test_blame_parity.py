@@ -75,7 +75,9 @@ def test_the_plan_path_reports_the_same_message_materialize_reports(index: int) 
 
     _plan_session, source, _data = partitioned(TOY_EVENTS)
     with pytest.raises(GraphedError) as excinfo:
-        SequentialRunner().run(gh.plan({"jets": _offender_at(source, index)}, steps_per_file=STEPS))
+        SequentialRunner().run(
+            gh.plan({"jets": _offender_at(source, index)}, steps_per_file=STEPS)
+        )
     assert str(excinfo.value) == from_materialize["nominal"]
 
 
@@ -84,7 +86,9 @@ def test_the_plan_path_names_the_offending_factor_and_not_its_neighbour(index: i
     """Message equality alone is satisfied by two paths that agree on the WRONG factor."""
     _session, source, _data = partitioned(TOY_EVENTS)
     with pytest.raises(GraphedError) as excinfo:
-        SequentialRunner().run(gh.plan({"jets": _offender_at(source, index)}, steps_per_file=STEPS))
+        SequentialRunner().run(
+            gh.plan({"jets": _offender_at(source, index)}, steps_per_file=STEPS)
+        )
     message = str(excinfo.value)
     assert f"weight[{index}]" in message
     assert f"weight[{1 - index}]" not in message
@@ -92,7 +96,8 @@ def test_the_plan_path_names_the_offending_factor_and_not_its_neighbour(index: i
 
 def test_a_matching_factor_raises_on_neither_path() -> None:
     """The positive control: the same varied program with the factor at the fill's row space runs
-    to a non-empty result on both routes, so the refusals above report a real length fault."""
+    to a non-empty result on both routes, so the refusals above report a real length fault.
+    """
     session, root = in_memory(TOY_EVENTS)
     assert session.materialize(_matching(root).fill_nodes()[0]).sum(flow=True).value > 0
 

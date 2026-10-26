@@ -1,9 +1,11 @@
-"""m52/C5 — §5.1: the axis-value member a fill uses for a label is the one that label's POINT names.
+"""m52/C5 — §5.1: the axis-value member a fill uses for a label is the one that label's POINT
+names.
 
-The fill lowering re-implemented the fallback rule privately: it string-tested the label against the
-operand's own label list before touching an accessor, so a joint label the operand does not carry
-reduced to the operand's nominal member no matter what its point said. The joint universe then got a
-JES-up-evaluated b-tag SF applied to JES-NOMINAL kinematics — a silent wrong number, not an error.
+The fill lowering re-implemented the fallback rule privately: it string-tested the label against
+the operand's own label list before touching an accessor, so a joint label the operand does not
+carry reduced to the operand's nominal member no matter what its point said. The joint universe
+then got a JES-up-evaluated b-tag SF applied to JES-NOMINAL kinematics — a silent wrong number, not
+an error.
 
 Two anchors, one discriminating pair. The joint label's axis-value member must be the SHIFTED one;
 the b-tag-only label's must stay NOMINAL. A resolution that simply prefers the newest or the
@@ -64,9 +66,10 @@ def test_the_eager_universe_oracle_reproduces_the_unpruned_grid() -> None:
     """The instrument for both anchors below, on the UNPLACED program: every universe the automatic
     fanout mints — the one-at-a-time union and all four `btag` x `jes` joints — equals its
     `(jes scale, SF coefficient)` oracle row bin-for-bin. The union rows are independent of the
-    resolution rule and are checked first; the joint rows are themselves an anchor and redden with a
-    broken C5 resolution. An oracle reproducing none of them would make the joint rows unfalsifiable
-    arithmetic."""
+    resolution rule and are checked first; the joint rows are themselves an anchor and redden with
+    a broken C5 resolution. An oracle reproducing none of them would make the joint rows
+    unfalsifiable arithmetic.
+    """
     program = _program(select_joint=False)
     assert list(program.by_label) == list(GRID_LABELS)
     for label in GRID_LABELS:
@@ -77,7 +80,8 @@ def test_the_eager_universe_oracle_reproduces_the_unpruned_grid() -> None:
 def test_the_joint_labels_axis_value_member_is_the_shifted_one() -> None:
     """§5.1's headline, over the PRUNED program: for the label whose point is
     `{jes: up, btag: hf_up}` the fill's axis value is the observable's `jes_up` member, and the
-    executed universe carries BOTH coordinates."""
+    executed universe carries BOTH coordinates.
+    """
     program = _program(select_joint=True)
     assert list(program.by_label) == list(LABELS), "the placement pruned to the selected joint"
     assert program.shifted_id != program.nominal_id, "the candidate axis members must be distinct"
@@ -93,7 +97,8 @@ def test_the_joint_labels_axis_value_member_is_the_shifted_one() -> None:
 def test_a_btag_only_labels_axis_value_member_stays_nominal() -> None:
     """The refusing half: a one-coordinate `{btag: hf_up}` point restricts to the origin over the
     observable's `jes` axis, so it takes the observable's NOMINAL member. A resolution that prefers
-    the newest or most-derived member reddens here while passing the anchor above."""
+    the newest or most-derived member reddens here while passing the anchor above.
+    """
     program = _program(select_joint=True)
     assert axis_inputs(program.session, program.by_label[BTAG_ONLY]) == [program.nominal_id]
     assert axis_inputs(program.session, program.by_label[BTAG_ONLY]) != [program.shifted_id]

@@ -3,7 +3,8 @@
 Module-level and dependency-light on purpose: process workers resolve it by IMPORT REF
 ("behavior_toy:make_backend"), never by pickling the behavior dict (behavior dicts in the wild
 — e.g. vector's — contain lambdas and do not pickle; this is the exact failure mode that
-plagued distributed awkward analyses)."""
+plagued distributed awkward analyses).
+"""
 
 from __future__ import annotations
 

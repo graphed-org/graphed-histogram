@@ -1,4 +1,5 @@
-"""m49/F3 — §7.2's merge shortfall over its CLASS: both consumers read a merged fill per marked fill.
+"""m49/F3 — §7.2's merge shortfall over its CLASS: both consumers read a merged fill per marked
+fill.
 
 m48 refused only on the group-plan builder and only for VARIED programs. The premise under that
 scoping — that unvaried programs are unaffected — is false on both members, and they fail
@@ -90,7 +91,9 @@ def _twice() -> bh.Histogram:
 
 
 def _grouped(hist: gh.boost.Histogram) -> bh.Histogram:
-    value = gh.unpack(SequentialRunner().run(gh.plan({"h": hist}, steps_per_file=STEPS)).value)["h"]
+    value = gh.unpack(SequentialRunner().run(gh.plan({"h": hist}, steps_per_file=STEPS)).value)[
+        "h"
+    ]
     assert isinstance(value, bh.Histogram)
     return value
 
@@ -110,7 +113,8 @@ def test_the_single_histogram_plan_sums_both_fills() -> None:
 
 def test_both_builders_read_a_merged_fill_once_per_marked_fill() -> None:
     """The merged output is one fill's value; reading it at both marked positions doubles it
-    exactly, where a read per distinct output gives one fill's worth."""
+    exactly, where a read per distinct output gives one fill's worth.
+    """
     one = _values(_planned(_single()))
     assert one.sum() > 0
     for got in (_grouped(_merging()), _planned(_merging())):
@@ -120,12 +124,15 @@ def test_both_builders_read_a_merged_fill_once_per_marked_fill() -> None:
 def test_the_merge_free_pair_still_plans_and_sums_BOTH_fills_on_both_consumers() -> None:
     """The positive control. A refusal that fires on any two-fill program is red here, and the
     factor-two comparison is what names the wrong answer's shape: the merged program's silent
-    answer drops a whole fill."""
+    answer drops a whole fill.
+    """
     want = eager_weighted(bins=4, lo=0.0, hi=8.0)
     for _ in range(2):
         want.fill(ak.to_numpy(EVENTS.x), weight=ak.to_numpy(EVENTS.w))
 
-    grouped = gh.unpack(SequentialRunner().run(gh.plan({"h": _merge_free()}, steps_per_file=STEPS)).value)
+    grouped = gh.unpack(
+        SequentialRunner().run(gh.plan({"h": _merge_free()}, steps_per_file=STEPS)).value
+    )
     single = SequentialRunner().run(_merge_free().plan(steps_per_file=STEPS)).value
     for got in (grouped["h"], single):
         assert np.allclose(_values(got), _values(want), rtol=1e-12)
@@ -137,7 +144,8 @@ def test_the_merge_free_pair_still_plans_and_sums_BOTH_fills_on_both_consumers()
 
 def test_the_merged_pair_really_does_record_two_nodes_that_compile_to_one() -> None:
     """The instrument: if the identity token stopped merging, every merged read above would be
-    summing two fills that never merged, and the per-marked-fill read would be untested."""
+    summing two fills that never merged, and the per-marked-fill read would be untested.
+    """
     from graphed import compile_ir  # noqa: PLC0415  (a diagnostic import, not a fixture surface)
     from graphed.core import GraphStore  # noqa: PLC0415
 

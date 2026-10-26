@@ -1,4 +1,6 @@
-"""m69b histserv backend: a retried partition fills once, and a server failure surfaces as a picklable error."""
+"""m69b histserv backend: a retried partition fills once, and a server failure surfaces as a
+picklable error.
+"""
 
 from __future__ import annotations
 
@@ -62,7 +64,9 @@ def test_a_partition_run_twice_fills_once_and_another_partition_adds(tmp_path: P
 def test_a_killed_server_raises_a_histserv_error_that_survives_a_pickle(tmp_path: Path) -> None:
     hs = histserv_api()
     path = write_events(str(tmp_path / "e.parquet"))
-    plan = _plan(path, hs.Context(memory_mb=1024, workers=1, name="m69b-retries-killed"), back=True)
+    plan = _plan(
+        path, hs.Context(memory_mb=1024, workers=1, name="m69b-retries-killed"), back=True
+    )
     first, second = sorted(plan.tasks, key=lambda t: t.key)[:2]
     res = LocalResources()
     with servers(len(plan.services)) as started:
@@ -93,4 +97,6 @@ def test_receipts_of_two_server_histograms_refuse_to_add(tmp_path: Path) -> None
     assert (h + h).hist_id == h.hist_id
     with pytest.raises(REFUSED) as raised:
         h + o
-    assert all(re.search(rf"\b{hist_id}\b", str(raised.value)) for hist_id in (h.hist_id, o.hist_id))
+    assert all(
+        re.search(rf"\b{hist_id}\b", str(raised.value)) for hist_id in (h.hist_id, o.hist_id)
+    )

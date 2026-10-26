@@ -49,8 +49,11 @@ def _run() -> dict[str, object]:
 
 def test_every_reference_the_matrix_claims_is_actually_vendored() -> None:
     """The live instrument for the parametrized comparison: a missing vendored reference would
-    otherwise shrink the matrix silently rather than fail it."""
-    missing = sorted(stem for stem in MATRIX.values() if not (REFERENCES / f"{stem}.json").is_file())
+    otherwise shrink the matrix silently rather than fail it.
+    """
+    missing = sorted(
+        stem for stem in MATRIX.values() if not (REFERENCES / f"{stem}.json").is_file()
+    )
     assert missing == []
     assert len(set(MATRIX.values())) == 15
 
@@ -60,23 +63,39 @@ def test_the_matrix_reproduces_its_corpus_reference(slot: tuple[str, str], refer
     output, label = slot
     got = _run()["unpacked"][output][label]  # type: ignore[index]
     stored = json.loads((REFERENCES / f"{reference}.json").read_text(encoding="utf-8"))
-    assert bin_values(got) == stored["values"], f"{reference}: bin contents drifted from the corpus"
+    assert bin_values(got) == stored["values"], (
+        f"{reference}: bin contents drifted from the corpus"
+    )
     assert fingerprint(got) == stored["fingerprint"], f"{reference}: fingerprint drifted"
 
 
 def test_every_output_carries_exactly_its_own_five_labels() -> None:
     """Absent labels are absent (§6.1a), so the reference lookups above cannot agree by reading a
-    mapping that replicates nominal under every label the plan knows."""
+    mapping that replicates nominal under every label the plan knows.
+    """
     unpacked = _run()["unpacked"]
-    assert sorted(unpacked["ttbar_4j1b"]) == ["btag_down", "btag_up", "jes_down", "jes_up", "nominal"]
-    assert sorted(unpacked["ttbar_4j2b"]) == ["btag_down", "btag_up", "jes_down", "jes_up", "nominal"]
+    assert sorted(unpacked["ttbar_4j1b"]) == [
+        "btag_down",
+        "btag_up",
+        "jes_down",
+        "jes_up",
+        "nominal",
+    ]
+    assert sorted(unpacked["ttbar_4j2b"]) == [
+        "btag_down",
+        "btag_up",
+        "jes_down",
+        "jes_up",
+        "nominal",
+    ]
     assert sorted(unpacked["ttgamma"]) == ["jes_down", "jes_up", "nominal", "pho_down", "pho_up"]
 
 
 def test_the_matrix_run_reads_each_partition_exactly_once() -> None:
     """§5.2b, bound to the matrix run ITSELF. Fifteen histograms come out of one pass: a
     per-variation re-run loop reads `n_partitions x n_labels`, a per-histogram plan reads
-    `n_partitions x n_outputs`; only the shared-IR lowering reads `n_partitions`."""
+    `n_partitions x n_outputs`; only the shared-IR lowering reads `n_partitions`.
+    """
     run = _run()
     source = run["source"]
     assert run["tasks"] == N_PARTITIONS
@@ -86,7 +105,8 @@ def test_the_matrix_run_reads_each_partition_exactly_once() -> None:
 
 def test_a_second_independent_build_is_bit_for_bit_identical() -> None:
     """Run-to-run byte identity, the only form in which this suite claims it (§10/m49(i)): a
-    second Session builds and runs the same program, and every view compares `array_equal`."""
+    second Session builds and runs the same program, and every view compares `array_equal`.
+    """
     _session, hists, _source = matrix_program()
     again = gh.unpack(SequentialRunner().run(gh.plan(hists, steps_per_file=N_PARTITIONS)).value)
     first = _run()["unpacked"]
@@ -99,7 +119,8 @@ def test_a_second_independent_build_is_bit_for_bit_identical() -> None:
 
 def test_the_matrix_plan_ships_a_populated_variation_label_channel() -> None:
     """§8.2(i) on a real analysis plan: the shipped closure's channel carries this program's
-    non-nominal labels and no other. `None` is what m48 ships and is the state m49 replaces."""
+    non-nominal labels and no other. `None` is what m48 ships and is the state m49 replaces.
+    """
     payload = _run()["labels"]
     assert payload is not None, "the shipped closure carries no variation labels"
     seen: set[str] = set()

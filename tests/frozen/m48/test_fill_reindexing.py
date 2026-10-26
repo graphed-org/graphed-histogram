@@ -57,7 +57,8 @@ def _shifted_jets(source: Any, scale: float) -> Any:
 
 def _derived(events_ctx: Any) -> Any:
     """A VARIED mask derivation: each label selects its own row set, so re-indexing everything by
-    nominal's mask is a different answer for every non-nominal label."""
+    nominal's mask is a different answer for every non-nominal label.
+    """
     shifted = graphed.vary(
         events_ctx,
         "jes",
@@ -96,7 +97,8 @@ def test_an_ancestor_value_is_re_indexed_per_label_by_that_labels_own_mask() -> 
 
 def test_the_labels_row_sets_really_differ_so_the_re_indexing_is_observable() -> None:
     """The instrument for the assertion above: if every label's mask selected the same rows,
-    re-indexing by nominal's mask would be indistinguishable from re-indexing per label."""
+    re-indexing by nominal's mask would be indistinguishable from re-indexing per label.
+    """
     rows = {label: int(ak.sum(_eager_mask(label))) for label in JES}
     assert len(set(rows.values())) == len(rows)
     assert all(0 < n < len(EVENTS) for n in rows.values())
@@ -104,7 +106,8 @@ def test_the_labels_row_sets_really_differ_so_the_re_indexing_is_observable() ->
 
 def test_a_projection_link_yields_an_unvaried_fill_whose_result_is_a_BARE_hist() -> None:
     """§6.1d computes the fill's label set AFTER the lineage step, so a value reached across a
-    projection link contributes no labels and §6.1a's unvaried shape applies."""
+    projection link contributes no labels and §6.1a's unvaried shape applies.
+    """
     _session, source, _data = partitioned_events()
     sel = _derived(gnano.events(source))
     child = graphed.nominal(sel)

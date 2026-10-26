@@ -43,7 +43,9 @@ class ChunkedSource:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition, columns, resources) -> np.ndarray:  # type: ignore[no-untyped-def]
         part = partition.resolve(len(self.data))
@@ -126,7 +128,9 @@ def test_multidimensional_and_categorical_axes() -> None:
         storage=bh.storage.Int64(),
     )
     eager2.fill(DATA, DATA * 0.9)
-    assert np.array_equal(SequentialRunner().run(h2.plan(steps_per_file=2)).value.values(), eager2.values())
+    assert np.array_equal(
+        SequentialRunner().run(h2.plan(steps_per_file=2)).value.values(), eager2.values()
+    )
 
     s3 = Session(NumpyBackend())
     cats = (DATA > 5.0).astype("int64") + 2 * (DATA > 7.0).astype("int64")
@@ -143,7 +147,8 @@ def test_content_addressed_identity_is_hash_consed() -> None:
     h1 = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0)).fill(x)
     h2 = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0)).fill(x)
     h3 = gh.boost.Histogram(bh.axis.Regular(21, 0.0, 10.0)).fill(x)
-    assert h1.fill_nodes()[0].node_id == h2.fill_nodes()[0].node_id  # same spec + input -> interned
+    # same spec + input -> interned
+    assert h1.fill_nodes()[0].node_id == h2.fill_nodes()[0].node_id
     assert h1.fill_nodes()[0].node_id != h3.fill_nodes()[0].node_id  # different bins -> different
     assert gh.spec_of(h1) == gh.spec_of(h2) and gh.spec_of(h1) != gh.spec_of(h3)
 
@@ -188,7 +193,8 @@ def test_numpy_like_entry_points() -> None:
     h2 = gh.histogram2d(x2, x2 * 0.5, bins=(10, 8), range=((0.0, 10.0), (0.0, 5.0)))
     ref2, _, _ = np.histogram2d(DATA, DATA * 0.5, bins=(10, 8), range=((0.0, 10.0), (0.0, 5.0)))
     assert np.array_equal(
-        np.asarray(SequentialRunner().run(h2.plan()).value.values()).astype("int64"), ref2.astype("int64")
+        np.asarray(SequentialRunner().run(h2.plan()).value.values()).astype("int64"),
+        ref2.astype("int64"),
     )
 
 
@@ -220,14 +226,17 @@ def test_factory_and_histogramdd_match_eager() -> None:
     h = gh.factory(x, histref=href)
     eager = bh.Histogram(bh.axis.Regular(14, 0.0, 10.0), storage=bh.storage.Int64())
     eager.fill(DATA)
-    assert np.array_equal(SequentialRunner().run(h.plan(steps_per_file=2)).value.values(), eager.values())
+    assert np.array_equal(
+        SequentialRunner().run(h.plan(steps_per_file=2)).value.values(), eager.values()
+    )
 
     s2 = Session(NumpyBackend())
     x2, _ = _source(s2, "x", DATA)
     hdd = gh.histogramdd([x2, x2 * 0.5], bins=[6, 5], range=((0.0, 10.0), (0.0, 5.0)))
     refdd, _ = np.histogramdd([DATA, DATA * 0.5], bins=[6, 5], range=((0.0, 10.0), (0.0, 5.0)))
     assert np.array_equal(
-        np.asarray(SequentialRunner().run(hdd.plan()).value.values()).astype("int64"), refdd.astype("int64")
+        np.asarray(SequentialRunner().run(hdd.plan()).value.values()).astype("int64"),
+        refdd.astype("int64"),
     )
 
 
@@ -236,7 +245,9 @@ def test_spec_round_trips_every_supported_axis_and_storage() -> None:
         bh.Histogram(bh.axis.Integer(0, 7), storage=bh.storage.Double()),
         bh.Histogram(bh.axis.Boolean(), storage=bh.storage.Int64()),
         bh.Histogram(bh.axis.StrCategory(["a", "b"]), storage=bh.storage.Weight()),
-        bh.Histogram(bh.axis.Regular(4, 0.0, 1.0, metadata={"name": "pt"}), storage=bh.storage.Mean()),
+        bh.Histogram(
+            bh.axis.Regular(4, 0.0, 1.0, metadata={"name": "pt"}), storage=bh.storage.Mean()
+        ),
         bh.Histogram(bh.axis.Variable([0.0, 0.5, 1.0]), storage=bh.storage.WeightedMean()),
     ]
     for h in histos:
@@ -282,7 +293,8 @@ def test_plan_accepts_explicit_partitions() -> None:
     x, src = _source(s, "x", DATA)
     h = gh.boost.Histogram(bh.axis.Regular(10, 0.0, 10.0), storage=bh.storage.Int64()).fill(x)
     explicit = tuple(
-        Partition("toy://chunks", "", lo, min(lo + 300, len(DATA))) for lo in range(0, len(DATA), 300)
+        Partition("toy://chunks", "", lo, min(lo + 300, len(DATA)))
+        for lo in range(0, len(DATA), 300)
     )
     plan = h.plan(partitions=explicit)
     assert len(plan.tasks) == len(explicit)

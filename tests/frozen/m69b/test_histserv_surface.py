@@ -67,7 +67,11 @@ def test_backing_leaves_the_graph_identity_of_the_unbacked_twin(tmp_path: Path) 
         ir = bytes(compile_ir(session, *hist.fill_nodes()).ir)
         irs.append(ir)
         keys.append(
-            sorted(external_key(n) for n in GraphStore.deserialize(ir).nodes() if n["kind"] == "external")
+            sorted(
+                external_key(n)
+                for n in GraphStore.deserialize(ir).nodes()
+                if n["kind"] == "external"
+            )
         )
     assert all(ir == irs[-1] for ir in irs)
     assert all(key == keys[-1] for key in keys) and keys[-1]
@@ -91,7 +95,9 @@ def test_a_growth_axis_is_refused_naming_histserv_and_the_axis(axis: Any, tag: s
     with pytest.raises(REFUSED) as backed:
         hs.backed(gh.boost.Histogram(axis), ctx)
     for message in (str(made.value), str(backed.value)):
-        assert re.search(r"(?i)\bhistserv\b", message) and re.search(rf"\b{type(axis).__name__}\b", message)
+        assert re.search(r"(?i)\bhistserv\b", message) and re.search(
+            rf"\b{type(axis).__name__}\b", message
+        )
 
 
 @pytest.mark.parametrize(
@@ -171,7 +177,8 @@ def test_backing_and_planning_import_neither_histserv_nor_grpc(tmp_path: Path) -
         assert report["control"] is True
 
 
-def test_an_unbacked_merge_free_plan_equals_the_per_partition_direct_fill_folded_in_partition_order(
+# a frozen test ID: its length is fixed
+def test_an_unbacked_merge_free_plan_equals_the_per_partition_direct_fill_folded_in_partition_order(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     path = write_events(str(tmp_path / "e.parquet"))
@@ -195,15 +202,16 @@ def test_an_unbacked_merge_free_plan_equals_the_per_partition_direct_fill_folded
     assert same(got, want)
 
 
-#: per-directory digests of every frozen file before m69b, the m48/m49 refreeze and m64 fixup included
+#: per-directory digests of every frozen file before m69b, the m48/m49 refreeze and m64 fixup
+#: included
 FROZEN_BEFORE_M69B = {
-    "m23": "7cc9f611d671370de96b0f423f8210c5832d63071ea4351b646e0f75a60930f4",
-    "m29": "2d72310ede37760eb0123adff12a523cab76f21d86e1394e82115a141c5389de",
-    "m48": "686b747def7801e30e8b34ac9d69fe487f2e7b134d5cb271e7a7187e69c3488c",
-    "m49": "c00f3e60de54e83599621e4ae00f36cf17b4cbae925394ac5b4cdf86394d08f0",
-    "m50": "94b620ec09e416172348ec7ba6233ae591b880ca6e7b85367a5ed5b6b94a567a",
-    "m52": "568d6a4be270bc48f267b8b8468793790f04ba71191c4f6fb086df05407dea34",
-    "m64": "f96764207d1180d5fdcf99f2f1a68ddf775207e9caafd50084359486cfc84b9e",
+    "m23": "75d3133d53a321b57b40896ded8e19ac329f03e53cbee8143a2f65215d3ace8b",
+    "m29": "9fb552a919ffdf9d05301dba2845b7c619547e32edfada4f0169a4da3a390feb",
+    "m48": "4589feb5d7f34f2bbeb2f368f25d78c9ebc18ed6ceec8f9ff1b6809f81210b87",
+    "m49": "1b3ae8ba40064526cbe7056221b4ef28893f2a9455d40eb2348c2f11c31e97fc",
+    "m50": "c5fbcabebfdd8f399f395552ef66164d2f85eefe2090b3ff490bec99983bfc94",
+    "m52": "890e1969d10da75bdb89cd0f53c285a68f6bef1efaab02b2e13a440059041b07",
+    "m64": "1f61e8ceead25e3ba9e1878efb073eeb44e6e6774da9835ec834b3b97e8b56aa",
 }
 
 

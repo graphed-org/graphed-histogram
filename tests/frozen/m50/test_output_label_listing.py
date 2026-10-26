@@ -16,7 +16,8 @@ from m50_axis_fixtures import fill_weight_program, partitioned, weighted
 
 import graphed_histogram as gh
 
-FOLD_ORDER = ["nominal", "wgt_up", "wgt_down"]  # §2.4: nominal first, then vary-tag insertion order
+# §2.4: nominal first, then vary-tag insertion order
+FOLD_ORDER = ["nominal", "wgt_up", "wgt_down"]
 
 
 def _three_output_hists() -> dict[str, gh.boost.Histogram]:
@@ -36,8 +37,9 @@ def test_label_listing_maps_each_output_to_its_variations_in_fold_order() -> Non
 
 
 def test_the_axis_output_entry_equals_the_sibling_entry() -> None:
-    """The `(output, None)` axis key carries no label; a key-reading implementation answers `[None]`
-    or `[]` for `"ax"` and reds here, while the sibling output would admit it."""
+    """The `(output, None)` axis key carries no label; a key-reading implementation answers
+    `[None]` or `[]` for `"ax"` and reds here, while the sibling output would admit it.
+    """
     listing = gh.label_listing(_three_output_hists())
     assert listing["ax"] == listing["sib"]
     assert None not in listing["ax"]

@@ -40,7 +40,8 @@ def test_plan_on_a_varied_histogram_refuses_and_points_at_the_group_api() -> Non
 
 def test_the_refusal_is_not_keyed_on_the_number_of_staged_fills() -> None:
     """A histogram carrying a SINGLE varied fill still refuses: the trigger is the merge hazard,
-    not a count, and a count-based guard would let a one-fill varied histogram through."""
+    not a count, and a count-based guard would let a one-fill varied histogram through.
+    """
     _session, events, _source = partitioned_events()
     h = _varied(events, labels=2)
     assert h.staged_fills() == 2
@@ -55,7 +56,8 @@ def test_the_refusal_is_not_keyed_on_the_number_of_staged_fills() -> None:
 
 def test_plan_on_an_unvaried_sibling_mode_histogram_still_works() -> None:
     """§6.1c's positive control. Two staged fills, no variation: the sum IS the intended answer,
-    and today's path must keep producing it."""
+    and today's path must keep producing it.
+    """
     _session, events, source = partitioned_events()
     h = weighted()
     h.fill(events.MET.pt)
@@ -67,19 +69,23 @@ def test_plan_on_an_unvaried_sibling_mode_histogram_still_works() -> None:
 
 def test_the_varied_route_to_a_plan_is_the_group_api_the_refusal_names() -> None:
     """The refusal is a redirect, not a dead end: the same histogram plans through
-    `graphed_histogram.plan` and its per-label results come back."""
+    `graphed_histogram.plan` and its per-label results come back.
+    """
     _session, events, _source = partitioned_events()
     h = _varied(events)
     value = SequentialRunner().run(gh.plan({"met": h}, steps_per_file=3)).value
     result = gh.unpack(value)
     assert list(result["met"]) == ["nominal", "sig_up", "sig_down"]
     nominal = np.asarray(result["met"]["nominal"].view(flow=True)["value"])
-    assert not np.array_equal(np.asarray(result["met"]["sig_up"].view(flow=True)["value"]), nominal)
+    assert not np.array_equal(
+        np.asarray(result["met"]["sig_up"].view(flow=True)["value"]), nominal
+    )
 
 
 def test_materialize_of_one_fill_node_is_untouched_by_the_refusal() -> None:
     """`Histogram.plan` is the refused surface; the reference eager path per fill node is not, and
-    §4.3/§7.2's per-label reads depend on it staying open."""
+    §4.3/§7.2's per-label reads depend on it staying open.
+    """
     session, events = in_memory_events()
     h = _varied(events)
     per_label = gh.fill_nodes_by_label(h)

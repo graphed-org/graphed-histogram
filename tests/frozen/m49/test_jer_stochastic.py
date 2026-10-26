@@ -69,7 +69,8 @@ def _run(steps: int) -> tuple[dict[str, dict[str, np.ndarray]], int]:
 
 def test_the_universes_select_pairwise_distinct_event_counts() -> None:
     """No ordering is asserted (§5.1): a re-smearing shift migrates in both directions, so the
-    counts have no expected sign."""
+    counts have no expected sign.
+    """
     got, _reads = _run(1)
     counts = {label: int(values["mask"].sum()) for label, values in got.items()}
     assert set(counts) == set(JER_SF)
@@ -79,7 +80,8 @@ def test_the_universes_select_pairwise_distinct_event_counts() -> None:
 
 def test_no_universes_selection_is_a_subset_of_anothers() -> None:
     """Bidirectional migration — the non-monotone discriminator. A one-sided scale (and any
-    SF <= 1 label, which the floor pins to nominal) makes one mask contain another."""
+    SF <= 1 label, which the floor pins to nominal) makes one mask contain another.
+    """
     got, _reads = _run(1)
     for left, right in permutations(got, 2):
         implied = np.all(~got[left]["mask"] | got[right]["mask"])
@@ -88,7 +90,8 @@ def test_no_universes_selection_is_a_subset_of_anothers() -> None:
 
 def test_the_nominal_universe_is_unsmeared() -> None:
     """The instrument for the migration witness: nominal must be the raw quantity, or every
-    universe is smeared and the comparisons above are between three smeared sets."""
+    universe is smeared and the comparisons above are between three smeared sets.
+    """
     got, _reads = _run(1)
     assert not np.array_equal(got["nominal"]["smeared"], got["jer_up"]["smeared"])
     assert not np.array_equal(got["jer_up"]["smeared"], got["jer_down"]["smeared"])
@@ -97,19 +100,23 @@ def test_the_nominal_universe_is_unsmeared() -> None:
 def test_the_shared_draw_node_is_interned_exactly_once() -> None:
     """§5.5b: one draw, all universes. Each member re-records the draw expression from scratch, so
     a store carrying two structurally identical draw nodes means interning did not engage — and
-    two independent draws would break the shared-prefix sharing the whole shift path rests on."""
+    two independent draws would break the shared-prefix sharing the whole shift path rests on.
+    """
     session, _smeared, _per_label, draw, _source = jer_program()
     nodes = session._store.nodes()
     (recorded,) = (node for node in nodes if node["id"] == draw.node_id)
     twins = [
-        node for node in nodes if node["name"] == recorded["name"] and node["inputs"] == recorded["inputs"]
+        node
+        for node in nodes
+        if node["name"] == recorded["name"] and node["inputs"] == recorded["inputs"]
     ]
     assert len(twins) == 1
 
 
 def test_the_smeared_values_and_masks_are_byte_identical_across_partitionings() -> None:
     """§5.5a's headline: the draw for a row is a pure function of THAT ROW's own content, so the
-    same row draws the same value under any partitioning."""
+    same row draws the same value under any partitioning.
+    """
     one, reads_one = _run(1)
     five, reads_five = _run(5)
     assert (reads_one, reads_five) == (1, 5), "the two runs did not actually re-partition"
@@ -129,7 +136,8 @@ def test_the_same_program_is_byte_identical_run_to_run() -> None:
 
 def test_the_selection_counts_survive_the_histogram_sink() -> None:
     """The same quantity through this repo's own fill path, on an INTEGER storage — the only
-    histogram §5.5a admits as a compared quantity."""
+    histogram §5.5a admits as a compared quantity.
+    """
     _session, smeared, _per_label, _draw, _source = jer_program()
     selected = smeared[smeared > JER_THRESHOLD]
     hist = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 400.0), storage=bh.storage.Int64())

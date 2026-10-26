@@ -87,9 +87,14 @@ class CountingSource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("corpus://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("corpus://events", "", s, steps_per_file)
+            for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -110,7 +115,8 @@ def in_memory(events: ak.Array) -> tuple[Session, Any]:
 # ---- the mixed shift + weight corpus program --------------------------------------------------
 def stable(values: Array) -> Array:
     """The corpus's pre-fill 6-decimal rounding, as a recorded ufunc (`np.round`'s own lowering):
-    neither gak nor graphed exposes `rint` or `round(x, decimals)`."""
+    neither gak nor graphed exposes `rint` or `round(x, decimals)`.
+    """
     return np.rint(values * 1e6) / 1e6
 
 
@@ -145,7 +151,9 @@ def ttgamma_slice(events: Any, jets: Any) -> Array:
     muons = events.Muon[events.Muon.pt > 30]
     good_jets = jets[jets.pt > 25]
     selected = (
-        (gak.num(photons, axis=1) >= 1) & (gak.num(muons, axis=1) >= 1) & (gak.num(good_jets, axis=1) >= 2)
+        (gak.num(photons, axis=1) >= 1)
+        & (gak.num(muons, axis=1) >= 1)
+        & (gak.num(good_jets, axis=1) >= 2)
     )
     return stable(gak.drop_none(gak.firsts(photons[selected].pt)))
 
@@ -243,7 +251,10 @@ def jer_program() -> tuple[Session, Any, dict[str, dict[str, Array]], Array, Cou
     # each member re-records the draw from scratch: interning is what collapses them to ONE node
     members = {
         tag: pt
-        * (1.0 + float(np.sqrt(max(JER_SF[f"jer_{tag}"] ** 2 - 1.0, 0.0))) * content_seeded_normal(pt))
+        * (
+            1.0
+            + float(np.sqrt(max(JER_SF[f"jer_{tag}"] ** 2 - 1.0, 0.0))) * content_seeded_normal(pt)
+        )
         for tag in ("up", "down")
     }
     smeared = graphed.vary(pt, "jer", points=members)  # nominal is UNSMEARED (§5.5b)
@@ -251,7 +262,10 @@ def jer_program() -> tuple[Session, Any, dict[str, dict[str, Array]], Array, Cou
     per_label: dict[str, dict[str, Array]] = {}
     for label in graphed.labels(smeared):
         value = graphed.universe(smeared, label)
-        per_label[label] = {"smeared": gak.flatten(value), "mask": gak.flatten(value > JER_THRESHOLD)}
+        per_label[label] = {
+            "smeared": gak.flatten(value),
+            "mask": gak.flatten(value > JER_THRESHOLD),
+        }
     return session, smeared, per_label, draw, data
 
 

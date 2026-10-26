@@ -55,9 +55,13 @@ class CountingSource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -104,14 +108,19 @@ def weight_family(source: Any) -> Any:
 def fill_weight_program(mode_axis: bool, *, source: Any) -> gh.boost.Histogram:
     """Per-object value (`Jet.pt`), one per-event varied weight factor — weight labels ONLY."""
     h = weighted()
-    h.fill(source.Jet.pt, weight=[weight_family(source)], **({AXIS_MODE_KW: True} if mode_axis else {}))
+    h.fill(
+        source.Jet.pt,
+        weight=[weight_family(source)],
+        **({AXIS_MODE_KW: True} if mode_axis else {}),
+    )
     return h
 
 
 def fill_mixed_program(mode_axis: bool, *, source: Any) -> gh.boost.Histogram:
-    """A shift (`jes`, in `S`), a weight (`wgt`, in `W`) and a sample-only variation (`smp`, in `S`)
-    on a WeightedMean storage with per-label sample values that DIFFER (§6.1b): the one program
-    that witnesses the `S`/`W` split and the `1 + |S|` axis arity."""
+    """A shift (`jes`, in `S`), a weight (`wgt`, in `W`) and a sample-only variation (`smp`, in
+    `S`) on a WeightedMean storage with per-label sample values that DIFFER (§6.1b): the one
+    program that witnesses the `S`/`W` split and the `1 + |S|` axis arity.
+    """
     shifted = graphed.vary(
         source, "jes", Jet={"up": shift_jets(source, 1.05), "down": shift_jets(source, 0.95)}
     )
@@ -141,20 +150,23 @@ def node_chash(session: Session, node: Any) -> str:
 # ---- bin-for-bin oracle helpers --------------------------------------------------------------
 def var_index(hist: bh.Histogram) -> int:
     """The variation axis's position, read per-axis from `__dict__` — never `h.axes.name`, which
-    raises `AttributeError` unless EVERY axis carries a name (§6.2 i-bis)."""
+    raises `AttributeError` unless EVERY axis carries a name (§6.2 i-bis).
+    """
     return next(i for i, a in enumerate(hist.axes) if a.__dict__.get("name") == "variation")
 
 
 def slice_label(hist: bh.Histogram, label: str) -> bh.Histogram:
     """A pure-bh positional slice of the variation axis — the accessor-independent oracle for the
     equality/scaling anchors. The named-dict form `h[{"variation": label}]` is a `TypeError` on a
-    bare `bh.Histogram` (§6.2 i-bis); only the positional index works."""
+    bare `bh.Histogram` (§6.2 i-bis); only the positional index works.
+    """
     return hist[{var_index(hist): bh.loc(label)}]
 
 
 def views_equal(a: bh.Histogram, b: bh.Histogram) -> bool:
     """Bin-for-bin equality including flow, NaN-tolerant per storage field (empty WeightedMean bins
-    carry NaN means)."""
+    carry NaN means).
+    """
     va, vb = a.view(flow=True), b.view(flow=True)
     if va.dtype.names is None:
         return bool(np.allclose(np.asarray(va), np.asarray(vb), rtol=1e-12, equal_nan=True))

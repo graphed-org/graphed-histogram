@@ -43,7 +43,9 @@ class ChunkedSource:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition, columns, resources):  # type: ignore[no-untyped-def]
         part = partition.resolve(len(self.data))  # type: ignore[arg-type]
@@ -68,7 +70,9 @@ def test_weighted_fill_survives_the_process_boundary_exactly() -> None:
     eager.fill(DATA, weight=WEIGHTS)
 
     # exact, not approximate: identical per-partition fills + the fixed combine tree
-    assert np.array_equal(np.asarray(parallel.values(flow=True)), np.asarray(sequential.values(flow=True)))
+    assert np.array_equal(
+        np.asarray(parallel.values(flow=True)), np.asarray(sequential.values(flow=True))
+    )
     assert np.array_equal(
         np.asarray(parallel.variances(flow=True)), np.asarray(sequential.variances(flow=True))
     )
@@ -130,8 +134,12 @@ def test_behavior_backends_forward_by_import_ref() -> None:
     # the supported path: workers IMPORT the factory — no behavior dict is ever pickled
     plan = h.plan(steps_per_file=2, backend="behavior_toy:make_backend")
     parallel = ProcessExecutor(max_workers=2).run(plan).value
-    sequential = SequentialRunner().run(h.plan(steps_per_file=2, backend="behavior_toy:make_backend")).value
+    sequential = (
+        SequentialRunner().run(h.plan(steps_per_file=2, backend="behavior_toy:make_backend")).value
+    )
     eager = bh.Histogram(bh.axis.Regular(20, 0.0, 20.0), storage=bh.storage.Int64())
     eager.fill(reference)
     assert np.array_equal(np.asarray(parallel.values(flow=True)), eager.values(flow=True))
-    assert np.array_equal(np.asarray(parallel.values(flow=True)), np.asarray(sequential.values(flow=True)))
+    assert np.array_equal(
+        np.asarray(parallel.values(flow=True)), np.asarray(sequential.values(flow=True))
+    )

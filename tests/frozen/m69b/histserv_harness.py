@@ -1,10 +1,10 @@
-"""Shared harness for the m69b frozen suite: histserv 0.2.1 servers as subprocesses, events on parquet,
-and the measured size model.
+"""Shared harness for the m69b frozen suite: histserv 0.2.1 servers as subprocesses, events on
+parquet, and the measured size model.
 
-The implementation under test is reached only through ``histserv_api()`` and ``boost_api()``, inside
-test bodies, so the suite collects before ``graphed_histogram.histserv`` exists and each test then
-fails at the accessor naming the missing module or symbol. Every server a test starts is killed when
-its ``servers()`` block exits.
+The implementation under test is reached only through ``histserv_api()`` and ``boost_api()``,
+inside test bodies, so the suite collects before ``graphed_histogram.histserv`` exists and each
+test then fails at the accessor naming the missing module or symbol. Every server a test starts is
+killed when its ``servers()`` block exits.
 """
 
 from __future__ import annotations
@@ -35,8 +35,8 @@ SERVER_START_S = 60.0
 MiB = 1 << 20
 # The size model's constants, each the maximum over the MODEL lines of the plan's
 # probes/m69b/probe_histserv_memory{,.amd64,.gha,.gha-20261018}.txt and (PER_CONN)
-# probe_histserv_connections{,.amd64}.txt.
-# BASE adds the largest change in B between two GitHub runner images there, so the next image change fits.
+# probe_histserv_connections{,.amd64}.txt. BASE adds the largest change in B between two GitHub
+# runner images there, so the next image change fits.
 BASE = 227 * MiB
 PER_HIST = 4000
 PER_TASK = 170
@@ -57,7 +57,8 @@ def boost_api() -> Any:
 
 def run_bounded(fn: Callable[[], Any], timeout_s: float = RUN_TIMEOUT_S) -> Any:
     """Run ``fn`` on a daemon thread and fail if it does not finish in ``timeout_s``: a hang is a
-    failure, never a wedged CI job. Returns the value or re-raises the call's exception."""
+    failure, never a wedged CI job. Returns the value or re-raises the call's exception.
+    """
     out: dict[str, Any] = {}
 
     def _drive() -> None:
@@ -92,7 +93,9 @@ class Slot:
 
 
 def slot_of(axes: Sequence[Any], storage: str, tasks: int, labels: int = 1) -> Slot:
-    """The model's sizes for a slot over ``axes`` (the non-variation axes), ``labels`` its chunk count."""
+    """The model's sizes for a slot over ``axes`` (the non-variation axes), ``labels`` its chunk
+    count.
+    """
     extent = 1
     for axis in axes:
         extent *= axis.extent
@@ -112,7 +115,8 @@ _PORTS: set[int] = set()
 
 
 def free_port() -> int:
-    # gRPC binds with SO_REUSEPORT, so two servers on one port would both start: never hand a port out twice
+    # gRPC binds with SO_REUSEPORT, so two servers on one port would both start: never hand a port
+    # out twice
     while True:
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
@@ -164,7 +168,9 @@ def start_server() -> Server:
         except OSError:
             time.sleep(0.05)
     server.kill()
-    raise AssertionError(f"histserv did not listen on {port} within {SERVER_START_S}s (exit {proc.poll()})")
+    raise AssertionError(
+        f"histserv did not listen on {port} within {SERVER_START_S}s (exit {proc.poll()})"
+    )
 
 
 @contextlib.contextmanager
@@ -188,13 +194,17 @@ def bind(plan: Plan[Any], started: Sequence[Server]) -> tuple[Plan[Any], dict[st
     names = server_names(plan)
     assert len(started) >= len(names), (names, len(started))
     by_name = dict(zip(names, started, strict=False))
-    return bind_services(plan, {name: server.endpoint for name, server in by_name.items()}), by_name
+    return bind_services(
+        plan, {name: server.endpoint for name, server in by_name.items()}
+    ), by_name
 
 
 def assigned(plan: Plan[Any]) -> dict[Any, str]:
     """The served plan's slot -> server name map (``_Served.slots``)."""
     process: Any = plan.process
-    return {slot: str(getattr(server, "name", server)) for slot, server in dict(process.slots).items()}
+    return {
+        slot: str(getattr(server, "name", server)) for slot, server in dict(process.slots).items()
+    }
 
 
 # ---- events and comparisons --------------------------------------------------------------------
@@ -204,7 +214,8 @@ CATEGORIES = ("ee", "mm", "em", "tt")
 
 def write_events(path: str, n: int = 2000, seed: int = 7) -> str:
     """A parquet file of ``n`` events; ``w`` holds dyadic weights, ``wi`` integer ones, so any fold
-    order sums them exactly; ``c``, ``k`` and ``b`` fill category and boolean axes past their bins."""
+    order sums them exactly; ``c``, ``k`` and ``b`` fill category and boolean axes past their bins.
+    """
     rng = np.random.default_rng(seed)
     ak.to_parquet(
         ak.Array(
@@ -228,7 +239,9 @@ def events(path: str, steps: int = 3) -> tuple[Session, Any]:
 
 
 def same(a: Any, b: Any) -> bool:
-    """Bit-for-bit equality of two boost histograms: axes, storage, and every field of the flow view."""
+    """Bit-for-bit equality of two boost histograms: axes, storage, and every field of the flow
+    view.
+    """
     if not (isinstance(a, bh.Histogram) and isinstance(b, bh.Histogram)):
         return False
     if a.axes != b.axes or type(a.storage_type()) is not type(b.storage_type()):
@@ -256,7 +269,9 @@ def _status(pid: int, field: str) -> int:
 
 
 def reset_peak(pid: int) -> int:
-    """The settled RSS, then the high-water mark reset to it (``5`` to ``/proc/<pid>/clear_refs``)."""
+    """The settled RSS, then the high-water mark reset to it (``5`` to
+    ``/proc/<pid>/clear_refs``).
+    """
     time.sleep(0.6)
     rss = _status(pid, "VmRSS")
     with open(f"/proc/{pid}/clear_refs", "w") as f:

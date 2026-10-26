@@ -27,7 +27,9 @@ STEPS = 3
 def _plans() -> tuple[Any, Any]:
     """One session; a varied builder call and an UNVARIED one on a different chain."""
     _session, varied, plain, _data = shared_node_program()
-    return gh.plan({"q": varied}, steps_per_file=STEPS), gh.plan({"plain": plain}, steps_per_file=STEPS)
+    return gh.plan({"q": varied}, steps_per_file=STEPS), gh.plan(
+        {"plain": plain}, steps_per_file=STEPS
+    )
 
 
 def _entries() -> tuple[Any, ...]:
@@ -38,7 +40,8 @@ def _entries() -> tuple[Any, ...]:
 
 def _sort_key(key: tuple[int, int | None]) -> tuple[int, int]:
     """§8.2(i)'s bound order. A bare `sorted()` over the keys is a `TypeError` the moment one
-    reduced id carries both an indexed and a `None` entry."""
+    reduced id carries both an indexed and a `None` entry.
+    """
     reduced_id, member_index = key
     return (reduced_id, -1 if member_index is None else member_index)
 
@@ -53,7 +56,8 @@ def _no_unordered(value: object) -> bool:
 
 def test_every_entry_has_the_bound_layout() -> None:
     """`((reduced_node_id, member_index | None), (labels, frame))`, `labels` a sorted tuple of
-    strings — a producer in one repo and a consumer in another share this shape."""
+    strings — a producer in one repo and a consumer in another share this shape.
+    """
     for entry in _entries():
         key, (labels, frame) = entry
         reduced_id, member_index = key
@@ -74,14 +78,16 @@ def test_the_entries_are_sorted_on_the_bound_key_and_unique() -> None:
 def test_nothing_in_the_payload_is_a_set_or_frozenset() -> None:
     """A `frozenset` pickles in hash order, so the closure's cloudpickle bytes — and through
     `OpSpec.identity()` every `DurablePlan` fingerprint built over them — would vary with
-    `PYTHONHASHSEED`."""
+    `PYTHONHASHSEED`.
+    """
     assert _no_unordered(_entries())
 
 
 def test_every_key_names_a_node_of_the_reduced_store_shipped_beside_it() -> None:
     """The keying is POST-REDUCTION ids from the SAME compile that produced the shipped `ir`;
     record-time ids are wrong because the reduction re-indexes. The artifact travelling in the
-    same closure is the oracle."""
+    same closure is the oracle.
+    """
     plan, _plain = _plans()
     node_ids = {node["id"] for node in GraphStore.deserialize(plan.process.ir).nodes()}
     assert node_ids
@@ -92,14 +98,16 @@ def test_every_key_names_a_node_of_the_reduced_store_shipped_beside_it() -> None
 
 def test_a_key_two_label_cones_both_reach_carries_BOTH_labels() -> None:
     """The set-valued half of the key space. An implementation that picks one label arbitrarily,
-    or that keys per label, cannot produce this entry."""
+    or that keys per label, cannot produce this entry.
+    """
     both = [labels for _key, (labels, _frame) in _entries() if len(labels) > 1]
     assert ("s_down", "s_up") in both
 
 
 def test_the_shared_prefix_carries_the_labels_and_never_the_string_nominal() -> None:
     """§8.2(i)'s nominal-exclusion clause: every label's cone reaches the shared prefix, so a
-    producer that unions raw label sets would put `nominal` on it."""
+    producer that unions raw label sets would put `nominal` on it.
+    """
     seen: set[str] = set()
     for _key, (labels, _frame) in _entries():
         seen.update(labels)
@@ -109,7 +117,8 @@ def test_the_shared_prefix_carries_the_labels_and_never_the_string_nominal() -> 
 def test_a_key_only_the_nominal_cone_reaches_carries_an_EMPTY_tuple_and_a_real_frame() -> None:
     """The empty tuple is how a key no non-nominal label reaches is carried — it renders `""` and
     must still point at the user's line. Dropping such keys leaves the nominal universe's failures
-    unattributed."""
+    unattributed.
+    """
     nominal_only = [frame for _key, (labels, frame) in _entries() if labels == ()]
     assert nominal_only
     assert any(FIXTURES.name in str(frame) for frame in nominal_only)
@@ -133,7 +142,8 @@ def test_an_unvaried_builder_call_in_a_varied_session_ships_None() -> None:
     returns `None` whatever the producer does.
 
     The paired assertion is the whole file above: the SAME session's varied call must be
-    populated, so a producer that simply never fires satisfies neither."""
+    populated, so a producer that simply never fires satisfies neither.
+    """
     varied, plain = _plans()
     assert varied.process.variation_labels is not None
     assert plain.process.variation_labels is None

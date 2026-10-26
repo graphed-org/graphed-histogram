@@ -63,7 +63,8 @@ def test_an_unweighted_fill_equals_an_unweighted_eager_reference() -> None:
 
 def test_the_suppressed_ambient_weight_contributes_NO_labels() -> None:
     """The discriminator against suppressing the weight VALUES while keeping the label set: that
-    implementation returns three per-universe-identical counts histograms, this one returns one."""
+    implementation returns three per-universe-identical counts histograms, this one returns one.
+    """
     _session, source, _data = partitioned_events()
     ctx = _weighted_context(source)
     h = counts()
@@ -79,7 +80,8 @@ def test_the_suppressed_ambient_weight_contributes_NO_labels() -> None:
 
 def test_the_same_program_without_the_flag_does_carry_the_ambient_labels() -> None:
     """The instrument: the ambient registry really does reach this fill, so the bare shape above
-    is the flag's doing and not an empty registry."""
+    is the flag's doing and not an empty registry.
+    """
     _session, source, _data = partitioned_events()
     ctx = _weighted_context(source)
     h = weighted()
@@ -89,7 +91,8 @@ def test_the_same_program_without_the_flag_does_carry_the_ambient_labels() -> No
 
 def test_unweighted_together_with_an_explicit_weight_is_a_record_time_error() -> None:
     """§2.5: the two arguments contradict each other, so the call is refused rather than one of
-    them silently winning. Record-time — nothing is staged and nothing runs."""
+    them silently winning. Record-time — nothing is staged and nothing runs.
+    """
     _session, root = in_memory_events()
     ctx = _weighted_context(root)
     h = counts()

@@ -33,7 +33,9 @@ def _filled(storage: str, axis: Any, x: Any, w: Any, s: Any, **meta: Any) -> bh.
 
 def test_g12a_fixed_axes_still_refuse_to_merge() -> None:
     with pytest.raises(ValueError):
-        gh.add_histograms(bh.Histogram(bh.axis.Regular(4, 0, 1)), bh.Histogram(bh.axis.Regular(4, 0, 2)))
+        gh.add_histograms(
+            bh.Histogram(bh.axis.Regular(4, 0, 1)), bh.Histogram(bh.axis.Regular(4, 0, 2))
+        )
 
 
 @pytest.mark.parametrize("storage", STORAGES)

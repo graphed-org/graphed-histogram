@@ -9,12 +9,14 @@ both its controls in the SAME test. The MATCHER control puts one-line files the 
 through the identical matcher, one line per alternation branch — no edit to either source tree can
 silence it, and a branch that had gone dead would show up as a missing hit rather than as a quiet
 empty result. The BEHAVIORAL control asserts the surviving implementation still answers the
-fallback, which the rule cannot lose without losing the resolution property this milestone rests on.
+fallback, which the rule cannot lose without losing the resolution property this milestone rests
+on.
 
 The control is deliberately NOT a spelling in `graphed`'s own source: this milestone rewrites the
 canonical `_member_for`, and a source-spelling control there would redden a frozen test in this
 repository for a legal implementation, invisibly to its owner. The tree is resolved from
-`graphed_histogram.__file__` — the editable install points at the real source — never a path literal.
+`graphed_histogram.__file__` — the editable install points at the real source — never a path
+literal.
 """
 
 from __future__ import annotations
@@ -40,7 +42,9 @@ CONTROL_LINES = (
 
 
 def _hits(root: Path) -> list[tuple[str, int, str]]:
-    """Every `*.py` line under `root` matching the rule, as `(relative path, line number, text)`."""
+    """Every `*.py` line under `root` matching the rule, as
+    `(relative path, line number, text)`.
+    """
     found = []
     for path in sorted(root.rglob("*.py")):
         for number, line in enumerate(path.read_text().splitlines(), 1):
@@ -55,7 +59,8 @@ def _rendered(hits: list[tuple[str, int, str]]) -> str:
 
 def test_no_second_implementation_of_the_fallback_rule_exists(tmp_path: Path) -> None:
     """The null leg over the installed package's real source tree, run beside both of its controls
-    so no leg can report green while the instrument was dead."""
+    so no leg can report green while the instrument was dead.
+    """
     for index, line in enumerate(CONTROL_LINES):
         directory = tmp_path / f"branch{index}"
         directory.mkdir()

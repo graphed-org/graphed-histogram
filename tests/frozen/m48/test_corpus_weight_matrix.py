@@ -50,7 +50,10 @@ N_PARTITIONS = 4
 #: (output, label) -> reference file stem
 MATRIX = (
     {("ttbar_4j1b", label): f"ttbar_4j1b_{label}" for label in ("nominal", "btag_up", "btag_down")}
-    | {("ttbar_4j2b", label): f"ttbar_4j2b_{label}" for label in ("nominal", "btag_up", "btag_down")}
+    | {
+        ("ttbar_4j2b", label): f"ttbar_4j2b_{label}"
+        for label in ("nominal", "btag_up", "btag_down")
+    }
     | {("ttgamma", label): f"ttgamma_{label}" for label in ("nominal", "pho_up", "pho_down")}
 )
 
@@ -66,9 +69,14 @@ class CorpusEvents:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("corpus://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("corpus://events", "", s, steps_per_file)
+            for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -81,7 +89,9 @@ def _source(session: Session) -> tuple[Any, CorpusEvents]:
 
 
 def _stable(values: Array) -> Array:
-    """The corpus's pre-fill 6-decimal rounding, as a recorded ufunc (`np.round`'s own lowering)."""
+    """The corpus's pre-fill 6-decimal rounding, as a recorded ufunc (`np.round`'s own
+    lowering).
+    """
     return np.rint(values * 1e6) / 1e6
 
 
@@ -106,7 +116,9 @@ def _ttgamma(events: Any) -> Array:
     muons = events.Muon[events.Muon.pt > 30]
     good_jets = events.Jet[events.Jet.pt > 25]
     selected = (
-        (gak.num(photons, axis=1) >= 1) & (gak.num(muons, axis=1) >= 1) & (gak.num(good_jets, axis=1) >= 2)
+        (gak.num(photons, axis=1) >= 1)
+        & (gak.num(muons, axis=1) >= 1)
+        & (gak.num(good_jets, axis=1) >= 2)
     )
     return _stable(gak.drop_none(gak.firsts(photons[selected].pt)))
 
@@ -147,19 +159,24 @@ def _matrix() -> tuple[dict[str, Any], CorpusEvents, int]:
 
 
 @pytest.mark.parametrize(("slot", "reference"), sorted(MATRIX.items()))
-def test_the_weight_matrix_reproduces_its_corpus_reference(slot: tuple[str, str], reference: str) -> None:
+def test_the_weight_matrix_reproduces_its_corpus_reference(
+    slot: tuple[str, str], reference: str
+) -> None:
     output, label = slot
     unpacked, _source, _tasks = _matrix()
     got = unpacked[output][label]
     stored = json.loads((REFERENCES / f"{reference}.json").read_text(encoding="utf-8"))
-    assert bin_values(got) == stored["values"], f"{reference}: bin contents drifted from the corpus"
+    assert bin_values(got) == stored["values"], (
+        f"{reference}: bin contents drifted from the corpus"
+    )
     assert fingerprint(got) == stored["fingerprint"], f"{reference}: fingerprint drifted"
 
 
 def test_every_output_carries_exactly_its_own_labels() -> None:
     """Absent labels are absent (§6.1a): the pho labels never leak onto a ttbar output, and the
     btag labels never onto ttgamma, so the reference lookups above cannot silently agree by
-    reading a mapping that duplicates nominal under every label in the plan."""
+    reading a mapping that duplicates nominal under every label in the plan.
+    """
     unpacked, _source, _tasks = _matrix()
     assert sorted(unpacked["ttbar_4j1b"]) == ["btag_down", "btag_up", "nominal"]
     assert sorted(unpacked["ttbar_4j2b"]) == ["btag_down", "btag_up", "nominal"]
@@ -169,7 +186,8 @@ def test_every_output_carries_exactly_its_own_labels() -> None:
 def test_the_reference_run_reads_each_partition_exactly_once() -> None:
     """§5.2b, bound to the reference-matrix run ITSELF. Nine histograms come out of one pass: a
     per-variation re-run loop reads `n_partitions x n_labels` and a per-histogram plan reads
-    `n_partitions x n_outputs`; only the shared-IR lowering reads `n_partitions`."""
+    `n_partitions x n_outputs`; only the shared-IR lowering reads `n_partitions`.
+    """
     _unpacked, source, tasks = _matrix()
     assert tasks == N_PARTITIONS
     assert len(source.part_reads) == N_PARTITIONS

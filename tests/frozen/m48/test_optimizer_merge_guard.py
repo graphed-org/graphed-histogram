@@ -45,7 +45,8 @@ def _deduping(events: object) -> gh.boost.Histogram:
 
 def test_the_optimizer_merge_is_real_before_the_guard_is_asserted() -> None:
     """The instrument: without this the read below could be passing on a program whose labels
-    the optimizer never merged, and the merged read would be untested."""
+    the optimizer never merged, and the merged read would be untested.
+    """
     session, events = in_memory_events()
     h = _merging(events)
     marked = [node.node_id for node in h.fill_nodes()]
@@ -78,7 +79,8 @@ def test_a_varied_program_the_optimizer_does_not_merge_plans_normally() -> None:
 def test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill() -> None:
     """§1.2's dedup case, the result-mapping half. Three labels, TWO distinct fill nodes: the
     shared id replicates into both slots. A raw index into the undeduplicated fill list overruns
-    the value list `evaluate_ir` returns, which is an opaque worker-side `IndexError`."""
+    the value list `evaluate_ir` returns, which is an opaque worker-side `IndexError`.
+    """
     session, events = in_memory_events()
     h = _deduping(events)
     per_label = gh.fill_nodes_by_label(h)
@@ -93,4 +95,6 @@ def test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill() -> None:
     assert set(value) == {("met", "nominal"), ("met", "sig_up"), ("met", "sig_down")}
     nominal = np.asarray(value[("met", "nominal")].view(flow=True)["value"])
     assert np.array_equal(np.asarray(value[("met", "sig_up")].view(flow=True)["value"]), nominal)
-    assert not np.array_equal(np.asarray(value[("met", "sig_down")].view(flow=True)["value"]), nominal)
+    assert not np.array_equal(
+        np.asarray(value[("met", "sig_down")].view(flow=True)["value"]), nominal
+    )

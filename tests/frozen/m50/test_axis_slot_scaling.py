@@ -3,8 +3,9 @@
 Per partition, axis mode ships ONE combine payload entry against `N+1` in sibling mode — the length
 of the per-partition combine payload under §6.1c's key shape: one `(output, label)` entry per label
 in sibling mode, ONE `(output, None)` entry in axis mode. Scoped to WEIGHT labels only and one
-output, so the `1`-vs-`N+1` count is unambiguous (a mixed program's axis side still records `1 + |S|`
-fill nodes). Plus bin-for-bin equality, so the single slot is not achieved by dropping universes.
+output, so the `1`-vs-`N+1` count is unambiguous (a mixed program's axis side still records
+`1 + |S|` fill nodes). Plus bin-for-bin equality, so the single slot is not achieved by dropping
+universes.
 
 The "allocates one histogram object" and the N≈100 wall-clock comparison are implementer-report
 measurements (R0.11), NOT frozen here. Exercises the axis-mode slot, absent at the baseline: FAILS
@@ -40,7 +41,8 @@ def test_axis_mode_ships_one_slot_where_sibling_ships_n_plus_one() -> None:
 
 def test_the_single_axis_slot_carries_every_universe_bin_for_bin() -> None:
     """The single slot is the WHOLE variation family, not a collapse that dropped universes: sliced
-    per label it equals the sibling decomposition."""
+    per label it equals the sibling decomposition.
+    """
     _s, ea, _srca = partitioned()
     axis = gh.unpack(execute({"h": fill_weight_program(True, source=ea)}))["h"]
     _s2, es, _srcs = partitioned()

@@ -36,7 +36,8 @@ LABELS = ("nominal", "btag_up", "btag_down")
 
 def _program() -> tuple[Session, gh.boost.Histogram]:
     """The 4j1b region with a b-tag weight variation — selection identical across all three
-    labels, weights different in all three."""
+    labels, weights different in all three.
+    """
     session = Session(AwkwardBackend())
     events = from_awkward(session, "events", EVENTS)
     good = events.Jet[events.Jet.pt > 25]
@@ -70,7 +71,8 @@ def test_every_label_has_its_own_fill_node_under_the_per_label_accessor() -> Non
 def test_the_non_weight_input_prefix_is_identical_across_every_weight_label() -> None:
     """§4.3's binding form, quoted: the selection cone's node ids are identical across all weight
     labels. The axis inputs ARE the selection cone's terminal nodes, and interning makes equal ids
-    equal cones."""
+    equal cones.
+    """
     session, h = _program()
     nodes = _nodes(session)
     by_label = gh.fill_nodes_by_label(h)
@@ -88,7 +90,8 @@ def test_the_non_weight_input_prefix_is_identical_across_every_weight_label() ->
 
 def test_the_weight_input_is_what_differs_between_the_labels() -> None:
     """The instrument for the assertion above: if the weight inputs agreed too, that test would
-    pass under an implementation that recorded one fill and replayed it under three names."""
+    pass under an implementation that recorded one fill and replayed it under three names.
+    """
     session, h = _program()
     nodes = _nodes(session)
     by_label = gh.fill_nodes_by_label(h)
@@ -103,7 +106,8 @@ def test_the_weight_input_is_what_differs_between_the_labels() -> None:
 def test_the_labels_occupy_the_same_bins_and_carry_different_contents() -> None:
     """m05's equal-counts check as sanity, in the form a weighted histogram can carry: the b-tag SF
     is strictly positive, so an unchanged selection means an unchanged set of occupied bins, while
-    a re-run selection (`mask_L = mask & g_L`) drops events and empties bins."""
+    a re-run selection (`mask_L = mask & g_L`) drops events and empties bins.
+    """
     session, h = _program()
     by_label = gh.fill_nodes_by_label(h)
     filled = {label: session.materialize(by_label[label]) for label in LABELS}
@@ -113,4 +117,6 @@ def test_the_labels_occupy_the_same_bins_and_carry_different_contents() -> None:
         occupied = np.asarray(filled[label].values()) != 0
         assert np.array_equal(occupied, nominal_occupied), f"{label} changed which bins are filled"
     for label in ("btag_up", "btag_down"):
-        assert not np.array_equal(np.asarray(filled[label].values()), np.asarray(filled["nominal"].values()))
+        assert not np.array_equal(
+            np.asarray(filled[label].values()), np.asarray(filled["nominal"].values())
+        )

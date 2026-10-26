@@ -16,9 +16,9 @@ coordinate, so their ambient WEIGHT members are already DIFFERENT nodes. An exec
 between the two labels therefore does not separate a correct axis-value resolution from one that
 kept nominal kinematics — C5 has to be read off the axis-value member structurally.
 
-The oracle is eager awkward: each universe is `(jes scale, SF coefficient)`, and a JOINT row carries
-BOTH coordinates. `test_joint_fill_resolution` validates the oracle against the unpruned grid in the
-same run before leaning on the pruned program's joint row.
+The oracle is eager awkward: each universe is `(jes scale, SF coefficient)`, and a JOINT row
+carries BOTH coordinates. `test_joint_fill_resolution` validates the oracle against the unpruned
+grid in the same run before leaning on the pruned program's joint row.
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ JOINT = "btag_hf_up__jes_up"
 JOINT_POINT = {"btag": "hf_up", "jes": "up"}
 BTAG_ONLY = "btag_hf_up"
 
-#: the one-at-a-time union: nominal, the shift's own labels and the b-tag family's, all of which the
-#: fanout leaves untouched whether or not a placement prunes the joints
+#: the one-at-a-time union: nominal, the shift's own labels and the b-tag family's, all of which
+#: the fanout leaves untouched whether or not a placement prunes the joints
 BASE_LABELS = ("nominal", "jes_up", "jes_down", BTAG_ONLY, "btag_hf_down")
 
 #: what the placement leaves standing — the union plus the ONE selected joint
@@ -104,9 +104,13 @@ class _Source:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         return self.data[part.entry_start : part.entry_stop]
 
@@ -122,7 +126,8 @@ def partitioned() -> tuple[Session, Any]:
 # ---- the program ------------------------------------------------------------------------------
 def _sf(jets: Any, coeff: float) -> Any:
     """The per-event b-tag SF: a per-JET factor multiplied INSIDE the product, so the SF inherits
-    the jet pT of whichever universe evaluates it."""
+    the jet pT of whichever universe evaluates it.
+    """
     return gak.prod(1.0 + coeff * (jets.pt / 100.0), axis=1)
 
 
@@ -189,7 +194,8 @@ def three_role_fill(context: Any, *, axis_mode: bool) -> gh.boost.Histogram:
 # ---- eager oracle -----------------------------------------------------------------------------
 def eager_universe(jes_scale: float, sf_coeff: float) -> bh.Histogram:
     """The universe at one `(jes, btag)` coordinate pair, in pure awkward — independent of the
-    resolution rule under test."""
+    resolution rule under test.
+    """
     pt = EVENTS.Jet.pt * jes_scale
     h = bh.Histogram(AXIS, storage=bh.storage.Double())
     h.fill(
@@ -221,13 +227,15 @@ def execute(histograms: dict[str, gh.boost.Histogram], steps: int = 3) -> dict[A
 
 def var_index(hist: bh.Histogram) -> int:
     """The variation axis's position, read per-axis from `__dict__` — `h.axes.name` raises unless
-    EVERY axis carries a name."""
+    EVERY axis carries a name.
+    """
     return next(i for i, a in enumerate(hist.axes) if a.__dict__.get("name") == "variation")
 
 
 def slice_label(hist: bh.Histogram, label: str) -> bh.Histogram:
     """A pure-`bh` positional slice of the variation axis; the named-dict form is a `TypeError` on
-    a bare `bh.Histogram`."""
+    a bare `bh.Histogram`.
+    """
     return hist[{var_index(hist): bh.loc(label)}]
 
 
