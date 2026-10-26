@@ -13,6 +13,7 @@ THRESHOLD = 90.0
 
 
 def main(path: str) -> int:
+    """Print each file's coverage from the report at ``path``; return 1 if any is under 90%."""
     with open(path) as fh:
         files = json.load(fh)["files"]
 

@@ -55,6 +55,7 @@ class HistogramForm:
     spec_hash: str
 
     def describe(self) -> str:
+        """Return the form's display name, ``histogram[<spec hash>]``."""
         return f"histogram[{self.spec_hash}]"
 
 
@@ -98,6 +99,7 @@ class FillEvaluator:
     constants: str | None = None
 
     def __call__(self, *values: object) -> bh.Histogram:
+        """Fill one chunk's ``values`` into a fresh empty histogram and return it."""
         h = empty(self.spec)
         fixed = json.loads(self.constants) if self.constants else {}
         axis_fixed = dict(fixed.get("axes", []))
@@ -668,6 +670,7 @@ class Histogram(bh.Histogram):
     """
 
     def __init__(self, *axes: Any, storage: Any = None, metadata: Any = None) -> None:
+        """Build an empty deferred histogram; ``storage`` defaults to ``Double``."""
         if storage is None:
             storage = bh.storage.Double()
         super().__init__(*axes, storage=storage, metadata=metadata)
@@ -997,9 +1000,11 @@ class Histogram(bh.Histogram):
         return node
 
     def staged_fills(self) -> int:
+        """Return how many fill nodes this histogram has recorded."""
         return len(self._fill_nodes)
 
     def fill_nodes(self) -> list[Array]:
+        """Return the recorded fill nodes, in recording order, without label attribution."""
         return list(self._fill_nodes)
 
     def evaluators(self) -> dict[str, Callable[..., object]]:
@@ -1399,6 +1404,7 @@ def histogram2d(
     range: Sequence[Sequence[float]] | None = None,
     weights: Array | None = None,
 ) -> Histogram:
+    """Fill a deferred 2-D Regular-axis histogram: the numpy-like ``histogram2d``."""
     ax, ay = _regular_axes(bins, range, 2)
     storage = bh.storage.Weight() if weights is not None else bh.storage.Int64()
     return Histogram(ax, ay, storage=storage).fill(x, y, weight=weights)
@@ -1411,6 +1417,7 @@ def histogramdd(
     range: Sequence[Sequence[float]] | None = None,
     weights: Array | None = None,
 ) -> Histogram:
+    """Fill a deferred N-D Regular-axis histogram: the numpy-like ``histogramdd``."""
     axes = _regular_axes(bins, range, len(sample))
     storage = bh.storage.Weight() if weights is not None else bh.storage.Int64()
     return Histogram(*axes, storage=storage).fill(*sample, weight=weights)

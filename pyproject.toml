@@ -89,9 +89,6 @@ convention = "pep257"
 # A test's name is its summary line: its docstring, when it has one, elaborates the property under
 # test as one paragraph rather than issuing a command.
 "tests/**" = ["D1", "D205", "D401"]
-# TEMPORARY: cleared by the docstring commit that follows.
-"src/**" = ["D1"]
-"scripts/**" = ["D1"]
 
 [tool.ruff.format]
 # ruff formats python blocks inside .md, which reflows the README's examples (aligned trailing

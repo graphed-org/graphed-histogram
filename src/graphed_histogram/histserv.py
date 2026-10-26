@@ -186,6 +186,7 @@ class Context:
         ports: tuple[int, int] = (10000, 10100),
         timeout_s: float = 600.0,
     ) -> None:
+        """Validate the offer and hold ``name``'s packing state, shared by an equal context."""
         offered = tuple(
             sorted({int(s) for s in ([memory_mb] if isinstance(memory_mb, int) else memory_mb)})
         )
@@ -274,6 +275,7 @@ class Histogram(boost.Histogram):
     def __init__(
         self, *axes: Any, storage: Any = None, metadata: Any = None, context: Context
     ) -> None:
+        """Build an empty deferred histogram backed by ``context``."""
         super().__init__(*axes, storage=storage, metadata=metadata)
         backed(self, context)
 
@@ -286,12 +288,14 @@ class HistservError(GraphedError):
     """
 
     def __init__(self, endpoint: str, code: str, details: str) -> None:
+        """Record the failing server's endpoint and the RPC's status code name and details."""
         super().__init__(endpoint, code, details)
         self.endpoint = endpoint
         self.code = code
         self.details = details
 
     def __str__(self) -> str:
+        """Name the server, the status code and the details."""
         return f"histserv at {self.endpoint} answered {self.code}: {self.details}"
 
 
@@ -335,6 +339,7 @@ class Receipt:
     kind: Any = field(default=None, compare=False)
 
     def __add__(self, other: Receipt) -> Receipt:
+        """Return the receipt that is not empty; two different holders refuse to add."""
         if other.hist_id is None or other == self:
             return self
         if self.hist_id is None:

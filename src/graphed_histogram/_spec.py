@@ -171,6 +171,7 @@ def spec_of(hist: bh.Histogram) -> str:
 
 
 def content_hash(spec: str) -> str:
+    """Return ``spec``'s content hash: ``"sha256:"`` and the hex SHA-256 of its UTF-8 bytes."""
     return "sha256:" + hashlib.sha256(spec.encode()).hexdigest()
 
 
