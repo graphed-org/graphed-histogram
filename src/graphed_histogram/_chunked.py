@@ -104,7 +104,7 @@ def _surrogate(cls: type) -> type[Chunked]:
     }
     with _LOCK:
         return _SURROGATES.setdefault(
-            cls, type(cls.__name__, (cls, Chunked), {**own, "dense_class": cls})
+            cls, type(cls.__name__, (cls, Chunked), {**own, "_dense_class": cls})
         )
 
 
@@ -135,7 +135,7 @@ class Chunked(bh.Histogram):
 
     __slots__ = ()
     #: the class a read turns this partial into
-    dense_class: ClassVar[type] = bh.Histogram
+    _dense_class: ClassVar[type] = bh.Histogram
     _gh_held: _Held
 
     def __init__(
@@ -154,7 +154,7 @@ class Chunked(bh.Histogram):
 
     def __reduce__(self) -> tuple[Any, ...]:
         held = self._gh_held
-        return (_restore, (self.dense_class, held.spec, held.chunked, held.attrs))
+        return (_restore, (self._dense_class, held.spec, held.chunked, held.attrs))
 
     def __getstate__(self) -> Any:
         Chunked._densify(self)
@@ -191,7 +191,7 @@ class Chunked(bh.Histogram):
                     a["categories"] = list(keys)
         return payload, where
 
-    def dense_copy(self) -> bh.Histogram:
+    def _dense_copy(self) -> bh.Histogram:
         """Return the dense histogram this partial reads as, leaving the partial chunked."""
         payload, where = self._grown()
         out = zero_of(json.dumps(payload))
@@ -202,7 +202,7 @@ class Chunked(bh.Histogram):
             for spec, part, lookup in zip(chunked.chunk_axes, key, where, strict=True):
                 index[spec.index] = part if lookup is None else lookup[part]
             view[tuple(index)] = chunk
-        return as_kind(out, (self.dense_class, self._gh_held.attrs))
+        return as_kind(out, (self._dense_class, self._gh_held.attrs))
 
     def _densify(self) -> None:
         """Turn this partial, in place, into the dense histogram it reads as.
@@ -216,7 +216,7 @@ class Chunked(bh.Histogram):
         with held.lock:
             if not isinstance(self, Chunked):
                 return
-            dense = self.dense_copy()
+            dense = self._dense_copy()
             for read, axis in zip(held.axes or (), dense.axes, strict=False):
                 vars(axis).update(vars(read))  # an edit made through `axes` before the read
             # Chunked's properties shadow bh's slots, so bh's descriptors write them, and before
@@ -243,7 +243,7 @@ class Chunked(bh.Histogram):
         """The axes the dense histogram will have, read from the spec and chunks."""
         held = self._gh_held
         if held.axes is None:
-            ns = hist if issubclass(self.dense_class, hist.BaseHist) else bh
+            ns = hist if issubclass(self._dense_class, hist.BaseHist) else bh
             tuple_ = hist.axis.NamedAxesTuple if ns is hist else bh.axis.AxesTuple
             held.axes = tuple_(_make_axis(a, ns.axis) for a in self._grown()[0]["axes"])
         return held.axes
@@ -298,7 +298,7 @@ class Chunked(bh.Histogram):
         axes = ", ".join(repr(a) for a in self.axes)
         storage = self.chunked.storage_type()
         return (
-            f"{self.dense_class.__name__}({axes}, storage={storage!r}) # chunked: "
+            f"{self._dense_class.__name__}({axes}, storage={storage!r}) # chunked: "
             f"{len(self.chunked)} filled slices; reading it (e.g. .values()) makes it dense"
         )
 
@@ -339,7 +339,7 @@ class Chunked(bh.Histogram):
         self._unknown()
         return True
 
-    def merged(self, other: Any) -> Chunked | None:
+    def _merged(self, other: Any) -> Chunked | None:
         """Return ``self + other`` as a new partial when both hold one spec; None otherwise."""
         if not (isinstance(other, Chunked) and self._holds_spec_of(other)):
             return None

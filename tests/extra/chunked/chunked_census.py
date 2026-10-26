@@ -18,7 +18,7 @@ from graphed_histogram._chunked import Chunked
 
 #: inherited by spawned workers, so their densifies land beside the driver's
 DIR = os.environ.setdefault("GH_CHUNKED_CENSUS", tempfile.mkdtemp(prefix="chunked-census-"))
-_dense_copy = Chunked.dense_copy
+_dense_copy = Chunked._dense_copy
 
 
 def _counted(self: Chunked) -> Any:
@@ -26,7 +26,7 @@ def _counted(self: Chunked) -> Any:
     return _dense_copy(self)
 
 
-Chunked.dense_copy = _counted  # type: ignore[method-assign]
+Chunked._dense_copy = _counted  # type: ignore[method-assign]
 
 
 def take() -> list[int]:

@@ -13,6 +13,7 @@ from typing import Any
 import awkward as ak
 import boost_histogram as bh
 import graphed
+import hist
 import numpy as np
 import pytest
 from graphed.awkward import AwkwardBackend, AwkwardForm
@@ -21,7 +22,7 @@ from graphed.core.execution import LocalResources, SequentialRunner, WorkerResou
 from graphed_exec_local import ProcessPoolExecutor
 
 import graphed_histogram as gh
-from graphed_histogram._chunked import Chunked
+from graphed_histogram._chunked import Chunked, empty
 
 RNG = np.random.default_rng(66)
 N = 3000
@@ -269,6 +270,15 @@ def test_only_partials_of_one_spec_merge_chunked() -> None:
     a, b = Chunked(spec), Chunked(spec)
     a.fill(X, LABELS)
     b.fill(X, LABELS)
-    assert type(a.merged(b)) is Chunked
-    assert a.merged(Chunked(gh.spec_of(bh.Histogram(R, S(["a"]))))) is None
-    assert a.merged(bh.Histogram(R, S(["a", "b"]))) is None
+    assert type(a._merged(b)) is Chunked
+    assert a._merged(Chunked(gh.spec_of(bh.Histogram(R, S(["a"]))))) is None
+    assert a._merged(bh.Histogram(R, S(["a", "b"]))) is None
+
+
+@pytest.mark.parametrize("cls", [bh.Histogram, hist.Hist])
+@pytest.mark.parametrize("name", ["merged", "dense_copy", "dense_class"])
+def test_a_partial_carries_no_public_name_its_dense_class_lacks(cls: type, name: str) -> None:
+    h = empty(gh.spec_of(bh.Histogram(R, S(["a", "b"]))), (cls, ()))
+    assert isinstance(h, Chunked) and h.chunked is not None
+    assert not hasattr(h, name)
+    assert type(h) is cls  # the lookup read it, as any name the dense class lacks does
