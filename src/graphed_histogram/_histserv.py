@@ -532,3 +532,8 @@ def _serve(
         process=_Served(plan.process, slots),
         services=tuple(services[n] for n in sorted(services)),
     )
+
+
+# named by the module users import them from, as docs and pickles show them
+for _cls in (Context, HistservError, Receipt):
+    _cls.__module__ = "graphed_histogram.histserv"
