@@ -73,13 +73,27 @@ fail_under = 90
 show_missing = true
 
 [tool.ruff]
-line-length = 110
+# PEP 8's team maximum
+line-length = 99
 src = ["src", "tests"]
 target-version = "py311"
+extend-exclude = ["tests/frozen"]  # TEMPORARY: restyled in its own commit
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415"]
-ignore = ["E501"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415", "N", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+# A test's name states what it checks, and its docstring, when it has one, states the property
+# under test rather than a command.
+"tests/**" = ["D1", "D401"]
+# TEMPORARY: cleared by the hand-rewrap and docstring commits that follow.
+"src/**" = ["E501", "D1", "D205", "D400", "D401"]
+"scripts/**" = ["D1"]
+"tests/extra/**" = ["E501", "D205", "N806"]
+"tests/_corpus/**" = ["E501", "D205"]
 
 [tool.ruff.format]
 # ruff formats python blocks inside .md, which reflows the README's examples (aligned trailing

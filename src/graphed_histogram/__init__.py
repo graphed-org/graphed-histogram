@@ -41,7 +41,8 @@ def spec_of(hist: object) -> str:
 
 def evaluators(*histograms: Histogram) -> dict[str, Callable[..., object]]:
     """Merged ``{content hash: evaluator}`` registry, for wiring these fills into a graph you
-    evaluate yourself."""
+    evaluate yourself.
+    """
     out: dict[str, Callable[..., object]] = {}
     for h in histograms:
         out.update(h.evaluators())

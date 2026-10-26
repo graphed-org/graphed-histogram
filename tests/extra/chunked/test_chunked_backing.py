@@ -23,7 +23,9 @@ from graphed_histogram._chunked import Chunked
 
 RNG = np.random.default_rng(66)
 N = 3000
-EVENTS = ak.zip({"x": RNG.uniform(0.0, 1.0, N), "w": RNG.normal(1.0, 0.3, N), "c": RNG.integers(0, 6, N)})
+EVENTS = ak.zip(
+    {"x": RNG.uniform(0.0, 1.0, N), "w": RNG.normal(1.0, 0.3, N), "c": RNG.integers(0, 6, N)}
+)
 LABELS = RNG.choice(["a", "b", "zz", "q"], N)
 
 
@@ -35,9 +37,13 @@ class Events:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("chunked://ev", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("chunked://ev", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         return self.data[part.entry_start : part.entry_stop]
 
@@ -59,8 +65,12 @@ def _hists(dense: bool) -> dict[str, gh.boost.Histogram]:
         "int64": gh.boost.Histogram(
             bh.axis.Integer(0, 6), bh.axis.IntCategory([], growth=True), storage=bh.storage.Int64()
         ),
-        "double": gh.boost.Histogram(reg, bh.axis.StrCategory(["sr", "cr"]), storage=bh.storage.Double()),
-        "growth": gh.boost.Histogram(reg, bh.axis.StrCategory([], growth=True), storage=bh.storage.Weight()),
+        "double": gh.boost.Histogram(
+            reg, bh.axis.StrCategory(["sr", "cr"]), storage=bh.storage.Double()
+        ),
+        "growth": gh.boost.Histogram(
+            reg, bh.axis.StrCategory([], growth=True), storage=bh.storage.Weight()
+        ),
         "axis": gh.boost.Histogram(reg, bh.axis.IntCategory([0, 1]), storage=bh.storage.Weight()),
         "mean": gh.boost.Histogram(reg, bh.axis.IntCategory([0, 1]), storage=bh.storage.Mean()),
     }
@@ -84,7 +94,11 @@ RUNNERS: dict[str, Callable[[], Any]] = {
 
 
 def _bytes(h: bh.Histogram) -> tuple[bytes, list[Any], bool]:
-    return np.ascontiguousarray(h.view(flow=True)).tobytes(), [list(ax) for ax in h.axes], h._variance_known
+    return (
+        np.ascontiguousarray(h.view(flow=True)).tobytes(),
+        [list(ax) for ax in h.axes],
+        h._variance_known,
+    )
 
 
 def _flat(value: Mapping[Any, Any]) -> dict[Any, bh.Histogram]:
@@ -102,12 +116,16 @@ def test_chunked_and_dense_backings_agree_byte_for_byte(runner: str) -> None:
     dense = _flat(RUNNERS[runner]().run(gh.plan(_hists(True), steps_per_file=4)).value)
     assert chunked.keys() == dense.keys() and len(chunked) == 10
     # the witness, read before anything densifies a value: chunked merges ran end to end
-    assert {k for k, h in chunked.items() if type(h) is Chunked} == {k for k in chunked if k[0] != "mean"}
+    assert {k for k, h in chunked.items() if type(h) is Chunked} == {
+        k for k in chunked if k[0] != "mean"
+    }
     assert all(type(h) is bh.Histogram for h in dense.values())
     for key in chunked:
         assert _bytes(chunked[key]) == _bytes(dense[key]), key
         assert type(chunked[key]) is bh.Histogram  # read, it is the plain dense histogram
-    assert chunked[("weight", "nominal")].view(flow=True)["value"][:, 3, 2].sum() > 0  # both overflows filled
+    assert (
+        chunked[("weight", "nominal")].view(flow=True)["value"][:, 3, 2].sum() > 0
+    )  # both overflows filled
 
 
 def test_a_partial_ships_chunked_and_reads_dense() -> None:
@@ -115,14 +133,18 @@ def test_a_partial_ships_chunked_and_reads_dense() -> None:
     partial = plan.process(plan.tasks[0].partition, LocalResources())
     shipped = pickle.loads(pickle.dumps(partial[("growth", "nominal")]))
     assert type(shipped) is Chunked and len(shipped.chunked) == 2
-    assert isinstance(shipped, bh.Histogram) and type(plan.empty()[("growth", "nominal")]) is Chunked
+    assert (
+        isinstance(shipped, bh.Histogram) and type(plan.empty()[("growth", "nominal")]) is Chunked
+    )
     assert list(shipped.axes[1]) == ["d2", "d1"]  # first-seen order, as a growing dense axis has
 
 
 def test_a_protocol_probe_keeps_it_chunked_and_any_other_read_densifies() -> None:
     h = _evaluate("growth str with initial categories", False)
     assert getattr(h, "__dask_graph__", None) is None and type(h) is Chunked
-    assert h._variance_known is False and type(h) is bh.Histogram  # a __dict__ attribute densifies too
+    assert (
+        h._variance_known is False and type(h) is bh.Histogram
+    )  # a __dict__ attribute densifies too
     Chunked._materialize(h)  # a caller that lost the race finds it done
     assert _bytes(h) == _bytes(_evaluate("growth str with initial categories", True))
 
@@ -148,7 +170,12 @@ R = bh.axis.Regular(10, 0.0, 1.0)
 #: case -> (axes, storage, fill columns, weighted); a Mean storage also takes ``sample=X``
 CHUNKED: dict[str, tuple[list[Any], Any, list[Any], bool]] = {
     "declared str, undeclared array labels": ([R, S(["a", "b"])], ST.Weight(), [X, LABELS], True),
-    "growth str with initial categories": ([R, S(["q"], growth=True)], ST.Double(), [X, LABELS], True),
+    "growth str with initial categories": (
+        [R, S(["q"], growth=True)],
+        ST.Double(),
+        [X, LABELS],
+        True,
+    ),
     "declared int + growth str, scalar x": (
         [R, IC([1, 2, 3]), S([], growth=True)],
         ST.Weight(),
@@ -171,7 +198,12 @@ DENSE: dict[str, tuple[list[Any], Any, list[Any], bool]] = {
         [X, LABELS],
         False,
     ),
-    "growing Integer": ([bh.axis.Integer(0, 3, growth=True), S(["a"])], ST.Double(), [C, LABELS], False),
+    "growing Integer": (
+        [bh.axis.Integer(0, 3, growth=True), S(["a"])],
+        ST.Double(),
+        [C, LABELS],
+        False,
+    ),
     "no category axis": ([R], ST.Double(), [X], True),
     "only category axes": ([S(["a"]), IC([], growth=True)], ST.Double(), [LABELS, C], False),
 }
@@ -182,7 +214,9 @@ def _evaluate(case: str, dense: bool) -> bh.Histogram:
     sample = isinstance(storage, (ST.Mean, ST.WeightedMean))
     spec = gh.spec_of(bh.Histogram(*axes, storage=storage))
     if dense:  # the oracle: one eager bh fill
-        return gh.zero_of(spec).fill(*cols, weight=W if weighted else None, sample=X if sample else None)
+        return gh.zero_of(spec).fill(
+            *cols, weight=W if weighted else None, sample=X if sample else None
+        )
     ev = gh.FillEvaluator(spec, len(axes), weighted, sample)
     return ev(*cols, *([W] if weighted else []), *([X] if sample else []))
 
@@ -210,7 +244,9 @@ def test_values_bh_refuses_raise_as_a_dense_fill_does(cols: list[Any]) -> None:
 
 def test_transformed_regular_never_reaches_a_fill() -> None:
     with pytest.raises(TypeError, match="transform"):
-        gh.spec_of(bh.Histogram(bh.axis.Regular(4, 1.0, 10.0, transform=bh.axis.transform.log), S(["a"])))
+        gh.spec_of(
+            bh.Histogram(bh.axis.Regular(4, 1.0, 10.0, transform=bh.axis.transform.log), S(["a"]))
+        )
 
 
 def test_an_attribute_set_before_the_first_read_survives_it() -> None:

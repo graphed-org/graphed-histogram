@@ -72,13 +72,16 @@ def test_two_interned_fills_intern_to_one_node_and_still_count_twice() -> None:
     assert np.allclose(_run(twice), _values(want), rtol=1e-12)  # the 0.5x under-sum dies here
     assert np.allclose(_values(want), 2.0 * once, rtol=1e-12)
 
-    grouped = gh.unpack(SequentialRunner().run(gh.plan({"h": _hist(2)}, steps_per_file=STEPS)).value)
+    grouped = gh.unpack(
+        SequentialRunner().run(gh.plan({"h": _hist(2)}, steps_per_file=STEPS)).value
+    )
     assert np.allclose(_values(grouped["h"]), _values(want), rtol=1e-12)  # already replicated
 
 
 def test_a_pair_that_does_not_intern_still_sums_both_fills() -> None:
     """The control against "multiply by the staged count": two fills over DISTINCT expressions of
-    the same values compile to two outputs, and must still total exactly twice."""
+    the same values compile to two outputs, and must still total exactly twice.
+    """
     _session, events, _data = partitioned(EVENTS)
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 8.0), storage=bh.storage.Weight())
     h.fill(events.x, weight=[events.w])

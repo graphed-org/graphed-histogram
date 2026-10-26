@@ -23,13 +23,17 @@ from hist.chunked import ChunkedHist
 
 from ._spec import _GROWTH_SPEC_VERSION, _STORAGES, SPEC_VERSION, _make_axis, zero_of
 
-_CATEGORY = {"StrCategory": "U", "IntCategory": "iu"}  # axis type -> the dtype kinds bh fills it with
+_CATEGORY = {
+    "StrCategory": "U",
+    "IntCategory": "iu",
+}  # axis type -> the dtype kinds bh fills it with
 _LOCK = threading.Lock()
 
 
 def chunkable(spec: str) -> bool:
     """Whether a ChunkedHist holds this spec's histogram with something to gain: a category axis and
-    a non-category one, no growing non-category axis, and not a Mean storage."""
+    a non-category one, no growing non-category axis, and not a Mean storage.
+    """
     payload = json.loads(spec)
     cat = [a["type"] in _CATEGORY for a in payload["axes"]]
     return (
@@ -43,7 +47,8 @@ def chunkable(spec: str) -> bool:
 
 def _internal_axis(i: int, a: dict[str, Any]) -> Any:
     """Axis ``i`` as the ChunkedHist holds it. A declared category axis is keyed by bin INDEX, its
-    overflow one more, so an undeclared label lands where a dense fill puts it."""
+    overflow one more, so an undeclared label lands where a dense fill puts it.
+    """
     name = f"a{i}"
     if a["type"] not in _CATEGORY:
         return _make_axis({**a, "metadata": {"name": name}})
@@ -72,10 +77,13 @@ _SURROGATES: dict[type, type] = {}
 def _surrogate(cls: type) -> type[Chunked]:
     """The Chunked subclass standing for ``cls``. ``cls`` is its first base, so the ``__class__`` swap
     finds the layout ``cls`` has (hist adds a weakref slot); Chunked's own members are copied over
-    ``cls``'s, which would otherwise come first."""
+    ``cls``'s, which would otherwise come first.
+    """
     if cls is bh.Histogram:
         return Chunked
-    own = {k: v for k, v in vars(Chunked).items() if k not in ("__dict__", "__module__", "__doc__")}
+    own = {
+        k: v for k, v in vars(Chunked).items() if k not in ("__dict__", "__module__", "__doc__")
+    }
     with _LOCK:
         return _SURROGATES.setdefault(cls, type(cls.__name__, (cls, Chunked), own))
 
@@ -84,30 +92,41 @@ def _target(cls: type) -> type:
     return bh.Histogram if cls is Chunked else cls.__bases__[0]
 
 
-def _restore(cls: type, spec: str, chunked: ChunkedHist, attrs: tuple[tuple[str, Any], ...]) -> Chunked:
+def _restore(
+    cls: type, spec: str, chunked: ChunkedHist, attrs: tuple[tuple[str, Any], ...]
+) -> Chunked:
     return _surrogate(cls)(spec, chunked, attrs)
 
 
 class Chunked(bh.Histogram):
     """A partial held as a ChunkedHist, typed as the histogram it stands for (see module doc). It
     holds its spec, chunks and result attributes; reading it, writing an attribute or pickling its
-    state densifies it, while ``axes``, a category-axis selection and its repr read the chunks."""
+    state densifies it, while ``axes``, a category-axis selection and its repr read the chunks.
+    """
 
     __slots__ = ()
 
     def __init__(
-        self, spec: str, chunked: ChunkedHist | None = None, attrs: tuple[tuple[str, Any], ...] = ()
+        self,
+        spec: str,
+        chunked: ChunkedHist | None = None,
+        attrs: tuple[tuple[str, Any], ...] = (),
     ) -> None:
         payload = json.loads(spec)
         if chunked is None:
             axes = [_internal_axis(i, a) for i, a in enumerate(payload["axes"])]
             chunked = ChunkedHist(*axes, storage=_STORAGES[payload["storage"]]())
         state = self.__dict__  # written directly: __setattr__ densifies
-        state.update(_gh_spec=spec, _gh_chunked=chunked, _gh_attrs=tuple(attrs), _gh_lock=threading.Lock())
+        state.update(
+            _gh_spec=spec, _gh_chunked=chunked, _gh_attrs=tuple(attrs), _gh_lock=threading.Lock()
+        )
 
     def __reduce__(self) -> tuple[Any, ...]:
         state = self.__dict__
-        return (_restore, (_target(type(self)), state["_gh_spec"], state["_gh_chunked"], state["_gh_attrs"]))
+        return (
+            _restore,
+            (_target(type(self)), state["_gh_spec"], state["_gh_chunked"], state["_gh_attrs"]),
+        )
 
     def __getstate__(self) -> Any:
         Chunked._materialize(self)
@@ -118,7 +137,9 @@ class Chunked(bh.Histogram):
         """The ChunkedHist this partial is held in."""
         return self.__dict__["_gh_chunked"]
 
-    def _like(self, spec: str, chunked: ChunkedHist | None = None, summed: bool = False) -> Chunked:
+    def _like(
+        self, spec: str, chunked: ChunkedHist | None = None, summed: bool = False
+    ) -> Chunked:
         out = type(self)(spec, chunked, self.__dict__["_gh_attrs"])
         if summed:
             out._unknown()
@@ -131,7 +152,8 @@ class Chunked(bh.Histogram):
 
     def _grown(self) -> tuple[dict[str, Any], list[dict[Any, int] | None]]:
         """The spec with its growth categories as filled, and per category axis its label -> index
-        map (None: keyed by index)."""
+        map (None: keyed by index).
+        """
         payload = json.loads(self.__dict__["_gh_spec"])
         known = iter(c.known_keys for c in self.chunked.chunk_axes)
         where: list[dict[Any, int] | None] = []
@@ -169,8 +191,12 @@ class Chunked(bh.Histogram):
             bh.Histogram._hist.__set__(self, dense._hist)
             bh.Histogram.axes.__set__(self, dense.axes)
             state = self.__dict__
-            state.update(vars(dense))  # before the swap: a reader that sees the dense class finds its state
-            object.__setattr__(self, "__class__", type(dense))  # past our __setattr__, which would re-lock
+            state.update(
+                vars(dense)
+            )  # before the swap: a reader that sees the dense class finds its state
+            object.__setattr__(
+                self, "__class__", type(dense)
+            )  # past our __setattr__, which would re-lock
             for key in [k for k in state if k.startswith("_gh_")]:
                 del state[key]
 
@@ -211,12 +237,17 @@ class Chunked(bh.Histogram):
 
     def _cut(self, index: Any) -> Chunked | None:
         """``self[{axis: i}]`` for an integer position ``i`` on a category axis (how
-        ``graphed.universe`` reads a variation axis) as a partial without that axis."""
+        ``graphed.universe`` reads a variation axis) as a partial without that axis.
+        """
         if not (isinstance(index, dict) and len(index) == 1):
             return None
         ((j, i),) = index.items()
         payload, _ = self._grown()
-        if not (isinstance(j, int) and isinstance(i, int | np.integer) and 0 <= j < len(payload["axes"])):
+        if not (
+            isinstance(j, int)
+            and isinstance(i, int | np.integer)
+            and 0 <= j < len(payload["axes"])
+        ):
             return None
         cut = payload["axes"][j]
         n = len(cut.get("categories", ()))
@@ -226,7 +257,9 @@ class Chunked(bh.Histogram):
         c = [spec.index for spec in self.chunked.chunk_axes].index(j)
         rest = [a for k, a in enumerate(payload["axes"]) if k != j]
         version = _GROWTH_SPEC_VERSION if any(a.get("growth") for a in rest) else SPEC_VERSION
-        out = self._like(json.dumps({"version": version, "storage": payload["storage"], "axes": rest}))
+        out = self._like(
+            json.dumps({"version": version, "storage": payload["storage"], "axes": rest})
+        )
         for key, chunk in self.chunked.items():
             if key[c] == part:
                 out.chunked.add_dense_view(key[:c] + key[c + 1 :], chunk)
@@ -253,7 +286,8 @@ class Chunked(bh.Histogram):
         threads: int | None = None,
     ) -> bh.Histogram:
         """Fill as a dense fill would, one ChunkedHist fill per category key in first-seen order.
-        Values bh refuses, or a ``sample=``, take bh's own dense fill, which raises as it does."""
+        Values bh refuses, or a ``sample=``, take bh's own dense fill, which raises as it does.
+        """
         payload = json.loads(self.__dict__["_gh_spec"])
         groups = None if sample is not None else _groups(payload, args, weight)
         if groups is None:
@@ -267,7 +301,10 @@ class Chunked(bh.Histogram):
 
     def iadd(self, other: Any) -> bool:
         """``self += other`` in place when both hold one spec; the caller owns ``self``."""
-        if not isinstance(other, Chunked) or other.__dict__["_gh_spec"] != self.__dict__["_gh_spec"]:
+        if (
+            not isinstance(other, Chunked)
+            or other.__dict__["_gh_spec"] != self.__dict__["_gh_spec"]
+        ):
             return False
         chunked = self.chunked
         chunked += other.chunked
@@ -299,7 +336,8 @@ def _codes(a: dict[str, Any], value: Any) -> tuple[Any, list[Any]] | None:
 
 def _groups(payload: dict[str, Any], args: Any, weight: Any) -> list[Any] | None:
     """``(key kwargs, dense kwargs, weight)`` per category key, in first-seen order; None when the
-    values are not ones this grouping reproduces bh on."""
+    values are not ones this grouping reproduces bh on.
+    """
     if len(args) != len(payload["axes"]):
         return None
     cat = [i for i, a in enumerate(payload["axes"]) if a["type"] in _CATEGORY]
@@ -311,7 +349,9 @@ def _groups(payload: dict[str, Any], args: Any, weight: Any) -> list[Any] | None
         coded.append(c)
     columns = {f"a{i}": np.asarray(v) for i, v in enumerate(args) if i not in cat}
     lengths = {
-        len(v) for v in (*columns.values(), np.asarray(weight), *(np.asarray(args[i]) for i in cat)) if v.ndim
+        len(v)
+        for v in (*columns.values(), np.asarray(weight), *(np.asarray(args[i]) for i in cat))
+        if v.ndim
     }
     if len(lengths) > 1:
         return None
@@ -340,4 +380,8 @@ def _groups(payload: dict[str, Any], args: Any, weight: Any) -> list[Any] | None
 
 def empty(spec: str, kind: Kind = BH) -> bh.Histogram:
     """The empty partial of ``spec`` as ``kind``: chunked where :func:`chunkable`, else dense."""
-    return _surrogate(kind[0])(spec, None, kind[1]) if chunkable(spec) else as_kind(zero_of(spec), kind)
+    return (
+        _surrogate(kind[0])(spec, None, kind[1])
+        if chunkable(spec)
+        else as_kind(zero_of(spec), kind)
+    )

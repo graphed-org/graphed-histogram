@@ -29,7 +29,14 @@ import numpy as np
 from graphed import GraphedError
 from graphed.core import Partition
 from graphed.core.execution import Plan, WorkerResources
-from graphed.services import Bindable, Launch, Resolvable, ServiceSpec, UnboundService, split_endpoint
+from graphed.services import (
+    Bindable,
+    Launch,
+    Resolvable,
+    ServiceSpec,
+    UnboundService,
+    split_endpoint,
+)
 
 from . import boost
 from ._chunked import as_kind
@@ -87,7 +94,8 @@ class _Size:
 
 def _predict(sizes: Sequence[_Size], workers: int) -> float:
     """A server's predicted peak bytes while it holds ``sizes`` and ``workers`` worker processes
-    dial it."""
+    dial it.
+    """
     m = max(s.stored for s in sizes)
     held = sum(_PER_HIST + _PER_TASK * s.tasks + (s.chunks + 1) * s.dense for s in sizes)
     return _BASE + held + (_FILL_A + _FILL_B * workers) * m + _PER_CONN * workers
@@ -131,14 +139,22 @@ class _Pack:
 
     def place(self, size: _Size) -> int:
         """First fit over the open servers in index order, else a new server at the smallest
-        offered size that holds the slot alone, else one sized to it."""
+        offered size that holds the slot alone, else one sized to it.
+        """
         for i, server in enumerate(self.servers):
-            if not server.alone and _predict([*server.sizes, size], self.workers) <= server.size * MiB:
+            if (
+                not server.alone
+                and _predict([*server.sizes, size], self.workers) <= server.size * MiB
+            ):
                 server.sizes.append(size)
                 return i
         alone = _predict([size], self.workers)
         fits = [s for s in self.memory_mb if alone <= s * MiB]
-        server = _Server(fits[0], False, [size]) if fits else _Server(math.ceil(alone / MiB), True, [size])
+        server = (
+            _Server(fits[0], False, [size])
+            if fits
+            else _Server(math.ceil(alone / MiB), True, [size])
+        )
         self.servers.append(server)
         return len(self.servers) - 1
 
@@ -153,7 +169,8 @@ class Context:
     in flight to one server and the worker processes that dial it. A ``name`` holds one packing
     state for the life of the process: a second context under that name with equal arguments
     shares it (and warns), one with other arguments is refused. Server ``i`` is the service
-    ``f"{name}-{i}"`` listening on a port in ``ports``; ``timeout_s`` is its start-up bound."""
+    ``f"{name}-{i}"`` listening on a port in ``ports``; ``timeout_s`` is its start-up bound.
+    """
 
     def __init__(
         self,
@@ -164,7 +181,9 @@ class Context:
         ports: tuple[int, int] = (10000, 10100),
         timeout_s: float = 600.0,
     ) -> None:
-        offered = tuple(sorted({int(s) for s in ([memory_mb] if isinstance(memory_mb, int) else memory_mb)}))
+        offered = tuple(
+            sorted({int(s) for s in ([memory_mb] if isinstance(memory_mb, int) else memory_mb)})
+        )
         if not offered:
             raise ValueError(f"histserv Context {name!r}: memory_mb offers no server size")
         if offered[0] * MiB < _BASE:
@@ -202,7 +221,12 @@ class Context:
         """``(name, memory_mb, predicted_bytes, n_histograms)`` per server opened so far."""
         with _LOCK:
             return tuple(
-                (f"{self.name}-{i}", s.size, math.ceil(_predict(s.sizes, self.workers)), len(s.sizes))
+                (
+                    f"{self.name}-{i}",
+                    s.size,
+                    math.ceil(_predict(s.sizes, self.workers)),
+                    len(s.sizes),
+                )
                 for i, s in enumerate(self._pack.servers)
             )
 
@@ -224,7 +248,8 @@ def backed(h: H, context: Context) -> H:
     """``h``, filled on ``context``'s servers from its next plan on; its graph is unchanged.
 
     A growth axis is refused (a server is sized before the run), as is a storage other than
-    ``Double``, ``Int64`` or ``Weight``."""
+    ``Double``, ``Int64`` or ``Weight``.
+    """
     for axis in h.axes:
         if axis.traits.growth:
             raise TypeError(
@@ -241,14 +266,17 @@ def backed(h: H, context: Context) -> H:
 class Histogram(boost.Histogram):
     """A ``gh.boost.Histogram`` filled on ``context``'s histserv servers (:func:`backed`)."""
 
-    def __init__(self, *axes: Any, storage: Any = None, metadata: Any = None, context: Context) -> None:
+    def __init__(
+        self, *axes: Any, storage: Any = None, metadata: Any = None, context: Context
+    ) -> None:
         super().__init__(*axes, storage=storage, metadata=metadata)
         backed(self, context)
 
 
 class HistservError(GraphedError):
     """A histserv RPC failed: the server's ``endpoint``, the gRPC status ``code`` name and its
-    ``details``. Unlike grpc's own error, it pickles, so it crosses a process boundary intact."""
+    ``details``. Unlike grpc's own error, it pickles, so it crosses a process boundary intact.
+    """
 
     def __init__(self, endpoint: str, code: str, details: str) -> None:
         super().__init__(endpoint, code, details)
@@ -267,7 +295,8 @@ _CLIENTS_LOCK = threading.Lock()
 
 def _call(endpoint: str, rpc: Callable[[Any], V]) -> V:
     """``rpc(client)`` against ``endpoint``'s cached client, a gRPC error raised as a
-    :class:`HistservError`."""
+    :class:`HistservError`.
+    """
     import grpc  # noqa: PLC0415  (only a bound run talks to a server)
 
     with _CLIENTS_LOCK:
@@ -286,7 +315,8 @@ def _call(endpoint: str, rpc: Callable[[Any], V]) -> V:
 @dataclass(frozen=True)
 class Receipt:
     """A backed slot's value between its reduce and ``resolve_services``: the server histogram
-    holding it. Receipts add by identity; one without ``hist_id`` is the empty value."""
+    holding it. Receipts add by identity; one without ``hist_id`` is the empty value.
+    """
 
     spec: str
     endpoint: str | None = None
@@ -306,7 +336,8 @@ class Receipt:
 
     def snapshot(self, *, delete: bool = False) -> Any:
         """The server histogram's contents as the slot's boost histogram (empty for the empty
-        receipt); ``delete`` also drops it from the server."""
+        receipt); ``delete`` also drops it from the server.
+        """
         out = zero_of(self.spec) if self.kind is None else as_kind(zero_of(self.spec), self.kind)
         if self.endpoint is None or self.hist_id is None:
             return out
@@ -328,7 +359,8 @@ _RPC_TIMEOUT_S = 600
 def _template(key: SlotKey, spec: str) -> Any:
     """The server-side histogram of a slot: a no-flow ``Regular`` per non-variation axis over its
     flow extent, so category and boolean flow bins survive, and the variation axis as the chunk
-    axis."""
+    axis.
+    """
     import hist  # noqa: PLC0415
     from histserv.chunked_hist import ChunkedHist  # noqa: PLC0415
 
@@ -336,7 +368,9 @@ def _template(key: SlotKey, spec: str) -> Any:
     labels = _labels(key, spec)
     dense = payload["axes"] if labels is None else payload["axes"][:-1]
     axes = [
-        hist.axis.Regular(_make_axis(a).extent, 0.0, 1.0, underflow=False, overflow=False, name=f"a{i}")
+        hist.axis.Regular(
+            _make_axis(a).extent, 0.0, 1.0, underflow=False, overflow=False, name=f"a{i}"
+        )
         for i, a in enumerate(dense)
     ]
     if labels is not None:
@@ -352,7 +386,8 @@ _SCOPE: ContextVar[tuple[str, dict[SlotKey, tuple[str, str]]] | None] = ContextV
 
 def _ship(key: SlotKey, spec: str, partial: Any) -> Receipt:
     """One partition's partial of a backed slot, sent as one ``FillMany`` keyed by the partition
-    (a chunk per variation label); a replay of that partition is ``ALREADY_EXISTS``, already done."""
+    (a chunk per variation label); a replay of that partition is ``ALREADY_EXISTS``, already done.
+    """
     scope = _SCOPE.get()
     if scope is None or key not in scope[1]:
         raise GraphedError(
@@ -370,7 +405,9 @@ def _ship(key: SlotKey, spec: str, partial: Any) -> Receipt:
         chunks = [serialize_chunk_payload((), view, shape=view.shape, dtype=view.dtype)]
     else:
         chunks = [
-            serialize_chunk_payload((label,), view[..., i], shape=view.shape[:-1], dtype=view.dtype)
+            serialize_chunk_payload(
+                (label,), view[..., i], shape=view.shape[:-1], dtype=view.dtype
+            )
             for i, label in enumerate(labels)
         ]
     request = hist_pb2.FillManyRequest(hist_id=hist_id, chunks=chunks)
@@ -403,10 +440,14 @@ class _Handles:
         self._lock = threading.Lock()
         self._ids: dict[SlotKey, str] | None = None
 
-    def ids(self, endpoints: Mapping[str, str], slots: Sequence[tuple[SlotKey, _Home]]) -> dict[SlotKey, str]:
+    def ids(
+        self, endpoints: Mapping[str, str], slots: Sequence[tuple[SlotKey, _Home]]
+    ) -> dict[SlotKey, str]:
         with self._lock:
             if self._ids is None:
-                self._ids = {key: _create(endpoints[home.name], key, home.spec) for key, home in slots}
+                self._ids = {
+                    key: _create(endpoints[home.name], key, home.spec) for key, home in slots
+                }
             return self._ids
 
     def __getstate__(self) -> dict[SlotKey, str] | None:
@@ -421,7 +462,8 @@ class _Handles:
 class _Served:
     """A served plan's process: the plan's own, around which each task's backed slots know their
     server histograms. Those are created on the first call or the first pickle, which every runner
-    reaches in the driver, so a worker receives their ids and creates none."""
+    reaches in the driver, so a worker receives their ids and creates none.
+    """
 
     inner: Callable[[Partition, WorkerResources], Any]
     slots: tuple[tuple[SlotKey, _Home], ...]
@@ -443,7 +485,9 @@ class _Served:
                     f"histserv server {name!r} speaks plaintext gRPC only, so its endpoint is "
                     f"tcp:// or grpc://, not {merged[name]!r}"
                 )
-        inner = self.inner.bind_services(endpoints) if isinstance(self.inner, Bindable) else self.inner
+        inner = (
+            self.inner.bind_services(endpoints) if isinstance(self.inner, Bindable) else self.inner
+        )
         bound = {name: merged[name] for name in self._names()}
         return replace(self, inner=inner, endpoints=bound, handles=_Handles())
 
@@ -471,7 +515,9 @@ class _Served:
         return () if hook is None else hook(partition)
 
 
-def _serve(plan: Plan[V], session: Any, backing: Sequence[tuple[SlotKey, str, Context]]) -> Plan[V]:
+def _serve(
+    plan: Plan[V], session: Any, backing: Sequence[tuple[SlotKey, str, Context]]
+) -> Plan[V]:
     """Size, pack and declare ``backing``'s slots for ``plan``: the work of ``pieces.serve``."""
     if plan.next_tasks is not None:
         raise GraphedError(
@@ -502,9 +548,13 @@ def _serve(plan: Plan[V], session: Any, backing: Sequence[tuple[SlotKey, str, Co
     for spec in landed.values():
         session.declare_service(spec)
     services = {s.name: s for s in plan.services} | landed
-    slots = tuple((key, _Home(f"{homes[key][0].name}-{homes[key][1]}", spec)) for key, spec, _ctx in backing)
+    slots = tuple(
+        (key, _Home(f"{homes[key][0].name}-{homes[key][1]}", spec)) for key, spec, _ctx in backing
+    )
     return replace(
-        plan, process=_Served(plan.process, slots), services=tuple(services[n] for n in sorted(services))
+        plan,
+        process=_Served(plan.process, slots),
+        services=tuple(services[n] for n in sorted(services)),
     )
 
 

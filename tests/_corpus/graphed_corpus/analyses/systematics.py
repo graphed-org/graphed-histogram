@@ -132,13 +132,18 @@ def ttbar_joint_reference(
 
 def ttgamma_region(events: ak.Array, *, variation: str) -> Hist:
     """TTGamma-style slice: >=1 photon pt>20, >=1 muon pt>30, >=2 jets pt>25; photon-pt observable
-    with a photon-ID scale factor as a weight systematic (pho_up/pho_down)."""
+    with a photon-ID scale factor as a weight systematic (pho_up/pho_down).
+    """
     photons = events.Photon[events.Photon.pt > 20]
     muons = events.Muon[events.Muon.pt > 30]
     jets = _apply_jes(events.Jet, variation=variation)
     good_jets = jets[jets.pt > 25]
 
-    sel = (ak.num(photons, axis=1) >= 1) & (ak.num(muons, axis=1) >= 1) & (ak.num(good_jets, axis=1) >= 2)
+    sel = (
+        (ak.num(photons, axis=1) >= 1)
+        & (ak.num(muons, axis=1) >= 1)
+        & (ak.num(good_jets, axis=1) >= 2)
+    )
     lead_pho_pt = ak.firsts(photons[sel].pt)
 
     sf = 0.98
@@ -159,4 +164,6 @@ TTBAR_FIXTURES = {
     for region in ("4j1b", "4j2b")
     for var in ("nominal", "jes_up", "jes_down", "btag_up", "btag_down")
 }
-TTGAMMA_FIXTURES = {f"ttgamma_{var}": var for var in ("nominal", "jes_up", "jes_down", "pho_up", "pho_down")}
+TTGAMMA_FIXTURES = {
+    f"ttgamma_{var}": var for var in ("nominal", "jes_up", "jes_down", "pho_up", "pho_down")
+}

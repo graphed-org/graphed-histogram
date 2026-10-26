@@ -57,7 +57,13 @@ _SF_CONTENT = {
 
 def _correctionlib_json() -> bytes:
     content = {
-        syst: {"nodetype": "binning", "input": "x", "edges": _SF_EDGES, "content": vals, "flow": "clamp"}
+        syst: {
+            "nodetype": "binning",
+            "input": "x",
+            "edges": _SF_EDGES,
+            "content": vals,
+            "flow": "clamp",
+        }
         for syst, vals in _SF_CONTENT.items()
     }
     cset = {
@@ -66,7 +72,10 @@ def _correctionlib_json() -> bytes:
             {
                 "name": "btag_sf",
                 "version": 1,
-                "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                "inputs": [
+                    {"name": "systematic", "type": "string"},
+                    {"name": "x", "type": "real"},
+                ],
                 "output": {"name": "sf", "type": "real"},
                 "data": {
                     "nodetype": "category",
@@ -87,12 +96,19 @@ class CorpusEvents:
     part_reads: list[tuple[int, int]] = field(default_factory=list)
 
     def __call__(self) -> ak.Array:
-        return self.data  # the whole-dataset loader, used only by the eager `materialize` reference
+        return (
+            self.data
+        )  # the whole-dataset loader, used only by the eager `materialize` reference
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("corpus://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("corpus://events", "", s, steps_per_file)
+            for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -114,7 +130,11 @@ def _record() -> tuple[Session, CorpusEvents, gh.boost.Histogram, Array, graphed
     payload = _correctionlib_json()
     sf = {
         syst: record_external(
-            session, CORRECTIONLIB_PLUGIN, payload, [njet], params={"name": "btag_sf", "systematic": syst}
+            session,
+            CORRECTIONLIB_PLUGIN,
+            payload,
+            [njet],
+            params={"name": "btag_sf", "systematic": syst},
         )
         for syst in SYSTEMATICS
     }
@@ -138,9 +158,12 @@ def _eager_reference() -> dict[str, np.ndarray]:
     out: dict[str, np.ndarray] = {}
     for label in graphed.labels(btag):
         w = np.asarray(
-            ak.to_numpy(ak.Array(session.materialize(graphed.universe(btag, label)))), dtype="float64"
+            ak.to_numpy(ak.Array(session.materialize(graphed.universe(btag, label)))),
+            dtype="float64",
         )
-        counts, _ = np.histogram(v, bins=AXIS.size, range=(AXIS.edges[0], AXIS.edges[-1]), weights=w)
+        counts, _ = np.histogram(
+            v, bins=AXIS.size, range=(AXIS.edges[0], AXIS.edges[-1]), weights=w
+        )
         out[label] = counts
     return out
 
@@ -152,14 +175,16 @@ def _values(h: gh.boost.Histogram) -> np.ndarray:
 
 def test_the_plan_runs_and_yields_all_three_universes() -> None:
     """Pre-fix this raised ``External payload '…' needs an evaluator`` — the fill's cone read a
-    correctionlib node whose evaluator `graphed_histogram.plan` never wired."""
+    correctionlib node whose evaluator `graphed_histogram.plan` never wired.
+    """
     seq = _run(SequentialRunner())
     assert sorted(seq["ht"]) == ["btag_down", "btag_up", "nominal"]
 
 
 def test_the_three_universes_are_distinct() -> None:
     """One payload content hash, three `systematic` params → THREE evaluators. A collision onto the
-    shared hash would make the universes identical (and `up`/`down` are chosen to bracket nominal)."""
+    shared hash would make the universes identical (and `up`/`down` are chosen to bracket nominal).
+    """
     seq = _run(SequentialRunner())["ht"]
     nominal, up, down = _values(seq["nominal"]), _values(seq["btag_up"]), _values(seq["btag_down"])
     assert not np.array_equal(nominal, up)
@@ -171,7 +196,8 @@ def test_the_three_universes_are_distinct() -> None:
 
 def test_the_process_pool_agrees_with_the_sequential_run() -> None:
     """The correctionlib evaluator must pickle and re-load in a worker: the distributed path is the
-    whole point. A non-picklable evaluator (the pre-fix local closure) raised on plan submission."""
+    whole point. A non-picklable evaluator (the pre-fix local closure) raised on plan submission.
+    """
     ProcessPoolExecutor = pytest.importorskip("graphed_exec_local").ProcessPoolExecutor
     seq = _run(SequentialRunner())["ht"]
     par = _run(ProcessPoolExecutor(max_workers=2))["ht"]
@@ -182,7 +208,8 @@ def test_the_process_pool_agrees_with_the_sequential_run() -> None:
 
 def test_each_universe_matches_its_eager_reference() -> None:
     """Distinctness alone could be three WRONG numbers; pin the values to the in-process `materialize`
-    of the same recorded program (partition summation vs one pass → float tolerance, not bit-equal)."""
+    of the same recorded program (partition summation vs one pass → float tolerance, not bit-equal).
+    """
     seq = _run(SequentialRunner())["ht"]
     reference = _eager_reference()
     for label in seq:

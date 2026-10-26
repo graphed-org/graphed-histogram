@@ -60,7 +60,8 @@ class HistogramForm:
 
 def _flat(values: object) -> object:
     """Fill values flattened to 1-D: ragged arrays flatten completely (the corpus ``stable``
-    semantics); rectilinear arrays ravel; scalars pass through for boost broadcasting."""
+    semantics); rectilinear arrays ravel; scalars pass through for boost broadcasting.
+    """
     if hasattr(values, "layout"):  # an awkward array, ragged or not (lazy import boundary)
         import awkward as ak  # noqa: PLC0415
 
@@ -86,7 +87,9 @@ class FillEvaluator:
     n_axes: int
     has_weight: bool
     has_sample: bool
-    n_weights: int = 1  # multiple multiplicative weight inputs (the default keeps old pickles valid)
+    n_weights: int = (
+        1  # multiple multiplicative weight inputs (the default keeps old pickles valid)
+    )
     variation: tuple[str, ...] | None = None  # axis-mode label loop (None keeps old pickles valid)
     #: scalar fill values recorded in place of inputs, as :func:`_constants` encodes them (None
     #: keeps old pickles valid); boost broadcasts each one, as an eager fill does
@@ -143,7 +146,8 @@ def _plain(value: object) -> object:
 
 def _constants(args: Sequence[object], factors: Sequence[object], sample: object) -> str | None:
     """The fill's scalar values by slot, JSON-encoded so node params, content hash and evaluator
-    carry one identity (``1``, ``1.0``, ``True`` and ``"1"`` stay distinct); None when there are none."""
+    carry one identity (``1``, ``1.0``, ``True`` and ``"1"`` stay distinct); None when there are none.
+    """
     fixed: dict[str, Any] = {}
     for key, column in (("axes", args), ("weights", factors)):
         slots = [[i, _plain(v)] for i, v in enumerate(column) if isinstance(v, _SCALARS)]
@@ -177,7 +181,8 @@ def _depth(form: object) -> int | None:
     seam on a fill whose guard then provably cannot trip, moving a working program's graph.
 
     Read off the form rather than off the data: the fill records, so this is the only handle on the
-    row space at record time, and it is the one the awkward idiom already uses (``.tt.ndim``)."""
+    row space at record time, and it is the one the awkward idiom already uses (``.tt.ndim``).
+    """
     tt = getattr(form, "tt", None)  # the awkward form's typetracer
     ndim = getattr(tt if tt is not None else form, "ndim", None)
     return ndim if isinstance(ndim, int) and ndim > 0 else None
@@ -188,7 +193,8 @@ def _option_anywhere(layout_form: object) -> bool:
 
     Record and union forms nest through ``contents``; a list or option form through ``content``.
     The list is read first because a record form also answers to ``content`` — with a bound METHOD,
-    which recursing into would walk right past an optional field."""
+    which recursing into would walk right past an optional field.
+    """
     if getattr(layout_form, "is_option", False):
         return True
     nested = getattr(layout_form, "contents", None)
@@ -205,7 +211,8 @@ def _drops_rows(value: object) -> bool:
     a factor already flat at it cannot be re-nested into the value (the counts that would carry it
     no longer describe it), and at record time a factor at that row space cannot be told from one
     at the event row space either. So a fill over such a value keeps the graph and the elementwise
-    semantics it had before the seam existed, and the guard blames rather than repairing."""
+    semantics it had before the seam existed, and the guard blames rather than repairing.
+    """
     tt = getattr(value, "tt", None)  # a recorded awkward form wraps its typetracer; a chunk is one
     layout = getattr(tt if tt is not None else value, "layout", None)
     return layout is not None and _option_anywhere(layout.form)
@@ -222,7 +229,8 @@ def _mixed_row_spaces(session: Any, value: Operand, applied: Sequence[Operand]) 
     Only in that one direction, though. `broadcast_like` lines a shallower factor up with a deeper
     value and nothing else, so firing on a DEEPER factor (or on an idiom whose backend supplies no
     seam at all, where it is the bound no-op) records a step that cannot repair anything and can
-    only move — or break — a program that worked."""
+    only move — or break — a program that worked.
+    """
     if getattr(session.backend, "broadcast_like", None) is None:
         return False
     value_form = session.form(graphed.member_of(value, "nominal"))
@@ -248,7 +256,8 @@ def _renest(value: object, factor: object) -> object:
     """`factor`, already flat at `value`'s LEAF row space, given the value's nesting so that the
     broadcast downstream of the guard is the identity rather than a shape error.
 
-    A rectilinear idiom needs nothing: its seam is the bound no-op and the evaluator ravels both."""
+    A rectilinear idiom needs nothing: its seam is the bound no-op and the evaluator ravels both.
+    """
     if not hasattr(value, "layout"):  # an awkward array (the `_flat` lazy-import boundary)
         return factor
     import awkward as ak  # noqa: PLC0415
@@ -290,7 +299,9 @@ class _ZeroHist:
     kind: Kind = BH
 
     def __call__(self) -> bh.Histogram:
-        return as_kind(zero_of(self.spec), self.kind) if self.dense else empty(self.spec, self.kind)
+        return (
+            as_kind(zero_of(self.spec), self.kind) if self.dense else empty(self.spec, self.kind)
+        )
 
 
 def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
@@ -303,7 +314,8 @@ def _fold_labels(operands: Sequence[Operand]) -> tuple[str, ...]:
     """The label union in a FIXED order, folded LEFT over the operands as given — axis values in
     argument order, then the ambient weight, then explicit factors in list order, then ``sample=``
     last. Leaving the order free would let two conforming implementations disagree on it for one
-    program, so the same script would give different label orders and a different result layout."""
+    program, so the same script would give different label orders and a different result layout.
+    """
     out: dict[str, None] = {"nominal": None}
     for operand in operands:
         if isinstance(operand, Varied):
@@ -325,11 +337,14 @@ def _blame(
     A loose value adopts the unified context for label alignment only — its row space is never
     adjusted, no mask being known — so it is what the reader must fix. Only ``args[0]`` can take
     that blame: the guard compares each factor against the fill's FIRST value, so a loose value at
-    any other axis position is not what the comparison is about."""
+    any other axis position is not what the comparison is about.
+    """
     if ctx is not None and graphed.context_of(args[0]) is None:
         return (("value[0]", _LOOSE_ROWS.format(index=0)),) * (int(has_ambient) + n_factors)
     ambient = (("ambient", _AMBIENT_ROWS),) if has_ambient else ()
-    return ambient + tuple((f"weight[{i}]", _FACTOR_ROWS.format(index=i)) for i in range(n_factors))
+    return ambient + tuple(
+        (f"weight[{i}]", _FACTOR_ROWS.format(index=i)) for i in range(n_factors)
+    )
 
 
 def _fill_chash(
@@ -350,7 +365,8 @@ def _fill_chash(
     factor count, and the axis-mode label loop. `has_sample` and `n_axes` cannot — `sample=` is only
     valid on Mean/WeightedMean storage and the axis count is in the spec, both already spec-borne.
     The CANONICAL single-weight sibling fill keeps `content_hash(spec)` verbatim, so graphs recorded
-    before variations existed keep their identity; any deviation folds a discriminator suffix in."""
+    before variations existed keep their identity; any deviation folds a discriminator suffix in.
+    """
     disc: list[str] = []
     if not has_weight:
         disc.append("unweighted")
@@ -386,8 +402,11 @@ def _fill_params(
 def _declare_axis_spec(hist: bh.Histogram, sorted_labels: Sequence[str]) -> str:
     """Declare a non-growth, sorted `"variation"` StrCategory axis at FILL time from the inferred
     label set, appended after the value axes. Returns the fill node's spec — identity-bearing, hence
-    byte-stable per partition, so every partition's result has the same variation axis to add on."""
-    var = bh.axis.StrCategory(list(sorted_labels))  # non-growth by default; stored order = as given
+    byte-stable per partition, so every partition's result has the same variation axis to add on.
+    """
+    var = bh.axis.StrCategory(
+        list(sorted_labels)
+    )  # non-growth by default; stored order = as given
     var.__dict__["name"] = "variation"  # the `hist` name convention the spec codec round-trips
     declared = bh.Histogram(*hist.axes, var, storage=hist.storage_type())
     return spec_of(declared)
@@ -398,7 +417,8 @@ def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
 
     ``Histogram.fill_nodes()`` is a flat list with no label attribution, and one `fill` call's
     siblings are the only place the correspondence exists — so a histogram carrying several fill
-    calls has no single answer and says so rather than hiding one of them."""
+    calls has no single answer and says so rather than hiding one of them.
+    """
     if len(hist._label_maps) != 1:
         raise GraphedError(
             f"fill_nodes_by_label reads ONE fill call's sibling nodes; this histogram has "
@@ -417,7 +437,8 @@ def _width(axis: Any) -> float:
 
 def _union(x: Any, y: Any) -> Any:
     """The growing ``Regular`` axis spanning ``x`` and ``y``, or ``None`` when they are not two
-    differing growing ``Regular`` axes on one grid with equal metadata."""
+    differing growing ``Regular`` axes on one grid with equal metadata.
+    """
     if not (_grows_regular(x) and _grows_regular(y) and vars(x) == vars(y) and x != y):
         return None
     first = (float(y.edges[0]) - float(x.edges[0])) / _width(x)
@@ -457,8 +478,13 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     Returns a new ``boost_histogram.Histogram`` carrying ``a``'s metadata; neither operand
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
     the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
-    merge chunked; any other pair is read dense first."""
-    if isinstance(a, Chunked) and isinstance(b, Chunked) and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]:
+    merge chunked; any other pair is read dense first.
+    """
+    if (
+        isinstance(a, Chunked)
+        and isinstance(b, Chunked)
+        and vars(a)["_gh_spec"] == vars(b)["_gh_spec"]
+    ):
         return a._like(vars(a)["_gh_spec"], a.chunked + b.chunked, summed=True)
     # a dense copy: a fill node two slots read is one object, and must stay chunked for the other
     a, b = (x._dense() if isinstance(x, Chunked) else x for x in (a, b))
@@ -472,7 +498,8 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
 def _positions(compiled: CompiledGraph, nodes: Sequence[Array]) -> dict[int, int]:
     """Each marked fill's index among the values ``compiled`` evaluates to. The optimizer may merge
     two marked fills into one output (``weight=[w]`` and ``weight=[w * 1.0]``); reading each fill at
-    its own position reads that output once per marked fill, which is what filling twice means."""
+    its own position reads that output once per marked fill, which is what filling twice means.
+    """
     order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
     return {n.node_id: order[compiled.correspondence.node_map[n.node_id][0]] for n in nodes}
 
@@ -492,7 +519,8 @@ def _sum_fills(
     kind: Kind = BH,
 ) -> Any:
     """A slot's partial, as ``kind``: a dense slot sums into the dense zero, which densifies each
-    chunked fill it adds; a chunked slot adds each fill into the total it owns, in place."""
+    chunked fill it adds; a chunked slot adds each fill into the total it owns, in place.
+    """
     total = as_kind(zero_of(spec), kind) if dense else empty(spec, kind)
     for nid in node_ids:
         fill = fills[positions[nid]]
@@ -504,7 +532,8 @@ def _sum_fills(
 @dataclass
 class _SumFills:
     """Reduce one partition's evaluated fills to a single histogram: the sum of this histogram's
-    staged fills, each read at its compiled position (``positions``, set by the plan's hook)."""
+    staged fills, each read at its compiled position (``positions``, set by the plan's hook).
+    """
 
     spec: str
     node_ids: tuple[int, ...]
@@ -513,7 +542,9 @@ class _SumFills:
     kind: Kind = BH
 
     def __call__(self, fills: list[object]) -> bh.Histogram:
-        out: bh.Histogram = _sum_fills(self.spec, self.node_ids, self.positions, fills, self.dense, self.kind)
+        out: bh.Histogram = _sum_fills(
+            self.spec, self.node_ids, self.positions, fills, self.dense, self.kind
+        )
         return out
 
 
@@ -527,7 +558,8 @@ class _GroupReduce:
     """Reduce one partition's evaluated fills to ``{slot: histogram}``: each slot sums its own
     fills, each read at its compiled position (``positions``, set by ``pieces.on_compiled``). A
     ``backed`` slot's sum is shipped to its histserv server and its value is the receipt; a
-    ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's class."""
+    ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's class.
+    """
 
     layout: Layout
     backed: tuple[SlotKey, ...] = ()
@@ -540,7 +572,9 @@ class _GroupReduce:
             raise GraphedError(_NO_POSITIONS)
         kinds = dict(self.kinds)
         out = {
-            key: _sum_fills(spec, ids, self.positions, fills, key in self.dense, kinds.get(key, BH))
+            key: _sum_fills(
+                spec, ids, self.positions, fills, key in self.dense, kinds.get(key, BH)
+            )
             for key, ids, spec in self.layout
         }
         if self.backed:
@@ -548,7 +582,9 @@ class _GroupReduce:
 
             backed = set(self.backed)
             out = {
-                key: replace(_ship(key, spec, out[key]), kind=kinds.get(key)) if key in backed else out[key]
+                key: replace(_ship(key, spec, out[key]), kind=kinds.get(key))
+                if key in backed
+                else out[key]
                 for key, _ids, spec in self.layout
             }
         return out
@@ -556,15 +592,19 @@ class _GroupReduce:
     def resolve_services(self, value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
         """``value`` with each receipt replaced by its server histogram, deleted from the server."""
         return {
-            key: h if isinstance(h, bh.Histogram) else h.snapshot(delete=True) for key, h in value.items()
+            key: h if isinstance(h, bh.Histogram) else h.snapshot(delete=True)
+            for key, h in value.items()
         }
 
 
 def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
     """Combine: histogram groups add key-wise, each pair through :func:`add_histograms`, and
-    receipts by their own ``+``."""
+    receipts by their own ``+``.
+    """
     return {
-        key: add_histograms(a[key], b[key]) if isinstance(a[key], bh.Histogram) else a[key] + b[key]
+        key: add_histograms(a[key], b[key])
+        if isinstance(a[key], bh.Histogram)
+        else a[key] + b[key]
         for key in a
     }
 
@@ -653,7 +693,9 @@ class Histogram(bh.Histogram):
         by the first fill and remembered; a later fill in the OTHER mode is a hard error.
         """
         if len(args) != len(self.axes):
-            raise TypeError(f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays")
+            raise TypeError(
+                f"this histogram has {len(self.axes)} axes; fill got {len(args)} arrays"
+            )
         if not all(isinstance(a, (Array, Varied, *_SCALARS)) for a in args):
             raise TypeError(
                 "deferred fills take graphed Arrays or scalar constants; use boost_histogram for eager data"
@@ -698,7 +740,9 @@ class Histogram(bh.Histogram):
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
         axes = [graphed.reindex_to(value, ctx) for value in values]
-        factors = [graphed.reindex_to(value, ctx) for value in weights]  # the ambient one already is
+        factors = [
+            graphed.reindex_to(value, ctx) for value in weights
+        ]  # the ambient one already is
         sampled = None if recorded_sample is None else graphed.reindex_to(recorded_sample, ctx)
 
         applied: list[Operand] = ([] if ambient is None else [ambient]) + factors
@@ -711,7 +755,9 @@ class Histogram(bh.Histogram):
             has_weight=n_weights > 0,
             has_sample=sample is not None,
             n_weights=max(n_weights, 1),
-            constants=_constants(args, ([] if ambient is None else [ambient]) + all_weights, sample),
+            constants=_constants(
+                args, ([] if ambient is None else [ambient]) + all_weights, sample
+            ),
         )
         session = graphed.member_of(axes[0], "nominal").session
         # a fill whose factors already share the value's row space and carries neither a context
@@ -724,13 +770,19 @@ class Histogram(bh.Histogram):
         )
 
         if variation_axis:
-            if established and self._axis_labels is not None and set(labels) != set(self._axis_labels):
+            if (
+                established
+                and self._axis_labels is not None
+                and set(labels) != set(self._axis_labels)
+            ):
                 raise GraphedError(
                     f"this axis-mode histogram's first fill declared variations "
                     f"{sorted(self._axis_labels)}; this fill declares {sorted(labels)} — the "
                     "variation axis (hence the spec) would disagree across fills. Match them."
                 )
-            self._record_axis_fill(session, shape, axes, applied, sampled, blame, broadcast, labels)
+            self._record_axis_fill(
+                session, shape, axes, applied, sampled, blame, broadcast, labels
+            )
             return self
 
         evaluator = shape
@@ -775,12 +827,15 @@ class Histogram(bh.Histogram):
         self._evaluators[chash] = evaluator
         return self
 
-    def _guard(self, session: Any, factor: Array, value: Array, coordinate: str, message: str) -> Array:
+    def _guard(
+        self, session: Any, factor: Array, value: Array, coordinate: str, message: str
+    ) -> Array:
         """Record the row-space guard for one factor (see :class:`_WeightGuard`).
 
         Identity is the blame COORDINATE, carried in the params and hashed into the payload, so
         the node is derivable from what the graph records — a preservation plugin can rebuild the
-        evaluator from `params["blame"]`, and rewording the diagnostic moves no bytes."""
+        evaluator from `params["blame"]`, and rewording the diagnostic moves no bytes.
+        """
         guard = _WeightGuard(message)
         chash = content_hash("weight-guard:" + coordinate)
         self._evaluators[chash] = guard
@@ -819,7 +874,8 @@ class Histogram(bh.Histogram):
         the nominal loop and carry its own kinematics; on default points every label resolves to its
         own member or to nominal, which is the `1 + |S|` split unchanged. Declare the sorted
         ``"variation"`` axis from the label set; each node's `content_hash((spec, variation))` is
-        DISTINCT, so it resolves to its own evaluator."""
+        DISTINCT, so it resolves to its own evaluator.
+        """
         self._axis_mode = True
         self._axis_labels = labels
         fixed = [*axes, *([] if sampled is None else [sampled])]
@@ -866,7 +922,8 @@ class Histogram(bh.Histogram):
         """One axis-mode fill node: value + `sample=` from `carrier` (fixed), one guarded and
         broadcast weight block per label in `node_labels` (guard and broadcast recorded per COLUMN,
         upstream of the loop). The evaluator writes each label's scalar category on the variation
-        axis; its content hash folds `node_labels` in so the node owns its evaluator."""
+        axis; its content hash folds `node_labels` in so the node owns its evaluator.
+        """
         value_members = [graphed.member_of(operand, carrier) for operand in axes]
         value = value_members[0]
         inputs: list[Array] = list(value_members)
@@ -914,7 +971,7 @@ class Histogram(bh.Histogram):
         return list(self._fill_nodes)
 
     def evaluators(self) -> dict[str, Callable[..., object]]:
-        """content hash -> evaluator, for resolving this histogram's External nodes."""
+        """Content hash -> evaluator, for resolving this histogram's External nodes."""
         return dict(self._evaluators)
 
     # ---- aggregation -----------------------------------------------------------------------
@@ -933,7 +990,8 @@ class Histogram(bh.Histogram):
         backend (factory/class or ``"module:attr"`` import ref for behavior-carrying backends, which
         do not pickle); ``partitions`` lets the caller shape partitioning itself. For several
         histograms that share a sub-graph, plan them together with :func:`plan` so the shared work
-        runs ONCE."""
+        runs ONCE.
+        """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
         if self._histserv is not None:
@@ -977,9 +1035,14 @@ class Histogram(bh.Histogram):
 
 def _kind(h: Histogram) -> Kind:
     """What ``h``'s results are: the in-memory class its deferred class extends (``hist.Hist`` for
-    ``hist.graphed.Hist``), carrying the public attributes ``h`` set (None is every one's default)."""
-    cls = next(c for c in type(h).__mro__ if issubclass(c, bh.Histogram) and not issubclass(c, Histogram))
-    return cls, tuple((k, v) for k, v in vars(h).items() if not k.startswith("_") and v is not None)
+    ``hist.graphed.Hist``), carrying the public attributes ``h`` set (None is every one's default).
+    """
+    cls = next(
+        c for c in type(h).__mro__ if issubclass(c, bh.Histogram) and not issubclass(c, Histogram)
+    )
+    return cls, tuple(
+        (k, v) for k, v in vars(h).items() if not k.startswith("_") and v is not None
+    )
 
 
 def _output_labels(hist: Histogram) -> tuple[str, ...]:
@@ -998,7 +1061,8 @@ def _slots(name: str, hist: Histogram) -> Layout:
     fill that does not carry the label contributes its central one). Axis mode is the third key
     form: ONE `(name, None)` slot gathering every fill-node index, whatever the label count —
     the MODE decides the key (the bare-name rule is sibling-scoped), the value is the bare
-    variation-axis histogram, the combine is the same `add_histograms`."""
+    variation-axis histogram, the combine is the same `add_histograms`.
+    """
     spec = hist._fill_specs[0]  # the FILL node's spec (axis mode forces one per output)
     if hist._axis_mode:
         return (((name, None), tuple(node.node_id for node in hist._fill_nodes), spec),)
@@ -1008,7 +1072,10 @@ def _slots(name: str, hist: Histogram) -> Layout:
     return tuple(
         (
             (name, label),
-            tuple(per_label.get(label, per_label["nominal"]).node_id for per_label in hist._label_maps),
+            tuple(
+                per_label.get(label, per_label["nominal"]).node_id
+                for per_label in hist._label_maps
+            ),
             spec,
         )
         for label in labels
@@ -1022,7 +1089,8 @@ class HistogramPieces:
     Mark the plan's own outputs, then ``fill_nodes``; hand ``reduce`` the whole value list and
     forward ``reduce.resolve_services``; pass ``combine``, ``empty`` and ``externals`` as they are
     and ``on_compiled=pieces.on_compiled``; then run ``serve(plan)``. ``reduce`` reads each fill at
-    its compiled position, which ``on_compiled`` records, so a pieces belongs to ONE plan."""
+    its compiled position, which ``on_compiled`` records, so a pieces belongs to ONE plan.
+    """
 
     fill_nodes: tuple[Array, ...]
     reduce: _GroupReduce
@@ -1036,7 +1104,8 @@ class HistogramPieces:
 
     def on_compiled(self, compiled: CompiledGraph) -> Any:
         """The plan's ``aggregate_plan(on_compiled=)`` hook: records where each fill landed and
-        returns the variation-label payload the shipped closure carries."""
+        returns the variation-label payload the shipped closure carries.
+        """
         if self.reduce.positions:
             raise GraphedError(
                 "these pieces already fed a plan; graphed_histogram.boost.pieces(...) belongs to one "
@@ -1047,7 +1116,8 @@ class HistogramPieces:
 
     def serve(self, plan: Plan[V]) -> Plan[V]:
         """``plan`` with its histserv-backed slots sized, packed onto servers and declared in
-        ``plan.services``; ``plan`` itself when no slot is backed."""
+        ``plan.services``; ``plan`` itself when no slot is backed.
+        """
         if not self.backing:
             return plan
         if self.served:
@@ -1119,7 +1189,8 @@ def plan(
     output name for an output no variation reaches, ``(output, label)`` for a varied one — which
     :func:`graphed_histogram.unpack` turns into the user-facing per-output shape.
     Column projection covers the union of all histograms' fills. Histserv-backed histograms are
-    served: their servers are in ``plan.services``."""
+    served: their servers are in ``plan.services``.
+    """
     p = pieces(histograms)
     return p.serve(
         aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
@@ -1180,7 +1251,8 @@ def _variation_labels(
     if not reached:  # the predicate is over the LABELS, hence over the compiled program
         return None
     return tuple(
-        (key, (tuple(sorted(reached.get(key, ()))), frame)) for key, frame in compiled.correspondence.frames
+        (key, (tuple(sorted(reached.get(key, ()))), frame))
+        for key, frame in compiled.correspondence.frames
     )
 
 
@@ -1193,7 +1265,8 @@ def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, b
     rather than in the mapping. A varied sibling output always carries at least two labels, so no
     output's shape is ambiguous, in a mixed plan exactly as in a single-mode one.
     ``graphed.labels``/``universe``/``nominal`` read both shapes uniformly. A histserv receipt
-    unpacks to its server histogram's snapshot, which stays on the server."""
+    unpacks to its server histogram's snapshot, which stays on the server.
+    """
     out: dict[str, Any] = {}
     for key, held in value.items():
         hist = held if isinstance(held, bh.Histogram) else held.snapshot()
@@ -1212,7 +1285,8 @@ def dense_backed(h: H) -> H:
     """``h``, its partials and merges dense boost histograms from its next plan on; its graph is
     unchanged. The default backing keeps a histogram with a category axis chunked: one dense slice
     per filled category key (``hist.chunked.ChunkedHist``). Either way the result is the same dense
-    histogram, bin for bin."""
+    histogram, bin for bin.
+    """
     h._dense = True
     return h
 
@@ -1225,7 +1299,8 @@ def label_listing(histograms: Mapping[str, Histogram]) -> dict[str, list[str]]:
     modes populate ``_label_maps`` with the same fold-ordered set. The labels come from the fill's
     DECLARED label set the builder holds (``_output_labels``), NOT from the ``(output, None)`` slot
     key — which carries no label, so a key-reading listing would answer ``[None]``/``[]`` for an
-    axis-mode output."""
+    axis-mode output.
+    """
     return {name: list(_output_labels(hist)) for name, hist in histograms.items()}
 
 
@@ -1236,7 +1311,8 @@ def factory(
     sample: Array | None = None,
 ) -> Histogram:
     """A deferred histogram from a reference histogram's axes/storage plus one staged fill
-    (the dask-histogram ``factory`` shape)."""
+    (the dask-histogram ``factory`` shape).
+    """
     out = Histogram(*histref.axes, storage=histref.storage_type())
     return out.fill(*arrays, weight=weight, sample=sample)
 
@@ -1250,10 +1326,13 @@ def _regular_axes(
         assert isinstance(bins, int)
         bins_per = [bins] * ndim
     if range_ is None or len(bins_per) != ndim:
-        raise TypeError("deferred numpy-like histograms need explicit bins and range per dimension")
+        raise TypeError(
+            "deferred numpy-like histograms need explicit bins and range per dimension"
+        )
     ranges = list(range_) if ndim > 1 else [range_]
     return [
-        bh.axis.Regular(int(b), float(lo), float(hi)) for b, (lo, hi) in zip(bins_per, ranges, strict=True)
+        bh.axis.Regular(int(b), float(lo), float(hi))
+        for b, (lo, hi) in zip(bins_per, ranges, strict=True)
     ]
 
 

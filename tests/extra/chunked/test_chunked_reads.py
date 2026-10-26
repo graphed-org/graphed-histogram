@@ -25,7 +25,9 @@ from graphed_histogram._chunked import Chunked
 
 RNG = np.random.default_rng(67)
 N = 600
-EVENTS = ak.zip({"x": RNG.uniform(0.0, 1.0, N), "w": RNG.normal(1.0, 0.3, N), "c": RNG.integers(0, 3, N)})
+EVENTS = ak.zip(
+    {"x": RNG.uniform(0.0, 1.0, N), "w": RNG.normal(1.0, 0.3, N), "c": RNG.integers(0, 3, N)}
+)
 X, W, C = (np.asarray(EVENTS[k]) for k in ("x", "w", "c"))
 RUNNERS: dict[str, Callable[[], Any]] = {
     "sequential": SequentialRunner,
@@ -81,8 +83,12 @@ def test_nothing_densifies_a_partial_before_the_users_first_read(runner: str) ->
     take()
     RUNNERS[runner]().run(gh.plan(_census_hists(True), steps_per_file=4))
     control = take()
-    assert control and (runner == "sequential" or set(control) - {os.getpid()})  # the counter reaches workers
-    blob = pickle.dumps(RUNNERS[runner]().run(gh.plan(_census_hists(False), steps_per_file=4)).value)
+    assert control and (
+        runner == "sequential" or set(control) - {os.getpid()}
+    )  # the counter reaches workers
+    blob = pickle.dumps(
+        RUNNERS[runner]().run(gh.plan(_census_hists(False), steps_per_file=4)).value
+    )
     out = gh.unpack(pickle.loads(blob))
     assert all(isinstance(h, Chunked) for h in _leaves(out))
     for h in _leaves(out):
@@ -92,7 +98,11 @@ def test_nothing_densifies_a_partial_before_the_users_first_read(runner: str) ->
         graphed.nominal(v)
     axis: Any = out["axis"]
     universe = graphed.universe(axis, "sf_up")
-    assert isinstance(universe, Chunked) and "chunked" in repr(universe) and ".values()" in repr(universe)
+    assert (
+        isinstance(universe, Chunked)
+        and "chunked" in repr(universe)
+        and ".values()" in repr(universe)
+    )
     assert take() == []
     out["sibling"]["nominal"].values()
     assert take() == [os.getpid()]
@@ -121,7 +131,7 @@ HISTS: dict[type, tuple[type, dict[str, Any]]] = {
 
 
 def _typed(ev: Any) -> dict[str, tuple[Any, Any]]:
-    """slot -> (the lazy histogram, its eager twin)."""
+    """Slot -> (the lazy histogram, its eager twin)."""
     out = {}
     for storage in ("Weight", "Mean"):
         field = "weight" if storage == "Weight" else "sample"
@@ -152,14 +162,20 @@ def test_the_read_hands_back_the_instantiated_type(runner: str) -> None:
         RUNNERS[runner]().run(gh.plan({k: v[0] for k, v in typed.items()}, steps_per_file=3)).value
     )
     lazy = [k for k, v in value.items() if type(v) is not type(typed[k][1])]
-    assert sorted(lazy) == sorted(k for k in typed if k.endswith("Weight-chunked"))  # chunked until read
+    assert sorted(lazy) == sorted(
+        k for k in typed if k.endswith("Weight-chunked")
+    )  # chunked until read
     for key, (_, eager) in typed.items():
         got = value[key]
         assert isinstance(got, type(eager)), key  # before the read, too
-        np.testing.assert_allclose(got.values(), eager.values(), rtol=1e-13)  # three partials, one fill
+        np.testing.assert_allclose(
+            got.values(), eager.values(), rtol=1e-13
+        )  # three partials, one fill
         assert type(got) is type(eager), key
         twin = value[key.replace("chunked", "dense")]
-        assert got.axes == eager.axes and _public(got) == _public(eager) and vars(got) == vars(twin), key
+        assert (
+            got.axes == eager.axes and _public(got) == _public(eager) and vars(got) == vars(twin)
+        ), key
         assert _bytes(got) == _bytes(twin)
 
 
@@ -199,9 +215,13 @@ def _outcome(h: bh.Histogram, index: Any) -> Any:
         (0, False),
     ],
 )
-def test_a_selection_is_the_dense_ones_and_one_category_bin_stays_chunked(index: Any, chunked: bool) -> None:
+def test_a_selection_is_the_dense_ones_and_one_category_bin_stays_chunked(
+    index: Any, chunked: bool
+) -> None:
     def partial() -> Any:
-        return gh.add_histograms(*(gh.FillEvaluator(CUT, 3, True, False)(X, C, LABELS, W) for _ in "ab"))
+        return gh.add_histograms(
+            *(gh.FillEvaluator(CUT, 3, True, False)(X, C, LABELS, W) for _ in "ab")
+        )
 
     h, dense = partial(), partial()
     dense.values()

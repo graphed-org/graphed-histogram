@@ -33,12 +33,16 @@ def test_a_histserv_backed_slot_fills_dense_beside_a_chunked_one(tmp_path: Path)
         _session, ev = events(path)
         out = {
             name: gh.boost.Histogram(
-                bh.axis.Regular(6, -2.0, 6.0), bh.axis.StrCategory(["ee", "mm"]), storage=bh.storage.Weight()
+                bh.axis.Regular(6, -2.0, 6.0),
+                bh.axis.StrCategory(["ee", "mm"]),
+                storage=bh.storage.Weight(),
             ).fill(ev.x, ev.c, weight=ev.w)
             for name in ("served", "local")
         }
         if back:
-            histserv.backed(out["served"], histserv.Context(memory_mb=256, workers=1, name="chunked-served"))
+            histserv.backed(
+                out["served"], histserv.Context(memory_mb=256, workers=1, name="chunked-served")
+            )
         else:
             for h in out.values():
                 gh.dense_backed(h)
@@ -48,7 +52,9 @@ def test_a_histserv_backed_slot_fills_dense_beside_a_chunked_one(tmp_path: Path)
     with servers(len(backed.services)) as started:
         bound, _ = bind(backed, started)
         partial = run_bounded(lambda: bound.process(bound.tasks[0].partition, LocalResources()))
-        assert isinstance(partial["served"], histserv.Receipt) and type(partial["local"]) is Chunked
+        assert (
+            isinstance(partial["served"], histserv.Receipt) and type(partial["local"]) is Chunked
+        )
         value = run_bounded(lambda: SequentialRunner().run(bound).value)
         assert type(value["local"]) is Chunked
         take()

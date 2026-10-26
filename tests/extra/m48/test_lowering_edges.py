@@ -1,5 +1,6 @@
 """m48 edges the frozen anchors do not reach: the guard's scalar case, the accessor's
-several-fills refusal, `fill`'s operand type checks, and `unpack`'s axis-mode key form."""
+several-fills refusal, `fill`'s operand type checks, and `unpack`'s axis-mode key form.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +27,8 @@ def _hist() -> gh.boost.Histogram:
 
 def test_a_scalar_factor_passes_the_row_space_guard() -> None:
     """A scalar weight broadcasts against any row count, so the guard must not refuse it — and the
-    mismatched-array leg is what shows the guard is live rather than permissive."""
+    mismatched-array leg is what shows the guard is live rather than permissive.
+    """
     guard = _WeightGuard("the factor is at the wrong row space")
     value = np.arange(5.0)
     assert guard(2.0, value) == 2.0
@@ -36,7 +38,8 @@ def test_a_scalar_factor_passes_the_row_space_guard() -> None:
 
 def test_the_per_label_accessor_refuses_a_histogram_with_several_fill_calls() -> None:
     """Each fill call has its own label set, so `{label: node}` has no single answer across two of
-    them; one fill still answers, which is what makes the refusal about the count."""
+    them; one fill still answers, which is what makes the refusal about the count.
+    """
     session, x = _source()
     del session
     one = _hist().fill(x)
@@ -59,8 +62,12 @@ def test_fill_refuses_non_array_weight_and_sample_operands() -> None:
 
 def test_unpack_reads_an_axis_mode_slot_as_a_bare_histogram() -> None:
     """§6.1a's third key form, `(output, None)`: the shape is decided by the KEY, so the unpacker
-    answers with the histogram itself and never with a `{None: hist}` mapping."""
-    axis_mode, plain = bh.Histogram(bh.axis.Regular(2, 0, 1)), bh.Histogram(bh.axis.Regular(2, 0, 1))
+    answers with the histogram itself and never with a `{None: hist}` mapping.
+    """
+    axis_mode, plain = (
+        bh.Histogram(bh.axis.Regular(2, 0, 1)),
+        bh.Histogram(bh.axis.Regular(2, 0, 1)),
+    )
     result = gh.unpack({("met", None): axis_mode, "ht": plain})
     assert result == {"met": axis_mode, "ht": plain}
     assert result["met"] is axis_mode

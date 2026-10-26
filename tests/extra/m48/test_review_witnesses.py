@@ -55,7 +55,8 @@ def _guarded_blob(monkeypatch: Any, factor_prose: str) -> bytes:
 
 def test_rewording_a_diagnostic_moves_no_recorded_bytes(monkeypatch: Any) -> None:
     """A7: the message is evaluator-side only. Keying the payload hash on the prose instead of the
-    coordinate reds this — and with it every varied fill's checkpoint identity."""
+    coordinate reds this — and with it every varied fill's checkpoint identity.
+    """
     before = _guarded_blob(monkeypatch, "weight[{index}] is not at this fill's row space")
     after = _guarded_blob(monkeypatch, "weight[{index}] sits at a different row count entirely")
     assert before == after
@@ -63,7 +64,8 @@ def test_rewording_a_diagnostic_moves_no_recorded_bytes(monkeypatch: Any) -> Non
 
 def _blames(session: Any) -> set[str]:
     """The blame coordinates of the row-space guards this session recorded — the seam's witness,
-    since a guard is recorded only where the fill decided a factor needs broadcasting."""
+    since a guard is recorded only where the fill decided a factor needs broadcasting.
+    """
     return {
         node["params"]["blame"]
         for node in session._store.nodes()
@@ -73,7 +75,8 @@ def _blames(session: Any) -> set[str]:
 
 def test_two_different_offenders_stay_two_different_nodes() -> None:
     """A6: collapsing the guards' identities would let one evaluator answer for both coordinates,
-    which mis-blames on the plan path. Ambient and explicit guards must differ."""
+    which mis-blames on the plan path. Ambient and explicit guards must differ.
+    """
     session, root = in_memory_events()
     ctx = _weighted_context(root)
     h = weighted(bins=20, lo=0.0, hi=400.0)
@@ -107,7 +110,8 @@ def test_the_plan_path_names_the_same_offending_factor_as_materialize(index: int
 # --- A2: only the FIRST value can take the loose blame ----------------------------------------
 def _two_axis(session_root: tuple[Any, Any], factor: Any) -> Any:
     """Axis 0 contexted, axis 1 LOOSE but at the correct row count — the shape that separates
-    "any loose arg" from "args[0] is loose"."""
+    "any loose arg" from "args[0] is loose".
+    """
     _session, root = session_root
     events = gnano.events(root)
     sel = events[events.MET.pt > 20.0]
@@ -119,7 +123,8 @@ def _two_axis(session_root: tuple[Any, Any], factor: Any) -> Any:
 
 def test_a_loose_value_away_from_index_zero_does_not_take_the_blame() -> None:
     """The guard compares each factor against the fill's FIRST value, so a loose value at another
-    axis position is not what the comparison is about. Blaming on ANY loose arg reds this."""
+    axis position is not what the comparison is about. Blaming on ANY loose arg reds this.
+    """
     session, root = in_memory_events()
     h = _two_axis((session, root), lambda sel: gak.flatten(sel.Jet.pt))
     with pytest.raises(GraphedError) as excinfo:
@@ -140,7 +145,8 @@ def test_the_same_program_with_a_matching_factor_runs() -> None:
 # --- A4: a merge inside an unvaried sibling is read once per marked fill ---------------------
 def test_a_merge_inside_an_unvaried_sibling_sums_both_fills_beside_a_varied_output() -> None:
     """In a mixed plan the merged pair is read at each fill's position: the merged output is two
-    fills' worth, the varied output its own. A read per distinct output halves `merging`."""
+    fills' worth, the varied output its own. A read per distinct output halves `merging`.
+    """
     _session, source, _data = partitioned_events()
     events = gnano.events(source)
     factor = events.MET.pt * 0.01
@@ -155,7 +161,10 @@ def test_a_merge_inside_an_unvaried_sibling_sums_both_fills_beside_a_varied_outp
     merging = single()  # two fills the M4 identity rules collapse into one output
     merging.fill(events.MET.pt, weight=[factor * 1.0])
     pair = merging.fill_nodes()
-    assert len(graphed.core.GraphStore.deserialize(compile_ir(pair[0].session, *pair).ir).outputs()) == 1
+    assert (
+        len(graphed.core.GraphStore.deserialize(compile_ir(pair[0].session, *pair).ir).outputs())
+        == 1
+    )
 
     run = SequentialRunner().run
     got = gh.unpack(run(gh.plan({"varied": varied, "merging": merging}, steps_per_file=2)).value)
@@ -163,13 +172,16 @@ def test_a_merge_inside_an_unvaried_sibling_sums_both_fills_beside_a_varied_outp
     merged, varied_out = cast(bh.Histogram, got["merging"]), cast(dict[str, Any], got["varied"])
     assert one.sum(flow=True).value > 0
     assert np.array_equal(merged.view(flow=True)["value"], 2.0 * one.view(flow=True)["value"])
-    assert np.array_equal(varied_out["nominal"].view(flow=True)["value"], one.view(flow=True)["value"])
+    assert np.array_equal(
+        varied_out["nominal"].view(flow=True)["value"], one.view(flow=True)["value"]
+    )
 
 
 # --- A5: ancestor-context weight factors are re-indexed ----------------------------------------
 def test_an_ancestor_context_weight_factor_is_re_indexed_to_the_fill() -> None:
     """Mutating `factors = [reindex_to(w, ctx) ...]` to `list(weights)` reds this: the parent-space
-    factor then reaches the guard at the parent's row count."""
+    factor then reaches the guard at the parent's row count.
+    """
     session, root = in_memory_events()
     events = gnano.events(root)
     parent_factor = events.MET.pt * 0.0 + 2.0  # read at the PARENT, applied at the child
@@ -190,7 +202,8 @@ def test_an_ancestor_context_weight_factor_is_re_indexed_to_the_fill() -> None:
 def test_one_compile_ir_per_group_plan_call(monkeypatch: Any) -> None:
     """§7.2's anti-quadratic budget. `compile_ir` is imported BY NAME in several modules, so each
     binding is patched from the defining function — patching one module's re-export alone would
-    miss a call made through another's."""
+    miss a call made through another's.
+    """
     import graphed.execute as execute  # noqa: PLC0415  (the spy starts from the definition)
 
     calls: list[int] = []
