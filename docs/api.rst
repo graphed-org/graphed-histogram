@@ -84,11 +84,11 @@ Run it
 
 ``gh.boost.pieces(histograms)``
    The parts ``gh.plan`` builds its plan from — ``fill_nodes``, ``reduce``, ``combine``,
-   ``empty``, ``externals``, ``on_compiled`` and ``serve`` — for a plan that adds outputs of
-   its own (:ref:`histserv`, "Composing histograms with other outputs"). Mark your outputs,
-   then ``fill_nodes``; pass ``on_compiled=pieces.on_compiled``; hand ``reduce`` the whole value
-   list and forward ``reduce.resolve_services``; return ``pieces.serve(plan)``. One ``pieces``
-   belongs to one plan.
+   ``empty``, ``externals``, ``finalize``, ``on_compiled`` and ``serve`` — for a plan that adds
+   outputs of its own (:ref:`histserv`, "Composing histograms with other outputs"). Mark your
+   outputs, then ``fill_nodes``; pass ``on_compiled=pieces.on_compiled``; hand ``reduce`` the
+   whole value list and forward ``reduce.resolve_services`` and ``finalize``; return
+   ``pieces.serve(plan)``. One ``pieces`` belongs to one plan.
 
 ``gh.add_histograms(a, b)``
    Adds two filled histograms and returns a new ``boost_histogram.Histogram`` carrying ``a``'s

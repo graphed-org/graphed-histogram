@@ -1,7 +1,10 @@
-"""A histserv-backed slot sums dense for its server; a chunked slot beside it stays chunked."""
+"""A histserv-backed slot sums dense for its server; a chunked slot beside it stays chunked until
+the head's finalize.
+"""
 
 from __future__ import annotations
 
+import os
 import sys
 import sysconfig
 from pathlib import Path
@@ -55,10 +58,12 @@ def test_a_histserv_backed_slot_fills_dense_beside_a_chunked_one(tmp_path: Path)
         assert (
             isinstance(partial["served"], histserv.Receipt) and type(partial["local"]) is Chunked
         )
-        value = run_bounded(lambda: SequentialRunner().run(bound).value)
-        assert type(value["local"]) is Chunked
         take()
+        value = run_bounded(lambda: SequentialRunner().run(bound).value)
+        # the served slot adds each task's fill dense; the local one densifies once, at finalize
+        assert type(value["local"]) is bh.Histogram
+        assert take() == [os.getpid()] * (len(bound.tasks) + 1)
         resolved = run_bounded(lambda: resolve_services(bound, value))
-        assert type(resolved["local"]) is Chunked and take() == []
+        assert resolved["local"] is value["local"]
     want = SequentialRunner().run(twin).value
     assert all(same(resolved[k], want[k]) for k in ("served", "local"))

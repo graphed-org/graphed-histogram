@@ -4,6 +4,7 @@ route.
 
 from __future__ import annotations
 
+import os
 import pickle
 import re
 from collections.abc import Callable, Mapping
@@ -13,16 +14,16 @@ from typing import Any
 import awkward as ak
 import boost_histogram as bh
 import graphed
-import hist
 import numpy as np
 import pytest
+from chunked_census import take
 from graphed.awkward import AwkwardBackend, AwkwardForm
 from graphed.core import Partition
 from graphed.core.execution import LocalResources, SequentialRunner, WorkerResources
 from graphed_exec_local import ProcessPoolExecutor
 
 import graphed_histogram as gh
-from graphed_histogram._chunked import Chunked, empty
+from graphed_histogram._chunked import Chunked, dense
 
 RNG = np.random.default_rng(66)
 N = 3000
@@ -115,42 +116,45 @@ def _flat(value: Mapping[Any, Any]) -> dict[Any, bh.Histogram]:
 
 @pytest.mark.parametrize("runner", RUNNERS)
 def test_chunked_and_dense_backings_agree_byte_for_byte(runner: str) -> None:
+    take()
     chunked = _flat(RUNNERS[runner]().run(gh.plan(_hists(False), steps_per_file=4)).value)
+    # the witness: chunked merges ran end to end, and only the head's finalize made each dense
+    assert take() == [os.getpid()] * sum(k[0] != "mean" for k in chunked)
     dense = _flat(RUNNERS[runner]().run(gh.plan(_hists(True), steps_per_file=4)).value)
     assert chunked.keys() == dense.keys() and len(chunked) == 10
-    # the witness, read before anything densifies a value: chunked merges ran end to end
-    assert {k for k, h in chunked.items() if type(h) is Chunked} == {
-        k for k in chunked if k[0] != "mean"
-    }
-    assert all(type(h) is bh.Histogram for h in dense.values())
+    assert all(type(h) is bh.Histogram for h in (*chunked.values(), *dense.values()))
     for key in chunked:
         assert _bytes(chunked[key]) == _bytes(dense[key]), key
-        assert type(chunked[key]) is bh.Histogram  # read, it is the plain dense histogram
     # both overflows filled
     assert chunked[("weight", "nominal")].view(flow=True)["value"][:, 3, 2].sum() > 0
 
 
-def test_a_partial_ships_chunked_and_reads_dense() -> None:
+def test_a_partial_ships_chunked_and_densifies_into_first_seen_order() -> None:
     plan = gh.plan(_hists(False), steps_per_file=4)
     partial = plan.process(plan.tasks[0].partition, LocalResources())
     shipped = pickle.loads(pickle.dumps(partial[("growth", "nominal")]))
     assert type(shipped) is Chunked and len(shipped.chunked) == 2
-    assert (
-        isinstance(shipped, bh.Histogram) and type(plan.empty()[("growth", "nominal")]) is Chunked
-    )
-    assert list(shipped.axes[1]) == ["d2", "d1"]  # first-seen order, as a growing dense axis has
+    assert type(plan.empty()[("growth", "nominal")]) is Chunked
+    # first-seen order, as a growing dense axis has
+    assert list(shipped.dense().axes[1]) == ["d2", "d1"]
 
 
-def test_a_protocol_probe_keeps_it_chunked_and_any_other_read_densifies() -> None:
-    h = _evaluate("growth str with initial categories", False)
-    assert getattr(h, "__dask_graph__", None) is None and type(h) is Chunked
-    # a __dict__ attribute densifies too
-    assert h._variance_known is False and type(h) is bh.Histogram
-    Chunked._densify(h)  # a caller that lost the race finds it done
-    assert _bytes(h) == _bytes(_evaluate("growth str with initial categories", True))
+def test_a_sparse_partial_pickles_its_filled_slices_only() -> None:
+    session = graphed.Session(AwkwardBackend())
+    form = AwkwardForm(ak.Array(EVENTS.layout.to_typetracer(forget_length=True)))
+    ev = session.source("ev", form=form, data=Events(EVENTS))
+    h = gh.boost.Histogram(
+        bh.axis.Regular(100, 0.0, 1.0),
+        bh.axis.StrCategory([f"d{i}" for i in range(50)]),
+        storage=bh.storage.Weight(),
+    ).fill(ev.x, "d7", weight=ev.w)
+    plan = gh.plan({"h": h}, steps_per_file=4)
+    partial = plan.process(plan.tasks[0].partition, LocalResources())["h"]
+    size = len(pickle.dumps(partial))
+    assert type(partial) is Chunked and size * 10 < len(pickle.dumps(dense(partial)))
 
 
-def test_a_single_histogram_plan_and_a_zero_partition_plan_read_dense() -> None:
+def test_a_single_histogram_plan_and_a_zero_partition_plan_run_dense() -> None:
     h = gh.boost.Histogram(
         bh.axis.Regular(4, 0.0, 1.0), bh.axis.IntCategory([0, 1]), storage=bh.storage.Weight()
     )
@@ -160,9 +164,9 @@ def test_a_single_histogram_plan_and_a_zero_partition_plan_read_dense() -> None:
     h.fill(ev.x, ev.c, weight=ev.w)
     value = SequentialRunner().run(h.plan(steps_per_file=3)).value
     twin = SequentialRunner().run(gh.dense_backed(h).plan(steps_per_file=3)).value
-    assert type(value) is Chunked and type(twin) is bh.Histogram and _bytes(value) == _bytes(twin)
-    empty = SequentialRunner().run(gh.plan({"h": h}, partitions=[])).value["h"]
-    assert empty == gh.zero_of(gh.spec_of(h))
+    assert type(value) is type(twin) is bh.Histogram and _bytes(value) == _bytes(twin)
+    zero = SequentialRunner().run(gh.plan({"h": h}, partitions=[])).value["h"]
+    assert type(zero) is bh.Histogram and zero == gh.zero_of(gh.spec_of(h))
 
 
 X, W, C = np.asarray(EVENTS.x), np.asarray(EVENTS.w), np.asarray(EVENTS.c)
@@ -218,16 +222,16 @@ def _evaluate(case: str, dense: bool) -> bh.Histogram:
         return gh.zero_of(spec).fill(
             *cols, weight=W if weighted else None, sample=X if sample else None
         )
-    ev = gh.FillEvaluator(spec, len(axes), weighted, sample)
+    ev = gh.FillEvaluator(spec, len(axes), weighted, sample, partial=True)
     return ev(*cols, *([W] if weighted else []), *([X] if sample else []))
 
 
 @pytest.mark.parametrize("case", [*CHUNKED, *DENSE])
 def test_a_fill_and_a_merge_are_the_dense_ones_byte_for_byte(case: str) -> None:
     chunked = gh.add_histograms(_evaluate(case, False), _evaluate(case, False))
-    dense = gh.add_histograms(_evaluate(case, True), _evaluate(case, True))
+    eager = gh.add_histograms(_evaluate(case, True), _evaluate(case, True))
     assert (type(chunked) is Chunked) == (case in CHUNKED)
-    assert _bytes(chunked) == _bytes(dense)
+    assert _bytes(dense(chunked)) == _bytes(eager)
 
 
 @pytest.mark.parametrize(
@@ -240,7 +244,7 @@ def test_values_bh_refuses_raise_as_a_dense_fill_does(cols: list[Any]) -> None:
     with pytest.raises(Exception) as dense:
         gh.zero_of(spec).fill(*cols)
     with pytest.raises(type(dense.value), match=re.escape(str(dense.value))):
-        gh.FillEvaluator(spec, 2, False, False)(*cols)
+        gh.FillEvaluator(spec, 2, False, False, partial=True)(*cols)
 
 
 def test_transformed_regular_never_reaches_a_fill() -> None:
@@ -248,14 +252,6 @@ def test_transformed_regular_never_reaches_a_fill() -> None:
         gh.spec_of(
             bh.Histogram(bh.axis.Regular(4, 1.0, 10.0, transform=bh.axis.transform.log), S(["a"]))
         )
-
-
-def test_an_attribute_set_before_the_first_read_survives_it() -> None:
-    h = _evaluate("declared str, undeclared array labels", False)
-    assert type(h) is Chunked
-    h.metadata = "met"
-    assert type(h) is bh.Histogram and h.metadata == "met"
-    assert _bytes(h) == _bytes(_evaluate("declared str, undeclared array labels", True))
 
 
 def test_a_wrong_arity_fill_raises_as_a_dense_fill_does() -> None:
@@ -270,15 +266,6 @@ def test_only_partials_of_one_spec_merge_chunked() -> None:
     a, b = Chunked(spec), Chunked(spec)
     a.fill(X, LABELS)
     b.fill(X, LABELS)
-    assert type(a._merged(b)) is Chunked
-    assert a._merged(Chunked(gh.spec_of(bh.Histogram(R, S(["a"]))))) is None
-    assert a._merged(bh.Histogram(R, S(["a", "b"]))) is None
-
-
-@pytest.mark.parametrize("cls", [bh.Histogram, hist.Hist])
-@pytest.mark.parametrize("name", ["merged", "dense_copy", "dense_class"])
-def test_a_partial_carries_no_public_name_its_dense_class_lacks(cls: type, name: str) -> None:
-    h = empty(gh.spec_of(bh.Histogram(R, S(["a", "b"]))), (cls, ()))
-    assert isinstance(h, Chunked) and h.chunked is not None
-    assert not hasattr(h, name)
-    assert type(h) is cls  # the lookup read it, as any name the dense class lacks does
+    assert type(a.merged(b)) is Chunked
+    assert a.merged(Chunked(gh.spec_of(bh.Histogram(R, S(["a"]))))) is None
+    assert a.merged(bh.Histogram(R, S(["a", "b"]))) is None

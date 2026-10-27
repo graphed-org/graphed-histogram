@@ -26,9 +26,9 @@ import numpy as np
 from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan
 from graphed.core import GraphStore, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
-from graphed.execute import Key
+from graphed.execute import Key, external_key
 
-from ._chunked import BH, Chunked, Kind, as_kind, empty
+from ._chunked import BH, Chunked, Kind, Partial, as_kind, dense, empty
 from ._histserv import Receipt, SlotKey, _serve, _ship
 from ._spec import content_hash, spec_of, zero_of
 
@@ -59,6 +59,8 @@ class Recording:
     histserv: Any
     #: whether its partials and merges are dense
     dense: bool
+    #: each fill's evaluator returning its chunked partial, keyed as a plan's ``externals=``
+    partials: Mapping[str, Callable[..., object]]
 
 
 @dataclass(frozen=True)
@@ -110,9 +112,15 @@ class FillEvaluator:
     #: scalar fill values recorded in place of inputs, as :func:`_constants` encodes them (None
     #: keeps old pickles valid); boost broadcasts each one, as an eager fill does
     constants: str | None = None
+    #: return the chunked partial, which only a plan reads, rather than the dense histogram
+    partial: bool = False
 
-    def __call__(self, *values: object) -> bh.Histogram:
+    def __call__(self, *values: object) -> Partial:
         """Fill one chunk's ``values`` into a fresh empty histogram and return it."""
+        h = self._fill(*values)
+        return h if self.partial else dense(h)
+
+    def _fill(self, *values: object) -> Partial:
         h = empty(self.spec)
         fixed = json.loads(self.constants) if self.constants else {}
         axis_fixed = dict(fixed.get("axes", []))
@@ -136,13 +144,12 @@ class FillEvaluator:
         axes = _place(rest, self.n_axes, axis_fixed)
         if self.variation is None:
             weight = weight_of()
-            h.fill(*axes, weight=weight, sample=sample_of())
-            return h
+            return h.fill(*axes, weight=weight, sample=sample_of())
         # axis mode: [*value_axes, sample?, *per-label weight blocks]; value/sample fixed
         sample = sample_of()
         for label in self.variation:
             # scalar category broadcasts (probe-verified)
-            h.fill(*axes, label, weight=weight_of(), sample=sample)
+            h = h.fill(*axes, label, weight=weight_of(), sample=sample)
         return h
 
 
@@ -320,7 +327,7 @@ class _ZeroHist:
     dense: bool = False
     kind: Kind = BH
 
-    def __call__(self) -> bh.Histogram:
+    def __call__(self) -> Partial:
         return (
             as_kind(zero_of(self.spec), self.kind) if self.dense else empty(self.spec, self.kind)
         )
@@ -512,13 +519,12 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     Returns a new ``boost_histogram.Histogram`` carrying ``a``'s metadata; neither operand
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
     the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
-    merge chunked; any other pair is read dense first.
+    merge chunked; any other pair is made dense first.
     """
-    merged = a._merged(b) if isinstance(a, Chunked) else None
+    merged = a.merged(b) if isinstance(a, Chunked) else None
     if merged is not None:
         return merged
-    # a dense copy: a fill node two slots read is one object, and must stay chunked for the other
-    a, b = (x._dense_copy() if isinstance(x, Chunked) else x for x in (a, b))
+    a, b = dense(a), dense(b)
     unions = [_union(x, y) for x, y in zip(a.axes, b.axes, strict=False)]
     # a rank mismatch skips the widening so native + refuses it with boost's own error
     if a.ndim == b.ndim and any(u is not None for u in unions):
@@ -553,8 +559,8 @@ def _sum_fills(
 ) -> Any:
     """Sum a slot's fills into its partial, as ``kind``.
 
-    A dense slot sums into the dense zero, which densifies each chunked fill it adds; a chunked
-    slot adds each fill into the total it owns, in place.
+    A dense slot sums into the dense zero, adding each chunked fill dense; a chunked slot adds each
+    fill into the total it owns, in place.
     """
     total = as_kind(zero_of(spec), kind) if dense else empty(spec, kind)
     for nid in node_ids:
@@ -578,8 +584,8 @@ class _SumFills:
     dense: bool = False
     kind: Kind = BH
 
-    def __call__(self, fills: list[object]) -> bh.Histogram:
-        out: bh.Histogram = _sum_fills(
+    def __call__(self, fills: list[object]) -> Partial:
+        out: Partial = _sum_fills(
             self.spec, self.node_ids, self.positions, fills, self.dense, self.kind
         )
         return out
@@ -629,7 +635,7 @@ class _GroupReduce:
     def resolve_services(self, value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
         """Replace each receipt in ``value`` by its server histogram, deleted from the server."""
         return {
-            key: h if isinstance(h, bh.Histogram) else h.snapshot(delete=True)
+            key: h.snapshot(delete=True) if isinstance(h, Receipt) else h
             for key, h in value.items()
         }
 
@@ -640,9 +646,7 @@ def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, A
     Histograms add through :func:`add_histograms`, and receipts by their own ``+``.
     """
     return {
-        key: add_histograms(a[key], b[key])
-        if isinstance(a[key], bh.Histogram)
-        else a[key] + b[key]
+        key: a[key] + b[key] if isinstance(a[key], Receipt) else add_histograms(a[key], b[key])
         for key in a
     }
 
@@ -698,6 +702,9 @@ class Histogram(bh.Histogram):
         self._spec: str = spec_of(self)
         self._fill_nodes: list[Array] = []
         self._evaluators: dict[str, Callable[..., object]] = {}
+        #: the fill evaluators a plan runs, by `graphed.execute.external_key`; they return chunked
+        #: partials, where `_evaluators`, which `session.materialize` runs, return dense ones
+        self._partials: dict[str, Callable[..., object]] = {}
         #: one ``{label: node}`` per `fill` call, in fold order — the label attribution
         #: `_fill_nodes` (a flat list) cannot carry
         self._label_maps: list[dict[str, Array]] = []
@@ -884,7 +891,12 @@ class Histogram(bh.Histogram):
         self._fill_nodes.extend(per_label.values())
         self._label_maps.append(per_label)
         self._fill_specs.append(evaluator.spec)
+        self._register(chash, params, evaluator)
+
+    def _register(self, chash: str, params: dict[str, Any], evaluator: FillEvaluator) -> None:
         self._evaluators[chash] = evaluator
+        key = external_key({"descriptor": {"content_hash": chash}, "params": params})
+        self._partials[key] = replace(evaluator, partial=True)
 
     def _guard(
         self, session: Any, factor: Array, value: Array, coordinate: str, message: str
@@ -1004,7 +1016,7 @@ class Histogram(bh.Histogram):
             descriptor=descriptor,
             form=HistogramForm(chash),
         )
-        self._evaluators[chash] = evaluator
+        self._register(chash, params, evaluator)
         return node
 
     def staged_fills(self) -> int:
@@ -1027,6 +1039,7 @@ class Histogram(bh.Histogram):
             self._axis_mode,
             self._histserv,
             self._dense,
+            dict(self._partials),
         )
 
     def hold_partials(self, *, histserv: Any = None, dense: bool = False) -> None:
@@ -1089,12 +1102,18 @@ class Histogram(bh.Histogram):
             reduce=reduce,
             combine=add_histograms,
             empty=_ZeroHist(self._spec, self._dense, kind),
-            externals=self._evaluators,
+            externals=dict(self._partials),
             backend=backend,
             steps_per_file=steps_per_file,
             partitions=partitions,
             on_compiled=on_compiled,
+            finalize=dense,
         )
+
+
+def _dense_slots(value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
+    """Return ``value`` with each chunked slot dense: the group plan's finalize."""
+    return {key: dense(h) for key, h in value.items()}
 
 
 def _kind(h: Histogram) -> Kind:
@@ -1157,9 +1176,10 @@ class HistogramPieces:
     """The histogram half of one plan, for a plan composing these fills with outputs of its own.
 
     Mark the plan's own outputs, then ``fill_nodes``; hand ``reduce`` the whole value list and
-    forward ``reduce.resolve_services``; pass ``combine``, ``empty`` and ``externals`` as they are
-    and ``on_compiled=pieces.on_compiled``; then run ``serve(plan)``. ``reduce`` reads each fill at
-    its compiled position, which ``on_compiled`` records, so a pieces belongs to ONE plan.
+    forward ``reduce.resolve_services`` and ``finalize``; pass ``combine``, ``empty`` and
+    ``externals`` as they are and ``on_compiled=pieces.on_compiled``; then run ``serve(plan)``.
+    ``reduce`` reads each fill at its compiled position, which ``on_compiled`` records, so a pieces
+    belongs to ONE plan.
     """
 
     fill_nodes: tuple[Array, ...]
@@ -1171,6 +1191,8 @@ class HistogramPieces:
     #: per histserv-backed slot: its key, spec and context
     backing: tuple[tuple[SlotKey, str, Any], ...]
     served: bool = False
+    #: makes each slot the dense histogram of its class, on the head once the run is combined
+    finalize: Callable[[dict[SlotKey, Any]], dict[SlotKey, Any]] = _dense_slots
 
     def on_compiled(self, compiled: CompiledGraph) -> Any:
         """Record where each fill landed: the plan's ``aggregate_plan(on_compiled=)`` hook.
@@ -1217,7 +1239,7 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     layout = tuple(slot for name, hist in items for slot in _slots(name, hist))
     evaluators: dict[str, Callable[..., object]] = {}
     for _, h in items:
-        evaluators.update(h.evaluators())
+        evaluators.update(h.recording().partials)
     backing = tuple(
         (key, spec, h.recording().histserv)
         for name, h in items
@@ -1274,6 +1296,7 @@ def plan(
             steps_per_file=steps_per_file,
             partitions=partitions,
             on_compiled=p.on_compiled,
+            finalize=p.finalize,
         )
     )
 
@@ -1340,7 +1363,7 @@ def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, b
     """
     out: dict[str, Any] = {}
     for key, held in value.items():
-        hist = held if isinstance(held, bh.Histogram) else held.snapshot()
+        hist = held.snapshot() if isinstance(held, Receipt) else dense(held)
         if not isinstance(key, tuple):
             out[key] = hist
             continue

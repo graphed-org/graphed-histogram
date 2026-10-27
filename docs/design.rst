@@ -685,19 +685,16 @@ its partials and merges chunked, as a ``hist.chunked.ChunkedHist``: one dense sl
 axes per category key the task filled. A task that filled 30 of the 600 combinations ships about
 30 slices, and a merge adds slice to slice.
 
-You never handle the chunked form. A result is the class you instantiated:
+You never handle the chunked form. Tasks fill, add, pickle and ship it, and two partials of one
+histogram merge chunked wherever the merge runs. The plan's ``finalize`` runs once, on the head,
+after the last combine, and makes each result dense, as the class you instantiated:
 ``boost_histogram.Histogram`` for ``gh.boost.Histogram``, and ``hist.Hist`` or ``hist.NamedHist``,
 with the histogram's ``name``, ``label`` and ``metadata``, for ``hist.graphed.Hist`` or
-``NamedHist``. Until something reads it, it is a subclass of that class holding the chunks, so
-``isinstance(result, hist.Hist)`` holds before the first read and ``type(result) is hist.Hist``
-after it. Its repr says it is chunked and that reading it makes it dense. Its ``axes``, a
-selection of one category bin (``graphed.universe`` on a variation axis), ``graphed.labels`` and
-pickling keep it chunked. The first read (``values()``, a view, ``==``, setting an attribute,
-``hist.Hist(...)``, plotting, UHI export) turns it, in place, into the dense histogram a dense
-fill would have given, bin for bin: same axes, same category order, undeclared labels in the
-overflow bin. A fill groups its events by category key, keeping their order within each key, so
-every bin adds the same values in the same order as a dense fill does. ``session.materialize``
-on a fill node still gives a ``boost_histogram.Histogram``.
+``NamedHist``. So ``run(plan).value``, and ``gh.unpack`` of it, hold exactly that class
+(``type(result) is hist.Hist``), bin for bin what a dense fill gives: same axes, same category
+order, undeclared labels in the overflow bin. A fill groups its events by category key, keeping
+their order within each key, so every bin adds the same values in the same order as a dense fill
+does. ``session.materialize`` on a fill node gives the dense histogram too.
 
 Partials stay dense where chunking cannot hold them or gains nothing: ``Mean`` and
 ``WeightedMean`` storage, a growing ``Regular`` or ``Integer`` axis, a histogram with no category
@@ -738,13 +735,11 @@ its graph and its result do not change.
         gh.plan({"chunked": met(), "dense": gh.dense_backed(met())}, steps_per_file=3)
     ).value)
     chunked = out["chunked"]
-    print(repr(chunked).split(" # ")[1])
-    print(chunked == out["dense"], type(chunked) is bh.Histogram)  # == reads it
+    print(chunked == out["dense"], type(chunked) is bh.Histogram)
     print(chunked.values(flow=True)[2])  # "emu" is undeclared: the overflow bin
 
 .. code-block:: text
 
-    chunked: 3 filled slices; reading it (e.g. .values()) makes it dense
     True True
     [0. 0. 0. 0. 0. 1.]
 
@@ -895,7 +890,8 @@ Composing histograms with other outputs
 
 ``gh.plan`` is built from ``gh.boost.pieces``, which you can use yourself to put your histograms in
 one plan with outputs of your own — here an event count. Mark your outputs first and the fills after,
-hand the histogram half of the values to ``pieces.reduce``, and serve the plan:
+hand the histogram half of the values to ``pieces.reduce`` and ``pieces.finalize``, and serve the
+plan:
 
 .. code-block:: python
 
@@ -919,6 +915,7 @@ hand the histogram half of the values to ``pieces.reduce``, and serve the plan:
         combine=lambda a, b: {"hists": p.combine(a["hists"], b["hists"]), "n": a["n"] + b["n"]},
         empty=lambda: {"hists": p.empty(), "n": 0},
         externals=p.externals,
+        finalize=lambda v: {"hists": p.finalize(v["hists"]), "n": v["n"]},
         on_compiled=p.on_compiled,
         steps_per_file=4,
     ))
