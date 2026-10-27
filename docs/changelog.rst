@@ -1,6 +1,25 @@
 What changed
 ============
 
+Unreleased
+----------
+
+Requires a ``graphed`` with ``Plan.finalize``.
+
+Changed
+~~~~~~~
+
+* A result is dense when the run returns it: the plan's ``finalize`` runs once, on the head, after
+  the last combine, and makes each chunked result the class you instantiated, so
+  ``run(plan).value`` and ``gh.unpack`` hold a plain ``boost_histogram.Histogram``, ``hist.Hist``
+  or ``hist.NamedHist`` (``type(result) is hist.Hist``). There is no chunked-until-read phase: no
+  stand-in subclass, no densifying on the first read, no "chunked" repr. Partials and merges stay
+  chunked in every task (:ref:`chunked-partials`).
+* ``session.materialize`` on a fill node gives the dense histogram, as does ``gh.FillEvaluator``;
+  ``FillEvaluator(..., partial=True)`` gives the chunked partial a plan's tasks fill.
+* ``gh.boost.pieces`` carries a ``finalize`` for the plan it feeds, and its ``externals`` are keyed
+  by ``graphed.execute.external_key``.
+
 0.0.6
 -----
 

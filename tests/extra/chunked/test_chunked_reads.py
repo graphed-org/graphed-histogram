@@ -1,10 +1,9 @@
-"""Nothing densifies a chunked partial before the user reads it, and the read hands back the type
-instantiated.
+"""Partials stay chunked through every task and merge; the plan's finalize, on the head, hands
+back the dense histogram of the class instantiated.
 """
 
 from __future__ import annotations
 
-import logging
 import os
 import pickle
 from collections.abc import Callable
@@ -19,7 +18,7 @@ import numpy as np
 import pytest
 from chunked_census import Events, take
 from graphed.awkward import AwkwardBackend, AwkwardForm
-from graphed.core.execution import SequentialRunner
+from graphed.core.execution import LocalResources, SequentialRunner
 from graphed_exec_local import ProcessPoolExecutor
 
 import graphed_histogram as gh
@@ -81,33 +80,22 @@ def _leaves(out: dict[str, Any]) -> list[Any]:
 
 
 @pytest.mark.parametrize("runner", RUNNERS)
-def test_nothing_densifies_a_partial_before_the_users_first_read(runner: str) -> None:
+def test_only_the_heads_finalize_densifies_once_per_slot(runner: str) -> None:
     take()
     RUNNERS[runner]().run(gh.plan(_census_hists(True), steps_per_file=4))
     control = take()
-    # the counter reaches workers
+    # the counter reaches workers: the dense slot adds each chunked fill dense where it sums
     assert control and (runner == "sequential" or set(control) - {os.getpid()})
-    blob = pickle.dumps(
-        RUNNERS[runner]().run(gh.plan(_census_hists(False), steps_per_file=4)).value
-    )
-    out = gh.unpack(pickle.loads(blob))
-    assert all(isinstance(h, Chunked) for h in _leaves(out))
-    for h in _leaves(out):
-        graphed.labels(h)
-        logging.getLogger(__name__).warning("%r %s %s", h, h, h._repr_html_())
-    for v in out.values():
-        graphed.nominal(v)
-    axis: Any = out["axis"]
-    universe = graphed.universe(axis, "sf_up")
-    assert (
-        isinstance(universe, Chunked)
-        and "chunked" in repr(universe)
-        and ".values()" in repr(universe)
-    )
+    value = RUNNERS[runner]().run(gh.plan(_census_hists(False), steps_per_file=4)).value
+    # sibling: 2 labels, axis: 1, hist: 1
+    assert take() == [os.getpid()] * 4
+    out = gh.unpack(pickle.loads(pickle.dumps(value)))
     assert take() == []
-    out["sibling"]["nominal"].values()
-    assert take() == [os.getpid()]
-    assert _bytes(universe) == _bytes(axis[{2: 1}])
+    assert all(type(h) in (bh.Histogram, hist.Hist) for h in _leaves(out))
+    assert [graphed.labels(v) for v in out.values()] == [("nominal", "sf_up")] * 2 + [("nominal",)]
+    axis: Any = out["axis"]
+    assert _bytes(graphed.universe(axis, "sf_up")) == _bytes(axis[{2: 1}])
+    assert _bytes(graphed.nominal(out["sibling"])) == _bytes(out["sibling"]["nominal"])
 
 
 def _bh(cls: type, storage: str) -> Any:
@@ -157,80 +145,51 @@ def _typed(ev: Any) -> dict[str, tuple[Any, Any]]:
 
 
 @pytest.mark.parametrize("runner", ["sequential", "process"])
-def test_the_read_hands_back_the_instantiated_type(runner: str) -> None:
+def test_the_run_value_is_the_instantiated_class(runner: str) -> None:
     typed = _typed(_events())
-    value = gh.unpack(
-        RUNNERS[runner]().run(gh.plan({k: v[0] for k, v in typed.items()}, steps_per_file=3)).value
+    plan = gh.plan({k: v[0] for k, v in typed.items()}, steps_per_file=3)
+    partial = plan.process(plan.tasks[0].partition, LocalResources())
+    assert sorted(k for k, v in partial.items() if type(v) is Chunked) == sorted(
+        k for k in typed if k.endswith("Weight-chunked")
     )
-    lazy = [k for k, v in value.items() if type(v) is not type(typed[k][1])]
-    # chunked until read
-    assert sorted(lazy) == sorted(k for k in typed if k.endswith("Weight-chunked"))
+    raw = RUNNERS[runner]().run(plan).value
+    assert all(type(raw[k]) is type(eager) for k, (_, eager) in typed.items())
+    value = gh.unpack(raw)
     for key, (_, eager) in typed.items():
-        got = value[key]
-        assert isinstance(got, type(eager)), key  # before the read, too
+        got: Any = value[key]
+        assert type(got) is type(eager), key
         # three partials, one fill
         np.testing.assert_allclose(got.values(), eager.values(), rtol=1e-13)
-        assert type(got) is type(eager), key
         twin = value[key.replace("chunked", "dense")]
         assert (
             got.axes == eager.axes and _public(got) == _public(eager) and vars(got) == vars(twin)
         ), key
         assert _bytes(got) == _bytes(twin)
+        if eager.variances() is not None:
+            np.testing.assert_allclose(got.variances(), eager.variances(), rtol=1e-13)
 
 
-CUT = gh.spec_of(
-    bh.Histogram(
-        bh.axis.Regular(4, 0, 1),
-        bh.axis.IntCategory([0, 1, 2]),
-        bh.axis.StrCategory([], growth=True),
-        storage=bh.storage.Weight(),
-    )
-)
-LABELS = RNG.choice(["a", "b", "c"], N)
+def test_a_partial_has_no_histogram_surface() -> None:
+    spec = gh.spec_of(bh.Histogram(bh.axis.Regular(4, 0, 1), bh.axis.IntCategory([0, 1])))
+    h = gh.FillEvaluator(spec, 2, False, False, partial=True)(X, C)
+    take()
+    assert type(h) is Chunked and not isinstance(h, bh.Histogram)
+    for name in ("values", "axes", "view", "__array__", "_hist", "__dask_graph__"):
+        assert not hasattr(h, name), name
+    probe: Any = h
+    with pytest.raises(TypeError):
+        probe[{1: 0}]
+    with pytest.raises(AttributeError):
+        probe.metadata = "m"
+    assert take() == [] and type(h) is Chunked
 
 
-def _outcome(h: bh.Histogram, index: Any) -> Any:
-    try:
-        got = h[index]
-    except Exception as e:
-        return type(e)
-    return _bytes(got), [list(a) for a in got.axes], got._variance_known
-
-
-@pytest.mark.parametrize(
-    ("index", "chunked"),
-    [
-        ({1: 0}, True),
-        ({1: -1}, True),
-        ({1: np.int64(2)}, True),
-        ({2: 1}, True),
-        ({2: -3}, True),
-        ({0: 1}, False),
-        ({1: 3}, False),
-        ({-1: 0}, False),
-        ({5: 0}, False),
-        ({1: bh.loc(1)}, False),
-        ({"x": 0}, False),
-        (0, False),
-    ],
-)
-def test_a_selection_is_the_dense_ones_and_one_category_bin_stays_chunked(
-    index: Any, chunked: bool
-) -> None:
-    def partial() -> Any:
-        return gh.add_histograms(
-            *(gh.FillEvaluator(CUT, 3, True, False)(X, C, LABELS, W) for _ in "ab")
-        )
-
-    h, dense = partial(), partial()
-    dense.values()
-    got = _outcome(h, index)
-    assert (type(h) is Chunked) == chunked
-    assert got == _outcome(dense, index)
-
-
-def test_state_reads_densify_and_a_dense_fill_never_sums_in_place() -> None:
-    h = gh.FillEvaluator(CUT, 3, True, False)(X, C, LABELS, W)
-    assert not h.iadd(gh.zero_of(CUT)) and type(h) is Chunked
-    state = h.__getstate__()
-    assert type(h) is bh.Histogram and state == bh.Histogram.__getstate__(h)
+def test_materialize_on_a_fill_node_is_dense() -> None:
+    ev = _events()
+    h = gh.boost.Histogram(
+        bh.axis.Regular(4, 0, 1), bh.axis.IntCategory([0, 1]), storage=bh.storage.Weight()
+    ).fill(ev.x, ev.c, weight=ev.w)
+    (node,) = h.fill_nodes()
+    got = ev.session.materialize(node)
+    eager = bh.Histogram(*h.axes, storage=bh.storage.Weight()).fill(X, C, weight=W)
+    assert type(got) is bh.Histogram and _bytes(got) == _bytes(eager)

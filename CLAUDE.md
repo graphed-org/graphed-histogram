@@ -34,9 +34,9 @@ the reference in docs/design.rst "Growth axes" (lower-keyed partial on the LEFT)
   growth on all but Variable (m64). **Phase 2 (do NOT build):** dask-style persist/delayed beyond
   Plan export.
 - Partials of a histogram with a category axis are `hist.chunked.ChunkedHist`-backed
-  (`_chunked.Chunked`, one surrogate subclass per instantiated class), and densify in place, bit
-  for bit, into that class on the user's first read; nothing internal may read them (the census in
-  `tests/extra/chunked/test_chunked_reads.py`). `dense_backed(h)` opts a histogram out
+  (`_chunked.Chunked`, an internal type with no histogram surface); they fill, merge and ship
+  chunked, and the plan's `finalize` makes each result dense, bit for bit, as the instantiated
+  class, once on the head (the census in `tests/extra/chunked/test_chunked_reads.py`). `dense_backed(h)` opts a histogram out
   (docs/design.rst "Chunked partials").
 
 ## Hard rules
