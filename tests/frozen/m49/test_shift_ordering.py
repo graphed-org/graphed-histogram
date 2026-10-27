@@ -28,7 +28,8 @@ JES_LABELS = ("jes_down", "nominal", "jes_up")
 
 def _program() -> dict[str, Any]:
     """One monotone-JES ttbar slice: the weighted HT observable, and an unweighted count of the
-    events each universe selects."""
+    events each universe selects.
+    """
     _session, events, _data = partitioned(TOY_EVENTS)
     observable, sel_jets = ttbar_slice(shift_jets(events.Jet), REGION)
     central = graphed.nominal(sel_jets)
@@ -39,7 +40,9 @@ def _program() -> dict[str, Any]:
     ht.fill(observable, weight=[weight])
     counts = gh.boost.Histogram(bh.axis.Regular(40, 0, 800), storage=bh.storage.Int64())
     counts.fill(observable)
-    return gh.unpack(SequentialRunner().run(gh.plan({"ht": ht, "n": counts}, steps_per_file=STEPS)).value)
+    return gh.unpack(
+        SequentialRunner().run(gh.plan({"ht": ht, "n": counts}, steps_per_file=STEPS)).value
+    )
 
 
 def _mean_bin(hist: bh.Histogram) -> float:
@@ -55,7 +58,8 @@ def test_the_monotone_jes_orders_the_ht_observable() -> None:
 
 def test_the_jes_universes_re_derive_their_own_selection() -> None:
     """§5.1's defining behaviour, on the unweighted count. An implementation that shifted only the
-    observable and reused nominal's selection leaves these three equal."""
+    observable and reused nominal's selection leaves these three equal.
+    """
     counts = _program()["n"]
     selected = {label: int(counts[label].sum()) for label in JES_LABELS}
     assert len(set(selected.values())) == 3, selected
@@ -65,5 +69,6 @@ def test_the_jes_universes_re_derive_their_own_selection() -> None:
 def test_the_unweighted_count_carries_only_the_shift_labels() -> None:
     """The instrument for the cutflow witness: the counts must come from the observable's own
     labels. A count histogram that had picked up the weight labels would be comparing universes
-    whose selections agree by construction."""
+    whose selections agree by construction.
+    """
     assert sorted(_program()["n"]) == sorted(JES_LABELS)

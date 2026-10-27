@@ -73,13 +73,33 @@ fail_under = 90
 show_missing = true
 
 [tool.ruff]
-line-length = 110
+# PEP 8's team maximum
+line-length = 99
 src = ["src", "tests"]
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415"]
-ignore = ["E501"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415", "N", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+# A test's name is its summary line: its docstring, when it has one, elaborates the property under
+# test as one paragraph rather than issuing a command.
+"tests/**" = ["D1", "D205", "D401"]
+# These frozen test names are test IDs, which capitalize words for emphasis.
+"tests/frozen/m48/test_ambient_object_fills.py" = ["N802"]
+"tests/frozen/m48/test_fill_flatten_refusals.py" = ["N802"]
+"tests/frozen/m48/test_fill_reindexing.py" = ["N802"]
+"tests/frozen/m48/test_fill_unweighted.py" = ["N802"]
+"tests/frozen/m48/test_varied_result_shapes.py" = ["N802"]
+"tests/frozen/m49/test_merge_shortfall.py" = ["N802"]
+"tests/frozen/m49/test_variation_labels_payload.py" = ["N802"]
+# awkward is an optional dependency, imported only once a fill is handed an awkward array.
+"src/graphed_histogram/boost.py" = ["PLC0415"]
+# histserv and grpc are optional dependencies, imported only once a bound run talks to a server.
+"src/graphed_histogram/_histserv.py" = ["PLC0415"]
 
 [tool.ruff.format]
 # ruff formats python blocks inside .md, which reflows the README's examples (aligned trailing
@@ -99,62 +119,3 @@ disallow_subclassing_any = false
 module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "hist.*", "pyarrow.*", "histserv.*", "grpc.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
-
-# tests/frozen/** is read-only, so its residual errors are disabled here rather than annotated
-# away. The test tree has no __init__.py (pytest's prepend import mode), so mypy names these
-# modules by bare basename and its override patterns cannot glob a single component -- hence the
-# explicit list instead of `tests.frozen.*`. Regenerate:
-#   python -c "import pathlib;print(sorted(p.stem for p in pathlib.Path('tests/frozen').rglob('*.py')))"
-[[tool.mypy.overrides]]
-module = [
-  "behavior_toy",
-  "histserv_harness",
-  "m49_hist_fixtures",
-  "m50_axis_fixtures",
-  "m52_joint_fill_fixtures",
-  "test_ambient_object_fills",
-  "test_axis_declaration",
-  "test_axis_mode_equality",
-  "test_axis_result_shape",
-  "test_axis_slot_scaling",
-  "test_blame_parity",
-  "test_broadcast_seam_row_spaces",
-  "test_corpus_weight_matrix",
-  "test_deferred_histograms",
-  "test_fill_arity",
-  "test_fill_divergence",
-  "test_fill_flatten_refusals",
-  "test_fill_fold_order",
-  "test_fill_reindexing",
-  "test_fill_unweighted",
-  "test_golden_side_strip",
-  "test_group_plan",
-  "test_histserv_fill_path",
-  "test_histserv_lazy_init",
-  "test_histserv_memory_model",
-  "test_histserv_packing",
-  "test_histserv_retries",
-  "test_histserv_surface",
-  "test_jer_stochastic",
-  "test_joint_axis_mode_parity",
-  "test_joint_fill_resolution",
-  "test_merge_shortfall",
-  "test_mixed_mode_plan",
-  "test_multi_weight_fills",
-  "test_optimizer_merge_guard",
-  "test_output_label_listing",
-  "test_pieces_composition",
-  "test_points_bare_histogram",
-  "test_process_executor_witnesses",
-  "test_reference_matrix",
-  "test_selection_invariance",
-  "test_shift_ordering",
-  "test_single_fallback_rule",
-  "test_variation_goldens",
-  "test_variation_labels_payload",
-  "test_varied_plan_refusal",
-  "test_varied_result_shapes",
-  "test_weight_factor_reindex",
-  "vary_hist_fixtures",
-]
-disable_error_code = ["attr-defined", "arg-type", "no-any-return", "no-untyped-call", "type-arg", "unused-ignore", "union-attr", "index", "no-untyped-def"]

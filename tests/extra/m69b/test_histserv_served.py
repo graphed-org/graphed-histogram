@@ -1,5 +1,6 @@
 """m69b served process beyond the frozen rows: what a worker's unpickled copy does, an empty run,
-an unbound call, the plaintext ``grpc://`` wire, and one creation under concurrent first calls."""
+an unbound call, the plaintext ``grpc://`` wire, and one creation under concurrent first calls.
+"""
 
 from __future__ import annotations
 
@@ -41,10 +42,14 @@ def _plans(path: str, name: str, **kwargs: Any) -> tuple[Plan[Any], Plan[Any]]:
         out["g"].fill(ev.x)
         if back:
             for key, hist in out.items():
-                histserv.backed(hist, histserv.Context(memory_mb=1024, workers=1, name=f"{name}-{key}"))
+                histserv.backed(
+                    hist, histserv.Context(memory_mb=1024, workers=1, name=f"{name}-{key}")
+                )
         return out
 
-    return gh.plan(hists(True), steps_per_file=3, **kwargs), gh.plan(hists(False), steps_per_file=3, **kwargs)
+    return gh.plan(hists(True), steps_per_file=3, **kwargs), gh.plan(
+        hists(False), steps_per_file=3, **kwargs
+    )
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +59,8 @@ def path(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 def test_an_unpickled_copy_fills_the_histograms_the_driver_created(path: str) -> None:
     """A worker's copy carries the created ids: it creates none and fills the same histograms.
-    Creating in ``__setstate__`` (or per copy) doubles the creations and splits the sums."""
+    Creating in ``__setstate__`` (or per copy) doubles the creations and splits the sums.
+    """
     plan, twin = _plans(path, "m69b-extra-unpickled")
     with servers(len(plan.services)) as started:
         bound, by_name = bind(plan, started)
@@ -65,7 +71,9 @@ def test_an_unpickled_copy_fills_the_histograms_the_driver_created(path: str) ->
         tasks = sorted(plan.tasks, key=lambda t: t.key)
         total = bound.empty()
         for task in tasks:
-            total = bound.combine(total, run_bounded(functools.partial(worker, task.partition, res)))
+            total = bound.combine(
+                total, run_bounded(functools.partial(worker, task.partition, res))
+            )
         assert {name: server.count("Init") for name, server in by_name.items()} == created
         resolved = run_bounded(lambda: resolve_services(bound, total))
     want = SequentialRunner().run(twin).value
@@ -74,7 +82,8 @@ def test_an_unpickled_copy_fills_the_histograms_the_driver_created(path: str) ->
 
 def test_a_served_plan_over_no_partition_resolves_to_empty_histograms(path: str) -> None:
     """The empty value of a backed slot is the empty receipt, which resolves to the zero histogram
-    without a server; an empty value of zero histograms would not add to the first receipt."""
+    without a server; an empty value of zero histograms would not add to the first receipt.
+    """
     plan, twin = _plans(path, "m69b-extra-empty", partitions=[])
     # nothing listens on port 1: any RPC fails the test
     bound = bind_services(plan, {s.name: "tcp://127.0.0.1:1" for s in plan.services})
@@ -111,7 +120,8 @@ def test_a_grpc_endpoint_is_the_plaintext_wire(path: str) -> None:
 
 def test_concurrent_first_calls_create_each_histogram_once(path: str) -> None:
     """Eight threads released together all reach the first use; without the handles' lock several
-    of them create, and the server holds more histograms than slots."""
+    of them create, and the server holds more histograms than slots.
+    """
     plan, _twin = _plans(path, "m69b-extra-race")
     with servers(len(plan.services)) as started:
         bound, by_name = bind(plan, started)
@@ -131,4 +141,6 @@ def test_concurrent_first_calls_create_each_histogram_once(path: str) -> None:
         for thread in threads:
             thread.join(120)
         assert not errors and not any(t.is_alive() for t in threads)
-        assert {name: server.count("Init") for name, server in by_name.items()} == dict.fromkeys(by_name, 1)
+        assert {name: server.count("Init") for name, server in by_name.items()} == dict.fromkeys(
+            by_name, 1
+        )

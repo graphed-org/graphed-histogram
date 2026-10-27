@@ -1,4 +1,6 @@
-"""m69b histogram pieces: fills composed with another output in one plan, read at their compiled positions."""
+"""m69b histogram pieces: fills composed with another output in one plan, read at their compiled
+positions.
+"""
 
 from __future__ import annotations
 
@@ -53,7 +55,9 @@ def _position(compiled: CompiledGraph, node: Array) -> int:
     return order[compiled.correspondence.node_map[node.node_id][0]]
 
 
-def compose(p: Any, counter: Array, *, counter_first: bool, hook: bool = True) -> Plan[dict[str, Any]]:
+def compose(
+    p: Any, counter: Array, *, counter_first: bool, hook: bool = True
+) -> Plan[dict[str, Any]]:
     reduce = Composed(p.reduce)
 
     def on_compiled(compiled: CompiledGraph) -> Any:
@@ -72,7 +76,12 @@ def compose(p: Any, counter: Array, *, counter_first: bool, hook: bool = True) -
     marked = [counter, *p.fill_nodes] if counter_first else [*p.fill_nodes, counter]
     fire: Callable[[CompiledGraph], Any] = on_compiled if hook else skip_hook
     return aggregate_plan(
-        *marked, reduce=reduce, combine=combine, empty=empty, externals=p.externals, on_compiled=fire
+        *marked,
+        reduce=reduce,
+        combine=combine,
+        empty=empty,
+        externals=p.externals,
+        on_compiled=fire,
     )
 
 
@@ -115,7 +124,9 @@ def test_a_composed_served_plan_equals_gh_plan_and_counts_events(tmp_path: Path)
     p = boost_api().pieces(_hists(ev, ctx))
     plan = p.serve(compose(p, ev.x * 0 + 1, counter_first=True))
     _twin_session, twin_ev = events(path)
-    want = gh.unpack(SequentialRunner().run(gh.plan(_hists(twin_ev, None), steps_per_file=3)).value)
+    want = gh.unpack(
+        SequentialRunner().run(gh.plan(_hists(twin_ev, None), steps_per_file=3)).value
+    )
     with servers(len(plan.services)) as started:
         bound, _by_name = bind(plan, started)
         value = run_bounded(lambda: resolve_services(bound, SequentialRunner().run(bound).value))
@@ -123,7 +134,9 @@ def test_a_composed_served_plan_equals_gh_plan_and_counts_events(tmp_path: Path)
     assert value["n"] == len(ak.from_parquet(path))
     assert same(got["h"], want["h"])
     assert isinstance(got["v"], dict) and isinstance(want["v"], dict)
-    assert set(got["v"]) == {"nominal", "sf_up"} and all(same(got["v"][k], want["v"][k]) for k in want["v"])
+    assert set(got["v"]) == {"nominal", "sf_up"} and all(
+        same(got["v"][k], want["v"][k]) for k in want["v"]
+    )
 
 
 def test_an_unserved_composed_plan_fails_its_first_task_naming_serve(tmp_path: Path) -> None:
@@ -180,7 +193,9 @@ def test_merged_fills_composed_with_a_counter_each_read_once_per_marked_fill(
     assert len({n.node_id for n in pair}) == 2
     assert len(GraphStore.deserialize(bytes(compile_ir(session, *pair).ir)).outputs()) == 1
     tag = "first" if counter_first else "last"
-    ctx = histserv_api().Context(memory_mb=1024, workers=1, name=f"m69b-pieces-merged-counter-{tag}")
+    ctx = histserv_api().Context(
+        memory_mb=1024, workers=1, name=f"m69b-pieces-merged-counter-{tag}"
+    )
     histserv_api().backed(hists["b"], ctx)
     p = boost_api().pieces(hists)
     plan = p.serve(compose(p, ev.x * 0 + 1, counter_first=counter_first))
@@ -205,7 +220,9 @@ def test_collated_served_plans_route_each_plan_to_its_own_servers(tmp_path: Path
         ctx = histserv_api().Context(memory_mb=1024, workers=1, name=f"m69b-pieces-collate-{name}")
         plans[name] = gh.plan(_hists(ev, ctx), steps_per_file=3)
         _twin_session, twin_ev = events(path)
-        twins[name] = SequentialRunner().run(gh.plan(_hists(twin_ev, None), steps_per_file=3)).value
+        twins[name] = (
+            SequentialRunner().run(gh.plan(_hists(twin_ev, None), steps_per_file=3)).value
+        )
     collated = collate(plans)
     with servers(len(collated.services)) as started:
         bound, by_name = bind(collated, started)

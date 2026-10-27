@@ -1,4 +1,6 @@
-"""A scalar fill value (``h.fill(dataset="x", pt=arr)``) broadcasts per entry, as an eager fill does."""
+"""A scalar fill value (``h.fill(dataset="x", pt=arr)``) broadcasts per entry, as an eager fill
+does.
+"""
 
 from __future__ import annotations
 
@@ -40,9 +42,13 @@ class Events:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("gw30://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("gw30://events", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         return self.data[part.entry_start : part.entry_stop]
 
@@ -82,15 +88,24 @@ def test_a_scalar_axis_value_matches_eager_hist(axis: Any, constant: Any) -> Non
 
 def test_scalar_weight_and_sample_match_eager_hist() -> None:
     events = _events()
-    weighted = hist.graphed.Hist(PT_AXIS, storage=hist.storage.Weight()).fill(pt=events.pt, weight=0.5)
+    weighted = hist.graphed.Hist(PT_AXIS, storage=hist.storage.Weight()).fill(
+        pt=events.pt, weight=0.5
+    )
     mean = hist.graphed.Hist(PT_AXIS, storage=hist.storage.Mean()).fill(pt=events.pt, sample=3.0)
     product = gh.boost.Histogram(PT_AXIS, storage=bh.storage.Weight()).fill(
         events.pt, weight=[events.pt, 0.5]
     )
     got = _run({"weighted": weighted, "mean": mean, "product": product}, partitions=1)
-    _assert_same(got["weighted"], hist.Hist(PT_AXIS, storage=hist.storage.Weight()).fill(pt=PT, weight=0.5))
-    _assert_same(got["mean"], hist.Hist(PT_AXIS, storage=hist.storage.Mean()).fill(pt=PT, sample=3.0))
-    _assert_same(got["product"], bh.Histogram(PT_AXIS, storage=bh.storage.Weight()).fill(PT, weight=PT * 0.5))
+    _assert_same(
+        got["weighted"], hist.Hist(PT_AXIS, storage=hist.storage.Weight()).fill(pt=PT, weight=0.5)
+    )
+    _assert_same(
+        got["mean"], hist.Hist(PT_AXIS, storage=hist.storage.Mean()).fill(pt=PT, sample=3.0)
+    )
+    _assert_same(
+        got["product"],
+        bh.Histogram(PT_AXIS, storage=bh.storage.Weight()).fill(PT, weight=PT * 0.5),
+    )
 
 
 def test_two_constants_in_one_plan_are_two_nodes() -> None:
@@ -98,19 +113,27 @@ def test_two_constants_in_one_plan_are_two_nodes() -> None:
     dataset = hist.axis.StrCategory([], growth=True, name="dataset")
     a = hist.graphed.Hist(dataset, PT_AXIS).fill(dataset="a", pt=events.pt)
     b = hist.graphed.Hist(dataset, PT_AXIS).fill(dataset="b", pt=events.pt)
-    both = hist.graphed.Hist(dataset, PT_AXIS).fill(dataset="a", pt=events.pt).fill(dataset="b", pt=events.pt)
+    both = (
+        hist.graphed.Hist(dataset, PT_AXIS)
+        .fill(dataset="a", pt=events.pt)
+        .fill(dataset="b", pt=events.pt)
+    )
     assert a.fill_nodes()[0].node_id != b.fill_nodes()[0].node_id
     assert len({node.node_id for node in both.fill_nodes()}) == 2
     assert len(both.evaluators()) == 2
     records = {n["id"]: n for n in events.session._store.nodes()}
-    assert [json.loads(records[node.node_id]["params"]["constants"]) for node in both.fill_nodes()] == [
+    assert [
+        json.loads(records[node.node_id]["params"]["constants"]) for node in both.fill_nodes()
+    ] == [
         {"axes": [[0, "a"]]},
         {"axes": [[0, "b"]]},
     ]
     got = _run({"a": a, "b": b, "both": both})
     _assert_same(got["a"], hist.Hist(dataset, PT_AXIS).fill(dataset="a", pt=PT))
     _assert_same(got["b"], hist.Hist(dataset, PT_AXIS).fill(dataset="b", pt=PT))
-    _assert_same(got["both"], hist.Hist(dataset, PT_AXIS).fill(dataset="a", pt=PT).fill(dataset="b", pt=PT))
+    _assert_same(
+        got["both"], hist.Hist(dataset, PT_AXIS).fill(dataset="a", pt=PT).fill(dataset="b", pt=PT)
+    )
 
 
 def test_an_axis_mode_fill_carries_the_constant() -> None:
@@ -125,7 +148,9 @@ def test_an_axis_mode_fill_carries_the_constant() -> None:
         want = hist.Hist(dataset, PT_AXIS, storage=hist.storage.Weight()).fill(
             dataset="x", pt=PT, weight=flat_w
         )
-        assert got[..., hist.loc(label)].view(flow=True).tobytes() == want.view(flow=True).tobytes(), label
+        assert (
+            got[..., hist.loc(label)].view(flow=True).tobytes() == want.view(flow=True).tobytes()
+        ), label
 
 
 def test_a_fill_of_constants_alone_is_refused() -> None:
@@ -146,7 +171,9 @@ def test_a_scalar_factor_keeps_its_slot_after_the_ambient_weight() -> None:
 
 
 @pytest.mark.parametrize(
-    "constant", [np.int64(2018), np.float32(2.5), np.bool_(True)], ids=["int64", "float32", "bool_"]
+    "constant",
+    [np.int64(2018), np.float32(2.5), np.bool_(True)],
+    ids=["int64", "float32", "bool_"],
 )
 def test_a_numpy_scalar_is_a_constant_like_its_python_value(constant: Any) -> None:
     events = _events()

@@ -1,7 +1,9 @@
-"""m69b histserv backend: a server's measured peak memory against its plan-time prediction (Linux VmHWM).
+"""m69b histserv backend: a server's measured peak memory against its plan-time prediction (Linux
+VmHWM).
 
-Each scenario starts its own server, warms it as the model's probe did (one histogram created, filled, snapshotted
-and deleted), resets the high-water mark, runs, then reads ``VmHWM`` minus the warm RSS.
+Each scenario starts its own server, warms it as the model's probe did (one histogram created,
+filled, snapshotted and deleted), resets the high-water mark, runs, then reads ``VmHWM`` minus the
+warm RSS.
 """
 
 from __future__ import annotations
@@ -36,7 +38,9 @@ from histserv_harness import (
 
 import graphed_histogram as gh
 
-pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc/<pid>/status")
+pytestmark = pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="reads /proc/<pid>/status"
+)
 pytest.importorskip("histserv")
 
 
@@ -130,15 +134,21 @@ def test_four_fillers_released_together_stay_under_the_four_worker_prediction(pa
 def test_an_eight_label_weight_slot_stays_under_its_prediction(path: str) -> None:
     dense = 4 * MiB
     _session, ev = events(path)
-    hist = gh.boost.Histogram(bh.axis.Regular(dense // 16 - 2, 0.0, 1.0), storage=bh.storage.Weight())
+    hist = gh.boost.Histogram(
+        bh.axis.Regular(dense // 16 - 2, 0.0, 1.0), storage=bh.storage.Weight()
+    )
     w = graphed.vary(ev.w, "sf", points={str(i): ev.w * (1 + (i + 1) / 64) for i in range(7)})
     hist.fill(ev.x, weight=[w], variation_axis=True)
-    warm, grew, predicted_bytes = _measure(path, "m69b-mem-labels", {"h": hist}, 1, 2, 1024, _sequential)
+    warm, grew, predicted_bytes = _measure(
+        path, "m69b-mem-labels", {"h": hist}, 1, 2, 1024, _sequential
+    )
     assert warm < BASE
     assert 9 * dense + 8 * dense < grew <= predicted_bytes - BASE
 
 
-def test_two_thousand_one_bin_slots_stay_under_a_prediction_made_of_per_histogram_terms(path: str) -> None:
+def test_two_thousand_one_bin_slots_stay_under_a_prediction_made_of_per_histogram_terms(
+    path: str,
+) -> None:
     _session, ev = events(path, 1)
     hists = {}
     for i in range(2000):
@@ -181,6 +191,8 @@ def test_one_connection_per_worker_stays_under_the_prediction(path: str) -> None
             for channel in channels:
                 channel.close()
 
-    warm, grew, predicted_bytes = _measure(path, "m69b-mem-connections", {"h": hist}, n, 1, 1024, dialled)
+    warm, grew, predicted_bytes = _measure(
+        path, "m69b-mem-connections", {"h": hist}, n, 1, 1024, dialled
+    )
     assert warm < BASE
     assert PER_CONN * n / 2 < grew <= predicted_bytes - BASE

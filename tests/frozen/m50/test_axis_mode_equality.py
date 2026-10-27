@@ -12,6 +12,9 @@ each FAILS today at the opt-in keyword and passes once H1/H2 land.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 from m50_axis_fixtures import (
     execute,
@@ -44,19 +47,20 @@ WEIGHTS = ("wgt_up", "wgt_down")  # W
 MIXED_LABELS = ("nominal", *SIBLINGS, *WEIGHTS)
 
 
-def _axis_result(program_fn) -> object:
+def _axis_result(program_fn: Callable[..., gh.boost.Histogram]) -> Any:
     _s, events, _src = partitioned()
     return gh.unpack(execute({"h": program_fn(True, source=events)}))["h"]
 
 
-def _sibling_result(program_fn) -> dict:
+def _sibling_result(program_fn: Callable[..., gh.boost.Histogram]) -> dict[str, Any]:
     _s, events, _src = partitioned()
     return gh.unpack(execute({"h": program_fn(False, source=events)}))["h"]
 
 
 def test_weight_labels_collapse_into_one_axis_histogram_equal_to_the_siblings() -> None:
     """Per-object value, per-event varied weight: the axis-mode histogram sliced at each weight
-    label equals the sibling fill for that label bin-for-bin, flow included."""
+    label equals the sibling fill for that label bin-for-bin, flow included.
+    """
     axis = _axis_result(fill_weight_program)
     sibling = _sibling_result(fill_weight_program)
     for label in ("nominal", "wgt_up", "wgt_down"):
@@ -65,18 +69,22 @@ def test_weight_labels_collapse_into_one_axis_histogram_equal_to_the_siblings() 
 
 def test_the_weight_equality_is_not_vacuous() -> None:
     """The instrument: every universe genuinely differs from nominal and nominal is non-empty, so
-    the equality above cannot pass on an implementation that never applied a variation."""
+    the equality above cannot pass on an implementation that never applied a variation.
+    """
     axis = _axis_result(fill_weight_program)
     nominal = np.asarray(slice_label(axis, "nominal").view(flow=True)["value"])
     assert float(nominal.sum()) > 0.0
     for label in ("wgt_up", "wgt_down"):
-        assert not np.array_equal(np.asarray(slice_label(axis, label).view(flow=True)["value"]), nominal)
+        assert not np.array_equal(
+            np.asarray(slice_label(axis, label).view(flow=True)["value"]), nominal
+        )
 
 
 def test_mixed_shift_weight_sample_axis_equals_the_sibling_decomposition() -> None:
     """WeightedMean storage, a shift (`S`), a weight (`W`) and a sample-only variation (`S`) with
     per-label sample values that DIFFER: the single axis-mode histogram equals the sibling
-    decomposition label-by-label, the joint `smp x jes` universes included."""
+    decomposition label-by-label, the joint `smp x jes` universes included.
+    """
     axis = _axis_result(fill_mixed_program)
     sibling = _sibling_result(fill_mixed_program)
     assert set(sibling) == set(MIXED_LABELS)
@@ -87,13 +95,15 @@ def test_mixed_shift_weight_sample_axis_equals_the_sibling_decomposition() -> No
 def test_a_sample_only_label_lowers_as_a_sibling_not_into_the_loop() -> None:
     """§6.1b's `S`/`W` split, observable only in axis mode: `smp_*` is borne solely by a `Varied`
     sample= and must lower as a SIBLING (the loop re-fills against a FIXED sample column). Axis
-    arity is `1 + |S|`; misclassing the `smp` labels into `W` would drop every universe they bear."""
+    arity is `1 + |S|`; misclassing the `smp` labels into `W` would drop every universe they bear.
+    """
     _s, events = in_memory()
     axis = fill_mixed_program(True, source=events)
     _s2, events2 = in_memory()
     sibling = fill_mixed_program(False, source=events2)
     assert axis.staged_fills() == 1 + len(SIBLINGS)  # the weight loop plus |S| sibling nodes
-    assert sibling.staged_fills() == 1 + len(SIBLINGS) + len(WEIGHTS)  # no collapse in sibling mode
+    # no collapse in sibling mode
+    assert sibling.staged_fills() == 1 + len(SIBLINGS) + len(WEIGHTS)
 
 
 def test_axis_mode_fill_nodes_carry_distinct_evaluators() -> None:
@@ -101,7 +111,8 @@ def test_axis_mode_fill_nodes_carry_distinct_evaluators() -> None:
     `content_hash((spec, variation_payload))`, so each resolves to its OWN evaluator. The registry
     keys on payload hash alone — collapse them to one hash and every sibling resolves to whichever
     evaluator was registered last, which bin-for-bin equality can mask when two siblings agree.
-    Sibling mode is the contrast: one shared `content_hash(spec)` for the whole fill call."""
+    Sibling mode is the contrast: one shared `content_hash(spec)` for the whole fill call.
+    """
     session, events = in_memory()
     axis = fill_mixed_program(True, source=events)
     axis_chashes = [node_chash(session, node) for node in axis.fill_nodes()]

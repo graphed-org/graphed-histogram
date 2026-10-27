@@ -1,4 +1,6 @@
-"""Counts densifies of chunked partials, in this process and in every worker that unpickles `Events`."""
+"""Counts densifies of chunked partials, in this process and in every worker that unpickles
+`Events`.
+"""
 
 from __future__ import annotations
 
@@ -16,15 +18,15 @@ from graphed_histogram._chunked import Chunked
 
 #: inherited by spawned workers, so their densifies land beside the driver's
 DIR = os.environ.setdefault("GH_CHUNKED_CENSUS", tempfile.mkdtemp(prefix="chunked-census-"))
-_dense = Chunked._dense
+_dense_copy = Chunked._dense_copy
 
 
 def _counted(self: Chunked) -> Any:
     open(os.path.join(DIR, f"{os.getpid()}-{uuid.uuid4().hex}"), "w").close()
-    return _dense(self)
+    return _dense_copy(self)
 
 
-Chunked._dense = _counted  # type: ignore[method-assign]
+Chunked._dense_copy = _counted  # type: ignore[method-assign]
 
 
 def take() -> list[int]:
@@ -43,8 +45,12 @@ class Events:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("census://ev", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("census://ev", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         return self.data[part.entry_start : part.entry_stop]

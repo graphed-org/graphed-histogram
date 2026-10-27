@@ -1,4 +1,6 @@
-"""G1-G4: the spec codec carries growth, keeps fixed specs' bytes, and refuses what it cannot carry."""
+"""G1-G4: the spec codec carries growth, keeps fixed specs' bytes, and refuses what it cannot
+carry.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +24,10 @@ GROWTH_AXES: dict[str, tuple[Callable[[], Any], Callable[[], Any]]] = {
     "StrCategory": (lambda: bh.axis.StrCategory([], growth=True), lambda: bh.axis.StrCategory([])),
     "IntCategory": (lambda: bh.axis.IntCategory([], growth=True), lambda: bh.axis.IntCategory([])),
     "Integer": (lambda: bh.axis.Integer(0, 4, growth=True), lambda: bh.axis.Integer(0, 4)),
-    "Regular": (lambda: bh.axis.Regular(4, 0.0, 1.0, growth=True), lambda: bh.axis.Regular(4, 0.0, 1.0)),
+    "Regular": (
+        lambda: bh.axis.Regular(4, 0.0, 1.0, growth=True),
+        lambda: bh.axis.Regular(4, 0.0, 1.0),
+    ),
 }
 
 
@@ -61,7 +66,10 @@ REFUSED: dict[str, tuple[Callable[[], Any], str]] = {
     "growth Variable": (lambda: bh.axis.Variable([0, 0.5, 1], growth=True), "growth"),
     "circular Regular": (lambda: bh.axis.Regular(4, 0, 1, circular=True), "circular"),
     "circular Integer": (lambda: bh.axis.Integer(0, 4, circular=True), "circular"),
-    "log Regular": (lambda: bh.axis.Regular(4, 1, 100, transform=bh.axis.transform.log), "transform"),
+    "log Regular": (
+        lambda: bh.axis.Regular(4, 1, 100, transform=bh.axis.transform.log),
+        "transform",
+    ),
     "StrCategory no overflow": (lambda: bh.axis.StrCategory(["a"], overflow=False), "overflow"),
     "IntCategory no overflow": (lambda: bh.axis.IntCategory([1], overflow=False), "overflow"),
 }

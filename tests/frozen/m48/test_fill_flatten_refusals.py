@@ -35,7 +35,9 @@ def _ambient(source: Any, scale: float = 1.0) -> Any:
 def _weighted_context() -> tuple[Any, Any]:
     session, root = in_memory_events()
     events = gnano.events(root)
-    return session, graphed.vary(events, "pu", _ambient(events), is_weight=True, up=_ambient(events, 1.1))
+    return session, graphed.vary(
+        events, "pu", _ambient(events), is_weight=True, up=_ambient(events, 1.1)
+    )
 
 
 def test_an_already_flattened_value_against_the_ambient_weight_names_the_ambient_factor() -> None:
@@ -51,7 +53,8 @@ def test_an_already_flattened_value_against_the_ambient_weight_names_the_ambient
 
 def test_the_refusal_is_not_raised_at_record_time() -> None:
     """The recording must succeed: the two 1-D forms are indistinguishable until the rows exist,
-    and a record-time guard would have to false-positive on `gak.flatten(x, axis=2)`."""
+    and a record-time guard would have to false-positive on `gak.flatten(x, axis=2)`.
+    """
     _session, ctx = _weighted_context()
     h = weighted(bins=20, lo=0.0, hi=400.0)
     assert h.fill(gak.flatten(ctx.Jet.pt)) is h
@@ -60,7 +63,8 @@ def test_the_refusal_is_not_raised_at_record_time() -> None:
 
 def test_an_offending_explicit_factor_is_named_by_its_position_in_the_weight_list() -> None:
     """Two entries, one of them fine: a message that names the whole list, or the wrong entry,
-    sends the reader to the factor that is not the problem."""
+    sends the reader to the factor that is not the problem.
+    """
     session, root = in_memory_events()
     events = gnano.events(root)
     value = gak.flatten(events.Jet.pt)
@@ -79,7 +83,8 @@ def test_an_offending_explicit_factor_is_named_by_its_position_in_the_weight_lis
 def test_a_loose_VALUE_at_the_wrong_row_space_gets_its_own_message() -> None:
     """§6.1d binds a DISTINCT message here: a loose input adopts the unified context for LABEL
     ALIGNMENT only — its row space is NOT adjusted, because no intervening mask is known — so the
-    cause is the value, not a factor, and "pass the value unflattened" would be wrong advice."""
+    cause is the value, not a factor, and "pass the value unflattened" would be wrong advice.
+    """
     session, root = in_memory_events()
     events = gnano.events(root)
     sel = events[events.MET.pt > 20.0]
@@ -97,7 +102,8 @@ def test_a_loose_VALUE_at_the_wrong_row_space_gets_its_own_message() -> None:
 
 def test_a_correctly_unflattened_per_object_fill_raises_nothing() -> None:
     """The positive control: the same program with the value left unflattened runs, so the three
-    refusals above are reporting a real length fault and not a broken fill path."""
+    refusals above are reporting a real length fault and not a broken fill path.
+    """
     session, ctx = _weighted_context()
     h = weighted(bins=20, lo=0.0, hi=400.0)
     h.fill(ctx.Jet.pt, weight=[ctx.MET.pt * 0.5 + 1.0])

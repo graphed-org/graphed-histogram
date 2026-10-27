@@ -1,4 +1,6 @@
-"""m69b histserv backend: server-side histograms are created once, on first use in the driver process."""
+"""m69b histserv backend: server-side histograms are created once, on first use in the driver
+process.
+"""
 
 from __future__ import annotations
 
@@ -59,7 +61,9 @@ def _per_server(plan: Plan[Any]) -> Counter[str]:
     return Counter(assigned(plan).values())
 
 
-def test_require_bound_names_every_server_and_accepts_names_sharing_an_endpoint(tmp_path: Path) -> None:
+def test_require_bound_names_every_server_and_accepts_names_sharing_an_endpoint(
+    tmp_path: Path,
+) -> None:
     plan = _plan(write_events(str(tmp_path / "e.parquet")), "require")
     names = server_names(plan)
     assert len(names) >= 2
@@ -69,7 +73,9 @@ def test_require_bound_names_every_server_and_accepts_names_sharing_an_endpoint(
     require_bound(bind_services(plan, dict.fromkeys(names, "tcp://127.0.0.1:1")))
 
 
-def test_histograms_are_created_on_the_first_call_once_and_on_a_bound_pickle_once(tmp_path: Path) -> None:
+def test_histograms_are_created_on_the_first_call_once_and_on_a_bound_pickle_once(
+    tmp_path: Path,
+) -> None:
     plan = _plan(write_events(str(tmp_path / "e.parquet")), "first-use")
     want = _per_server(plan)
     first, second = sorted(plan.tasks, key=lambda t: t.key)[:2]
@@ -104,7 +110,9 @@ def test_a_process_pool_creates_once_and_equals_the_local_run(tmp_path: Path) ->
     with servers(len(plan.services)) as started:
         bound, by_name = bind(plan, started)
         value = run_bounded(lambda: ProcessPoolExecutor(max_workers=2).run(bound).value)
-        assert {n: s.count("Init") for n, s in by_name.items()} == {name: want[name] for name in by_name}
+        assert {n: s.count("Init") for n, s in by_name.items()} == {
+            name: want[name] for name in by_name
+        }
         got = resolve_services(bound, value)
     assert set(got) == set(local)
     assert all(same(got[slot], hist) for slot, hist in local.items())

@@ -18,7 +18,24 @@ from m64_growth_fixtures import ALL, RUNNERS, assert_bitwise
 
 import graphed_histogram as gh
 
-CHANNELS = ["mu", "e", "mu", "e", "tau", "e", "mu", "tau", "jet", "e", "tau", "jet", "e", "mu", "jet", "gam"]
+CHANNELS = [
+    "mu",
+    "e",
+    "mu",
+    "e",
+    "tau",
+    "e",
+    "mu",
+    "tau",
+    "jet",
+    "e",
+    "tau",
+    "jet",
+    "e",
+    "mu",
+    "jet",
+    "gam",
+]
 #: quarter-bin centres, growing below and above [0, 1)
 X = [
     0.125,
@@ -41,7 +58,11 @@ X = [
 
 
 def _eager() -> hist.Hist:
-    h = hist.Hist.new.StrCat([], growth=True, name="ch").Reg(4, 0, 1, growth=True, name="x").Int64()
+    h = (
+        hist.Hist.new.StrCat([], growth=True, name="ch")
+        .Reg(4, 0, 1, growth=True, name="x")
+        .Int64()
+    )
     h.fill(ch=np.asarray(CHANNELS), x=np.asarray(X))
     return h
 
@@ -52,7 +73,11 @@ def test_g15_hist_names_growth_and_uhi_round_trip(tmp_path: Path, runner: str, h
     ak.to_parquet(ak.Array({"ch": CHANNELS, "x": X}), path)
     session = Session(AwkwardBackend())
     ev: Any = from_parquet(session, "ev", str(path), steps_per_file=4)
-    h = hist.graphed.Hist.new.StrCat([], growth=True, name="ch").Reg(4, 0, 1, growth=True, name="x").Int64()
+    h = (
+        hist.graphed.Hist.new.StrCat([], growth=True, name="ch")
+        .Reg(4, 0, 1, growth=True, name="x")
+        .Int64()
+    )
     h.fill(ch=ev.ch, x=ev.x)
     plan = h.plan(steps_per_file=4) if how == "h.plan" else gh.plan({"h": h}, steps_per_file=4)
     value = RUNNERS[runner]().run(plan).value
@@ -64,7 +89,9 @@ def test_g15_hist_names_growth_and_uhi_round_trip(tmp_path: Path, runner: str, h
     assert list(got.axes[0]) == list(dict.fromkeys(CHANNELS))
     assert_bitwise(got, want)
     loaded = hist.Hist(
-        json.loads(json.dumps(got, default=uhi.io.json.default), object_hook=uhi.io.json.object_hook)
+        json.loads(
+            json.dumps(got, default=uhi.io.json.default), object_hook=uhi.io.json.object_hook
+        )
     )
     assert loaded == got
     assert all(axis.traits.growth for axis in loaded.axes)

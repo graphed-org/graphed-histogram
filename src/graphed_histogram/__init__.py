@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import boost_histogram as bh
+
 from . import boost
 from ._spec import content_hash, zero_of
 from ._spec import spec_of as _spec_of_hist
@@ -32,16 +34,16 @@ from .boost import (
 
 
 def spec_of(hist: object) -> str:
-    """The canonical spec string of a (deferred or eager) boost histogram."""
-    import boost_histogram as bh  # noqa: PLC0415
-
+    """Return the canonical spec string of a (deferred or eager) boost histogram."""
     assert isinstance(hist, bh.Histogram)
     return _spec_of_hist(hist)
 
 
 def evaluators(*histograms: Histogram) -> dict[str, Callable[..., object]]:
-    """Merged ``{content hash: evaluator}`` registry, for wiring these fills into a graph you
-    evaluate yourself."""
+    """Merge the histograms' ``{content hash: evaluator}`` registries.
+
+    The result wires these fills into a graph you evaluate yourself.
+    """
     out: dict[str, Callable[..., object]] = {}
     for h in histograms:
         out.update(h.evaluators())

@@ -15,6 +15,7 @@ Exercises the axis-mode slot/opt-in, absent at the m50 baseline: FAILS today at 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 import graphed
 import pytest
@@ -34,8 +35,10 @@ import graphed_histogram as gh
 WEIGHT_LABELS = ("nominal", "wgt_up", "wgt_down")
 
 
-def _four_output_plan() -> tuple[dict, dict]:
-    """One plan: axis-mode varied, sibling-mode varied, unvaried, and axis-mode with NO variations."""
+def _four_output_plan() -> tuple[dict[Any, Any], dict[str, gh.boost.Histogram]]:
+    """One plan: axis-mode varied, sibling-mode varied, unvaried, and axis-mode with NO
+    variations.
+    """
     _s, events, _src = partitioned()
     hists = {
         "ax": fill_weight_program(True, source=events),
@@ -67,8 +70,9 @@ def test_unpack_reads_each_shape_off_its_key() -> None:
 
 
 def test_the_axis_and_sibling_outputs_agree_bin_for_bin() -> None:
-    """Correctness of the mixed unpack: the axis output sliced per label equals the sibling output's
-    mapping entry — the two outputs run the SAME weight program in different modes."""
+    """Correctness of the mixed unpack: the axis output sliced per label equals the sibling
+    output's mapping entry — the two outputs run the SAME weight program in different modes.
+    """
     value, _hists = _four_output_plan()
     result = gh.unpack(value)
     for label in WEIGHT_LABELS:
@@ -77,7 +81,8 @@ def test_the_axis_and_sibling_outputs_agree_bin_for_bin() -> None:
 
 def test_the_narrowing_helpers_answer_over_all_four_shapes() -> None:
     """§2.2/§6.2(i-bis): `labels`/`universe`/`nominal` read the axis-mode histogram, the
-    `{label: hist}` mapping, the bare unvaried hist and the axis-mode-no-variation hist uniformly."""
+    `{label: hist}` mapping, the bare unvaried hist and the axis-mode-no-variation hist uniformly.
+    """
     value, _hists = _four_output_plan()
     result = gh.unpack(value)
 
@@ -95,18 +100,20 @@ def test_the_narrowing_helpers_answer_over_all_four_shapes() -> None:
 
 def test_the_axis_mode_no_variation_output_carries_a_one_bin_axis() -> None:
     """§6.2(ii): an axis-mode fill ALWAYS declares the variation axis, so a program with no
-    variations lands a bare histogram with a 1-bin `{"nominal"}` axis — not a today's bare hist."""
+    variations lands a bare histogram with a 1-bin `{"nominal"}` axis — not a today's bare hist.
+    """
     value, _hists = _four_output_plan()
-    axnovar = gh.unpack(value)["axnovar"]
+    axnovar: Any = gh.unpack(value)["axnovar"]
     axis = axnovar.axes[var_index(axnovar)]
     assert len(axis) == 1
     assert list(axis) == ["nominal"]
 
 
 def test_plan_refuses_an_unvaried_axis_mode_histogram_pointing_at_the_group_api() -> None:
-    """§6.1c: `Histogram.plan` starts from `self._spec` (fixed in `__init__`, no variation axis), so
-    it cannot render an axis-mode result and refuses — GENERAL over the MODE, so the unvaried
-    axis-mode histogram refuses too rather than falling through into an opaque bh error."""
+    """§6.1c: `Histogram.plan` starts from `self._spec` (fixed in `__init__`, no variation axis),
+    so it cannot render an axis-mode result and refuses — GENERAL over the MODE, so the unvaried
+    axis-mode histogram refuses too rather than falling through into an opaque bh error.
+    """
     _s, events, _src = partitioned()
     h = weighted().fill(events.MET.pt, variation_axis=True)
     with pytest.raises(GraphedError, match=r"group|graphed_histogram\.plan"):

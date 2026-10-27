@@ -1,4 +1,6 @@
-"""m69b histserv backend: the fill path from a partition's reduce to the server and back, run by hand."""
+"""m69b histserv backend: the fill path from a partition's reduce to the server and back, run by
+hand.
+"""
 
 from __future__ import annotations
 
@@ -56,7 +58,9 @@ def _hists(path: str) -> dict[str, gh.boost.Histogram]:
         "ib": gh.boost.Histogram(
             bh.axis.IntCategory([0, 1, 2]), bh.axis.Boolean(), storage=bh.storage.Double()
         ),
-        "big": gh.boost.Histogram(bh.axis.Regular(BIG_BINS, -4.0, 8.0), storage=bh.storage.Double()),
+        "big": gh.boost.Histogram(
+            bh.axis.Regular(BIG_BINS, -4.0, 8.0), storage=bh.storage.Double()
+        ),
         "local": gh.boost.Histogram(bh.axis.Regular(20, -4.0, 8.0), storage=bh.storage.Weight()),
     }
     out["wax"].fill(ev.x, weight=[w], variation_axis=True)
@@ -86,7 +90,11 @@ def _stored(slot: Any) -> int:
         "wax": ((bh.axis.Regular(10_000, -4.0, 8.0),), "Weight", 3),
         "dsib": ((bh.axis.Regular(10, -4.0, 8.0),), "Double", 1),
         "cnt": ((bh.axis.Regular(10_000, -4.0, 8.0),), "Int64", 1),
-        "cat": ((bh.axis.StrCategory(["ee", "mm", "em"]), bh.axis.Regular(8, -4.0, 8.0)), "Weight", 3),
+        "cat": (
+            (bh.axis.StrCategory(["ee", "mm", "em"]), bh.axis.Regular(8, -4.0, 8.0)),
+            "Weight",
+            3,
+        ),
         "ib": ((bh.axis.IntCategory([0, 1, 2]), bh.axis.Boolean()), "Double", 1),
         "big": ((bh.axis.Regular(BIG_BINS, -4.0, 8.0),), "Double", 1),
     }[name]
@@ -117,7 +125,9 @@ def test_receipts_ride_the_tree_and_each_server_holds_exactly_its_slots(tmp_path
             assert isinstance(receipt, hs.Receipt)
             assert receipt.endpoint == by_name[home].endpoint
             assert len(pickle.dumps(receipt)) < 1024
-        assert all(len(pickle.dumps(twin[slot])) > 64 * 1024 for slot in (("wax", None), "cnt", "big"))
+        assert all(
+            len(pickle.dumps(twin[slot])) > 64 * 1024 for slot in (("wax", None), "cnt", "big")
+        )
         for name, server in by_name.items():
             stats = server.stats()
             mine = [slot for slot, s in where.items() if s == name]
@@ -137,9 +147,13 @@ def test_receipts_ride_the_tree_and_each_server_holds_exactly_its_slots(tmp_path
                 else:
                     assert same(unpacked[key], hist)
             for name, server in by_name.items():
-                assert server.stats()["histogram_count"] == sum(1 for s in where.values() if s == name)
+                assert server.stats()["histogram_count"] == sum(
+                    1 for s in where.values() if s == name
+                )
         resolved = run_bounded(lambda: resolve_services(bound, value))
-        assert set(resolved) == set(twin) and all(same(resolved[slot], twin[slot]) for slot in twin)
+        assert set(resolved) == set(twin) and all(
+            same(resolved[slot], twin[slot]) for slot in twin
+        )
         assert all(server.stats()["histogram_count"] == 0 for server in by_name.values())
 
 
@@ -154,7 +168,9 @@ def test_server_names_bound_to_one_endpoint_run_on_one_server(tmp_path: Path) ->
         bound = bind_services(plan, dict.fromkeys(names, only.endpoint))
         value = run_bounded(lambda: SequentialRunner().run(bound).value)
         receipts = {slot: value[slot] for slot in assigned(plan)}
-        assert all(isinstance(r, hs.Receipt) and r.endpoint == only.endpoint for r in receipts.values())
+        assert all(
+            isinstance(r, hs.Receipt) and r.endpoint == only.endpoint for r in receipts.values()
+        )
         assert len({r.hist_id for r in receipts.values()}) == len(receipts)
         assert only.stats()["histogram_count"] == len(receipts)
         resolved = run_bounded(lambda: resolve_services(bound, value))

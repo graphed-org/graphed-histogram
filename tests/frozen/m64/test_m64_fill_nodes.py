@@ -1,4 +1,6 @@
-"""G13-G14: several fill nodes give partition-major category order; one fill node keeps eager order."""
+"""G13-G14: several fill nodes give partition-major category order; one fill node keeps eager
+order.
+"""
 
 from __future__ import annotations
 
@@ -50,7 +52,9 @@ def _category_axis(h: bh.Histogram, kind: type) -> Any:
 
 @pytest.mark.parametrize(("runner", "how"), TWO)
 def test_g13_an_axis_mode_value_variation_is_partition_major(runner: str, how: str) -> None:
-    per_partition = [[*SHIFTED[s].tolist(), *(SHIFTED[s] + 100).tolist()] for s in slices(len(SHIFTED))]
+    per_partition = [
+        [*SHIFTED[s].tolist(), *(SHIFTED[s] + 100).tolist()] for s in slices(len(SHIFTED))
+    ]
     partition_major = list(dict.fromkeys(itertools.chain(*per_partition)))
     label_major = list(dict.fromkeys([*SHIFTED.tolist(), *(SHIFTED + 100).tolist()]))
     assert partition_major != label_major
@@ -81,7 +85,9 @@ def _weight_varied(axis_mode: bool) -> Any:
         w = ev[:, 1] * 0.25
         h = gh.boost.Histogram(bh.axis.IntCategory([], growth=True), storage=bh.storage.Weight())
         return h.fill(
-            ev[:, 0], weight=graphed.vary(w, "wgt", up=w * 1.2, down=w * 0.8), variation_axis=axis_mode
+            ev[:, 0],
+            weight=graphed.vary(w, "wgt", up=w * 1.2, down=w * 0.8),
+            variation_axis=axis_mode,
         )
 
     return build

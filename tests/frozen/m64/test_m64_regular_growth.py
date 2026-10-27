@@ -7,7 +7,16 @@ from typing import Any
 import boost_histogram as bh
 import numpy as np
 import pytest
-from m64_growth_fixtures import ALL, PROCESS_RUNNERS, TWO, assert_bitwise, eager, reference, run, slices
+from m64_growth_fixtures import (
+    ALL,
+    PROCESS_RUNNERS,
+    TWO,
+    assert_bitwise,
+    eager,
+    reference,
+    run,
+    slices,
+)
 
 import graphed_histogram as gh
 
@@ -19,7 +28,9 @@ def _regular() -> bh.Histogram:
 
 
 def _deferred_regular(ev: Any) -> Any:
-    return gh.boost.Histogram(bh.axis.Regular(4, 0.0, 1.0, growth=True), storage=bh.storage.Int64()).fill(ev)
+    return gh.boost.Histogram(
+        bh.axis.Regular(4, 0.0, 1.0, growth=True), storage=bh.storage.Int64()
+    ).fill(ev)
 
 
 def _edges(h: bh.Histogram) -> bytes:
@@ -70,10 +81,14 @@ def _tenths() -> bh.Histogram:
 
 
 def _off_grid(base: Any, other: Any) -> bool:
-    """`other`'s edges are not a float-exact whole number of `base`'s bins away, or its width differs."""
+    """`other`'s edges are not a float-exact whole number of `base`'s bins away, or its width
+    differs.
+    """
     width = (base.edges[-1] - base.edges[0]) / base.size
     offset = (other.edges[0] - base.edges[0]) / width
-    return bool(offset != round(offset) or (other.edges[-1] - other.edges[0]) / other.size != width)
+    return bool(
+        offset != round(offset) or (other.edges[-1] - other.edges[0]) / other.size != width
+    )
 
 
 @pytest.mark.parametrize(("runner", "how"), TWO)
@@ -82,10 +97,18 @@ def test_g8_growing_regular_on_a_non_dyadic_grid(runner: str, how: str) -> None:
     declared = _tenths().axes[0]
     assert any(_off_grid(declared, eager(_tenths, data[s]).axes[0]) for s in slices(len(data)))
 
-    got = run(data, lambda ev: gh.boost.Histogram(declared, storage=bh.storage.Int64()).fill(ev), runner, how)
+    got = run(
+        data,
+        lambda ev: gh.boost.Histogram(declared, storage=bh.storage.Int64()).fill(ev),
+        runner,
+        how,
+    )
     want = eager(_tenths, data)
     assert got.result.axes[0].size == want.axes[0].size
-    assert np.asarray(got.result.view(flow=True)).tobytes() == np.asarray(want.view(flow=True)).tobytes()
+    assert (
+        np.asarray(got.result.view(flow=True)).tobytes()
+        == np.asarray(want.view(flow=True)).tobytes()
+    )
     assert np.allclose(got.result.axes[0].edges, want.axes[0].edges, rtol=0, atol=1e-9 * 0.1)
 
 

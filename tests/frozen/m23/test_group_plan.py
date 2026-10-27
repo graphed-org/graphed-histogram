@@ -1,7 +1,7 @@
-"""M23: ``graphed_histogram.plan(histograms)`` aggregates SEVERAL histograms sharing a source in ONE
-pass — their fills compile into one IR, so a sub-graph feeding multiple histograms is read+evaluated
-ONCE, not once per histogram. A NEW frozen file (test-authoring deliverable); the existing m23 suite
-is unchanged.
+"""M23: ``graphed_histogram.plan(histograms)`` aggregates SEVERAL histograms sharing a source in
+ONE pass — their fills compile into one IR, so a sub-graph feeding multiple histograms is
+read+evaluated ONCE, not once per histogram. A NEW frozen file (test-authoring deliverable); the
+existing m23 suite is unchanged.
 
 The bug this guards: building a plan PER histogram recomputes a shared sub-graph N times for an
 N-output query (e.g. the ADL trijet query's pT + b-tag histograms), an N-fold read+compute blowup
@@ -28,16 +28,20 @@ DATA = np.random.default_rng(0).normal(5.0, 2.0, 1000)
 
 @dataclass
 class ChunkedSource:
-    """A PartitionedSource over an in-memory array, counting partition reads (the efficiency witness)."""
+    """A PartitionedSource over an in-memory array, counting partition reads (the efficiency
+    witness).
+    """
 
     data: np.ndarray
-    part_reads: list = field(default_factory=list)
+    part_reads: list[tuple[int, int]] = field(default_factory=list)
 
     def __call__(self) -> np.ndarray:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition, columns, resources) -> np.ndarray:  # type: ignore[no-untyped-def]
         part = partition.resolve(len(self.data))
@@ -53,7 +57,9 @@ def _source(s: Session) -> tuple[Array, ChunkedSource]:
 def _two_hists(x: Array) -> tuple[gh.Histogram, gh.Histogram]:
     # two histograms sharing the source read x (and the x*0.5+1 sub-expression)
     hi = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0), storage=bh.storage.Int64()).fill(x)
-    lo = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0), storage=bh.storage.Int64()).fill(x * 0.5 + 1.0)
+    lo = gh.boost.Histogram(bh.axis.Regular(20, 0.0, 10.0), storage=bh.storage.Int64()).fill(
+        x * 0.5 + 1.0
+    )
     return hi, lo
 
 
@@ -81,7 +87,8 @@ def test_group_plan_matches_per_histogram_plans() -> None:
     s = Session(NumpyBackend())
     x, _ = _source(s)
     hi, lo = _two_hists(x)
-    grouped = SequentialRunner().run(gh.plan([hi, lo], steps_per_file=3)).value  # sequence -> "0","1"
+    # sequence -> "0","1"
+    grouped = SequentialRunner().run(gh.plan([hi, lo], steps_per_file=3)).value
     assert np.array_equal(
         grouped["0"].values(), SequentialRunner().run(hi.plan(steps_per_file=3)).value.values()
     )

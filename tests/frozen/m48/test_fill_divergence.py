@@ -23,7 +23,8 @@ from vary_hist_fixtures import in_memory_events, weighted, weighted_2d
 
 def _divergent() -> tuple[Any, Any, Any]:
     """Two SIBLING contexts: neither is an ancestor of the other, and a mask has no inverse, so no
-    re-indexing exists in either direction."""
+    re-indexing exists in either direction.
+    """
     _session, root = in_memory_events()
     events = gnano.events(root)
     left = events[events.MET.pt > 20.0]
@@ -42,7 +43,8 @@ def test_two_divergent_axis_values_are_refused_naming_both_contexts() -> None:
 
 def test_a_divergent_sample_is_refused_by_the_same_check() -> None:
     """`sample=` is a first-class operand of the unification, not an unchecked appendix: here both
-    axis and weight sit on ONE context and only the sample diverges."""
+    axis and weight sit on ONE context and only the sample diverges.
+    """
     _events, left, right = _divergent()
     h = weighted()
     with pytest.raises(GraphedError) as excinfo:
@@ -64,7 +66,8 @@ def test_no_fill_node_is_staged_by_the_refused_fill() -> None:
     """A refusal that staged half a fill leaves the histogram carrying a node no label maps to,
     which `plan()` then slices against. Scoped to the histogram's own staging: `record_external`
     adds its node to the arena before the handle merge runs, so the session's node count is not the
-    histogram's to keep flat."""
+    histogram's to keep flat.
+    """
     _events, left, right = _divergent()
     h = weighted_2d()
     with pytest.raises(GraphedError):
@@ -75,7 +78,8 @@ def test_no_fill_node_is_staged_by_the_refused_fill() -> None:
 
 def test_an_ancestor_chain_fill_unifies_instead_of_raising() -> None:
     """The positive control. Inputs whose contexts sit on ONE ancestry chain unify to the
-    most-derived context — the divergence check must not fire on a legal program."""
+    most-derived context — the divergence check must not fire on a legal program.
+    """
     events, left, _right = _divergent()
     h = weighted_2d()
     assert h.fill(events.MET.pt, left.MET.pt) is h
@@ -84,7 +88,8 @@ def test_an_ancestor_chain_fill_unifies_instead_of_raising() -> None:
 
 def test_a_loose_input_alongside_a_contexted_one_does_not_diverge() -> None:
     """§6.1d's adopt rule: a context-free value has no handle to diverge with, so it is ignored by
-    the unification rather than treated as a third branch."""
+    the unification rather than treated as a third branch.
+    """
     _session, root = in_memory_events()
     events = gnano.events(root)
     sel = events[events.MET.pt > 20.0]

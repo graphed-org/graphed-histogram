@@ -1,5 +1,6 @@
-"""m69b histserv sizing beyond the frozen rows: flow extents and chunks per slot kind, refusals that
-leave the packing untouched, and a served plan keeping the services it already had."""
+"""m69b histserv sizing beyond the frozen rows: flow extents and chunks per slot kind, refusals
+that leave the packing untouched, and a served plan keeping the services it already had.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +28,8 @@ def path(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 def test_slots_are_sized_by_flow_extents_with_one_chunk_per_axis_label(path: str) -> None:
     """Axis mode fills a chunk per label over the non-variation axes' flow extents; each sibling
-    label is a slot of its own. Sizing by bins (no flow) or by the variation axis reds this."""
+    label is a slot of its own. Sizing by bins (no flow) or by the variation axis reds this.
+    """
     ctx = histserv.Context(memory_mb=1024, workers=2, name="m69b-extra-extents")
     _session, ev = events(path)
     w = graphed.vary(ev.w, "sf", up=ev.w * 2.0, down=ev.w * 0.5)
@@ -37,7 +39,9 @@ def test_slots_are_sized_by_flow_extents_with_one_chunk_per_axis_label(path: str
     axis.fill(ev.c, ev.b, weight=[w], variation_axis=True)
     sibling = gh.boost.Histogram(bh.axis.IntCategory([0, 1, 2]), storage=bh.storage.Double())
     sibling.fill(ev.k, weight=[w])
-    plan = gh.plan({"a": histserv.backed(axis, ctx), "s": histserv.backed(sibling, ctx)}, steps_per_file=3)
+    plan = gh.plan(
+        {"a": histserv.backed(axis, ctx), "s": histserv.backed(sibling, ctx)}, steps_per_file=3
+    )
     slots = [Slot(3, 16 * 3 * 2, 3)] + [Slot(1, 8 * 4, 3)] * 3
     ((_name, size, got, count),) = ctx.servers()
     assert (size, count) == (1024, 4) and len(plan.tasks) == 3
@@ -46,7 +50,8 @@ def test_slots_are_sized_by_flow_extents_with_one_chunk_per_axis_label(path: str
 
 def test_a_refused_serve_opens_no_server(path: str) -> None:
     """Every refusal precedes placement: refusing after packing would leave servers no plan
-    declares, and the next serve would pack around them."""
+    declares, and the next serve would pack around them.
+    """
     ctx = histserv.Context(memory_mb=1024, workers=1, name="m69b-extra-refused")
     _session, ev = events(path)
     hist = gh.boost.Histogram(bh.axis.Regular(8, 0.0, 1.0), storage=bh.storage.Double())
@@ -61,7 +66,8 @@ def test_a_refused_serve_opens_no_server(path: str) -> None:
 
 def test_a_served_plan_keeps_its_own_services_and_declares_the_servers(path: str) -> None:
     """``plan.services`` is the plan's own union the servers, by name; the servers are declared on
-    the session, so a later plan may name them."""
+    the session, so a later plan may name them.
+    """
     ctx = histserv.Context(memory_mb=1024, workers=1, name="m69b-extra-union")
     session, ev = events(path)
     other = ServiceSpec("m69b-extra-a-service", kind="other")
