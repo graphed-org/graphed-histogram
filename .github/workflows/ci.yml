@@ -13,10 +13,10 @@ concurrency:
 
 env:
   # graphed#108 (Plan.finalize); moves to the graphed release that ships it.
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@f94b3df35b227f00d23545890c0a03101dfd6b0c"
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@6239f27cc524b5871abb89a8cf8936d4753bf9b0"
   # exec-local stays a separate package (used by the M23 process-executor integration tests);
   # graphed-executors#81 applies Plan.finalize, and moves to the release that ships it.
-  EXECLOCAL: "graphed-executors @ git+https://github.com/graphed-org/graphed-executors@36473dad9bed25f53bab4d19337f03bc70af69c2"
+  EXECLOCAL: "graphed-executors @ git+https://github.com/graphed-org/graphed-executors@472e47472b367ef7f0f9767c136267625ec4caca"
 
 jobs:
   test:
