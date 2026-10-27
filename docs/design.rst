@@ -791,7 +791,7 @@ partial, and hands a receipt through the tree.
 
 Printed output::
 
-    docs-0 512 435.0 MiB 2
+    docs-0 512 498.0 MiB 2
     docs-0 histserv tcp (10000, 10100) {'memory_mb': 512}
 
 ``memory_mb`` is the server sizes you can offer, in MiB; ``workers`` is your bound on the worker
