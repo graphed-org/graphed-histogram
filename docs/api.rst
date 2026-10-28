@@ -121,7 +121,7 @@ can take. Needs ``graphed[awkward]``.
    ak.to_parquet(events, "met8.parquet")
 
    s = Session(AwkwardBackend())
-   evt = from_parquet(s, "events", "met8.parquet", steps_per_file=2)
+   evt = from_parquet("events", "met8.parquet", steps_per_file=2, session=s)
 
    lumi = evt.met * 0.0 + 2.0                        # one weight factor
    sf = evt.met * 0.0 + 1.0                          # another
@@ -147,9 +147,9 @@ can take. Needs ``graphed[awkward]``.
    [6. 6. 2. 2.]
    [9. 9. 3. 3.]
 
-Whatever you built with, the histograms in that mapping are ``boost_histogram.Histogram``
-objects with your axis names and labels intact. ``hist.Hist(result)`` wraps one back up when
-you want ``.plot()`` or name-based indexing.
+Whatever you built with, the histograms in that mapping are the class you instantiated, with
+your axis names and labels intact: ``boost_histogram.Histogram`` for ``gh.boost.Histogram``, and
+``hist.Hist`` or ``hist.NamedHist`` for the ``hist.graphed`` builders.
 
 The runner's own value is keyed by ``(name, label)`` pairs; ``unpack`` is what turns that
 into the nested mapping. A name no variation reaches keeps a bare-name key and unpacks to a
