@@ -1,10 +1,10 @@
 What changed
 ============
 
-Unreleased
-----------
+0.0.7
+-----
 
-Requires a ``graphed`` with ``Plan.finalize``.
+Requires ``graphed`` 0.0.10 or later.
 
 Changed
 ~~~~~~~
