@@ -48,7 +48,7 @@ through uproot's ``uproot.graphed`` works the same way.
    ak.to_parquet(events, "events.parquet")    # stand in for your dataset
 
    s = Session(AwkwardBackend())
-   evt = from_parquet(s, "events", "events.parquet", steps_per_file=4)
+   evt = from_parquet("events", "events.parquet", steps_per_file=4, session=s)
 
    met = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
    met.fill(evt.met)                          # records the fill; nothing is read yet
@@ -94,7 +94,7 @@ pool, a dask cluster or a parsl pool changes no analysis code:
        ak.to_parquet(events, "events.parquet")
 
        s = Session(AwkwardBackend())
-       evt = from_parquet(s, "events", "events.parquet", steps_per_file=4)
+       evt = from_parquet("events", "events.parquet", steps_per_file=4, session=s)
 
        met = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
        met.fill(evt.met)

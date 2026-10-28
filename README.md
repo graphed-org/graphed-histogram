@@ -49,7 +49,7 @@ events = ak.Array({
 ak.to_parquet(events, "events.parquet")    # stand in for your dataset
 
 s = Session(AwkwardBackend())
-evt = from_parquet(s, "events", "events.parquet", steps_per_file=2)
+evt = from_parquet("events", "events.parquet", steps_per_file=2, session=s)
 
 h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
 h.fill(evt.Jet.pt)                         # records the fill; nothing is read yet
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     ak.to_parquet(events, "events.parquet")
 
     s = Session(AwkwardBackend())
-    evt = from_parquet(s, "events", "events.parquet", steps_per_file=2)
+    evt = from_parquet("events", "events.parquet", steps_per_file=2, session=s)
 
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
     h.fill(evt.Jet.pt)
@@ -138,9 +138,9 @@ The [variations walkthrough](docs/design.rst) covers the choice.
 | `gh.histogram` / `histogram2d` / `histogramdd` | numpy-like one-liners (explicit `bins=` and `range=`) |
 | `gh.plan({name: hist, ...})` | one plan for several histograms in a single pass |
 
-Whichever you build with, a run hands back `boost_histogram.Histogram` objects with your
-axis names and labels intact. Wrap one in `hist.Hist(result)` to get `.plot()` and
-name-based indexing back.
+Whichever you build with, a run hands back the class you instantiated, with your axis names
+and labels intact: `boost_histogram.Histogram` for `gh.boost.Histogram`, and `hist.Hist` or
+`hist.NamedHist` for the `hist.graphed` builders.
 
 The `hist` builder lives in the `hist.graphed` module, which `hist` ships from 2.12 on:
 
