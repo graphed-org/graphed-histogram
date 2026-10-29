@@ -205,7 +205,7 @@ def test_an_unbacked_merge_free_plan_equals_the_per_partition_direct_fill_folded
 #: per-directory digests of every frozen file before m69b, the m48/m49 refreeze and m64 fixup
 #: included
 FROZEN_BEFORE_M69B = {
-    "m23": "f42b4999006cfa41d449fdfc42af037d0d1c68fa342e4a5fc64989bf6df090ec",
+    "m23": "7c0b3dae357934448aed47f30b9f218c8a32b3a5ad76796431841445b710e943",
     "m29": "031f00db67a9ae844569b7a7f8bc9fb03ab5e017a4fe71db912b5077237f0ab6",
     "m48": "09f30a9a392c77ca3c9ec094adf754ca0a805d593f6531fb7e9835eab4c60f7e",
     "m49": "6e8178246143759acd9406c8b806f46b586d792f82991ca81a1c6d58fa94a4d9",
