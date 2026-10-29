@@ -11,7 +11,7 @@ from graphed import Array, GraphedError, Session
 from graphed.numpy import NumpyBackend, NumpyForm
 
 import graphed_histogram as gh
-from graphed_histogram.boost import _WeightGuard
+from graphed_histogram._fill import _WeightGuard
 
 DATA = np.linspace(0.0, 9.0, 40)
 

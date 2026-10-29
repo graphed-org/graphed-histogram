@@ -32,7 +32,7 @@ that can hand a dataset out in slices; here a parquet file, in real work your RO
     ak.to_parquet(EVENTS, "events.parquet")
 
     session = Session(AwkwardBackend())
-    events = from_parquet(session, "events", "events.parquet", steps_per_file=3)
+    events = from_parquet("events", "events.parquet", steps_per_file=3, session=session)
 
     jet_pt = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
     met_pt = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
@@ -97,7 +97,7 @@ the same inputs is the same step.
     EVENTS = ak.Array({"Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0]])})})
 
     session = Session(AwkwardBackend())
-    events = from_awkward(session, "events", EVENTS)
+    events = from_awkward("events", EVENTS, session=session)
 
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
     h.fill(events.Jet.pt[events.Jet.pt > 20.0])
@@ -276,7 +276,7 @@ worker would otherwise rewrite underneath the run.
 
     def staged():
         session = Session(AwkwardBackend())
-        events = from_parquet(session, "events", "jets.parquet", steps_per_file=3)
+        events = from_parquet("events", "jets.parquet", steps_per_file=3, session=session)
         h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Weight())
         h.fill(events.Jet.pt, weight=[events.Jet.pt * 0.01])
         return h
@@ -349,7 +349,7 @@ boost axis constructors take no ``name=`` keyword, so the name is an attribute y
 
     def staged(*, variation_axis):
         session = Session(AwkwardBackend())
-        events = from_parquet(session, "events", "events.parquet", steps_per_file=2)
+        events = from_parquet("events", "events.parquet", steps_per_file=2, session=session)
         w = events.MET.pt * 0.01
         sf = vary(w, "sf", up=w * 1.2, down=w * 0.8)   # a per-event scale factor, up and down
         h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Weight())
@@ -421,7 +421,7 @@ value column, so each stays its own fill writing into its own category of the sa
 
     def staged(*, vary_the_weight, vary_the_value):
         session = Session(AwkwardBackend())
-        events = from_awkward(session, "events", EVENTS)
+        events = from_awkward("events", EVENTS, session=session)
         w = events.MET.pt * 0.01
         pt = events.Jet.pt
         if vary_the_weight:
@@ -477,7 +477,7 @@ your fills declared rather than the shape of the result:
 
     def staged(*, variation_axis, varied):
         session = Session(AwkwardBackend())
-        events = from_awkward(session, "events", EVENTS)
+        events = from_awkward("events", EVENTS, session=session)
         w = events.MET.pt * 0.01
         if varied:
             w = vary(w, "sf", up=w * 1.2, down=w * 0.8)
@@ -528,7 +528,7 @@ named-axis fills unchanged. They live in the ``hist.graphed`` module, which ``hi
     ak.to_parquet(EVENTS, "met.parquet")
 
     session = Session(AwkwardBackend())
-    events = from_parquet(session, "events", "met.parquet", steps_per_file=2)
+    events = from_parquet("events", "met.parquet", steps_per_file=2, session=session)
 
     h = hist.graphed.Hist.new.Reg(4, 0, 200, name="met", label=r"$p_T^{miss}$").Double()
     h.fill(met=events.MET.pt)
@@ -538,20 +538,17 @@ named-axis fills unchanged. They live in the ``hist.graphed`` module, which ``hi
     out = SequentialRunner().run(h.plan(steps_per_file=2)).value
     print(type(out).__name__, [axis.name for axis in out.axes], out.axes[0].label)
 
-    plotted = hist.Hist(out)
-    print(plotted[{"met": sum}], type(plotted).__name__)
+    print(out[{"met": sum}], type(out).__name__)
 
 Printed output::
 
     1 fill recorded
-    Histogram ['met'] $p_T^{miss}$
+    Hist ['met'] $p_T^{miss}$
     6.0 Hist
 
-The fill records like any other, and you plan and run it exactly as above. Note the type on the
-second line: a runner hands back a ``boost_histogram.Histogram``, not a ``hist.Hist`` — the names
-and labels survive (they ride along in the axes description), but ``.plot()`` and name-based
-indexing are ``hist``'s own additions. One call gets them back: ``hist.Hist(result)``, as the last
-two lines show.
+The fill records like any other, and you plan and run it exactly as above. A runner hands back
+the class you instantiated, a ``hist.Hist`` with its names and labels, so ``.plot()`` and
+name-based indexing work on the result directly, as the last line shows.
 
 
 .. _growth-axes:
@@ -586,7 +583,7 @@ and ``graphed-histogram``.
     ak.to_parquet(EVENTS, "channels.parquet")
 
     session = Session(AwkwardBackend())
-    events = from_parquet(session, "events", "channels.parquet", steps_per_file=3)
+    events = from_parquet("events", "channels.parquet", steps_per_file=3, session=session)
 
     h = gh.boost.Histogram(
         bh.axis.StrCategory([], growth=True),
@@ -721,7 +718,7 @@ its graph and its result do not change.
         "channels.parquet",
     )
     session = Session(AwkwardBackend())
-    events = from_parquet(session, "events", "channels.parquet", steps_per_file=3)
+    events = from_parquet("events", "channels.parquet", steps_per_file=3, session=session)
 
     def met() -> gh.boost.Histogram:
         h = gh.boost.Histogram(
@@ -775,7 +772,7 @@ partial, and hands a receipt through the tree.
 
     ak.to_parquet(ak.Array({"x": [0.5, 1.5, 2.5, 3.5, 1.0, 2.0] * 100}), "x.parquet")
     session = Session(AwkwardBackend())
-    events = from_parquet(session, "events", "x.parquet", steps_per_file=4)
+    events = from_parquet("events", "x.parquet", steps_per_file=4, session=session)
 
     ctx = histserv.Context(memory_mb=[256, 512], workers=8, name="docs")
     big = histserv.Histogram(bh.axis.Regular(1_000_000, 0.0, 4.0), context=ctx)

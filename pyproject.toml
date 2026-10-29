@@ -97,7 +97,7 @@ convention = "pep257"
 "tests/frozen/m49/test_merge_shortfall.py" = ["N802"]
 "tests/frozen/m49/test_variation_labels_payload.py" = ["N802"]
 # awkward is an optional dependency, imported only once a fill is handed an awkward array.
-"src/graphed_histogram/boost.py" = ["PLC0415"]
+"src/graphed_histogram/_fill.py" = ["PLC0415"]
 # histserv and grpc are optional dependencies, imported only once a bound run talks to a server.
 "src/graphed_histogram/_histserv.py" = ["PLC0415"]
 
