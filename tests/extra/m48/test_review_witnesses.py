@@ -31,7 +31,7 @@ from vary_hist_fixtures import (
 )
 
 import graphed_histogram as gh
-from graphed_histogram import boost
+from graphed_histogram import _fill
 
 
 def _pu(source: Any, scale: float = 1.0) -> Any:
@@ -45,7 +45,7 @@ def _weighted_context(source: Any) -> Any:
 
 # --- A7/A6: the guard's identity is the blame COORDINATE, not the diagnostic's prose ------------
 def _guarded_blob(monkeypatch: Any, factor_prose: str) -> bytes:
-    monkeypatch.setattr(boost, "_FACTOR_ROWS", factor_prose)
+    monkeypatch.setattr(_fill, "_FACTOR_ROWS", factor_prose)
     session, root = in_memory_events()
     ctx = _weighted_context(root)
     h = weighted(bins=20, lo=0.0, hi=400.0)
