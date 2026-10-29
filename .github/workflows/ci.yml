@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # the graphed 0.0.10 release commit until 0.0.10 is on PyPI
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@31ca47a7872f65107549e5b7590206aa8f468e7d"
+  # graphed 0.0.10 from PyPI.
+  GRAPHED: "graphed[awkward,numpy]==0.0.10"
   # exec-local stays a separate package (used by the M23 process-executor integration tests);
   # graphed-executors#81 applies Plan.finalize, and moves to the release that ships it.
   EXECLOCAL: "graphed-executors @ git+https://github.com/graphed-org/graphed-executors@472e47472b367ef7f0f9767c136267625ec4caca"
