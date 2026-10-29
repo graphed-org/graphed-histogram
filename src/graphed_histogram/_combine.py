@@ -133,9 +133,7 @@ class _SumFills:
         A dense slot sums into the dense zero, adding each chunked fill dense; a chunked slot adds
         each fill into the total it owns, in place.
         """
-        total: Any = (
-            as_kind(zero_of(self.spec), self.kind) if self.dense else empty(self.spec, self.kind)
-        )
+        total: Any = _ZeroHist(self.spec, self.dense, self.kind)()
         for nid in self.node_ids:
             fill = fills[self.positions[nid]]
             if not (isinstance(total, Chunked) and total.iadd(fill)):
