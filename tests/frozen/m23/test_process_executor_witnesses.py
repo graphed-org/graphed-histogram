@@ -6,10 +6,11 @@ Weighted fills are HEP's most common case and behavior loss plagued distributed 
 - a Weight-storage weighted fill through the spawned process pool equals the sequential and
   eager results exactly (values AND variances);
 - a ragged awkward fill through the process pool equals its eager twin;
-- a session recorded with a behavior-carrying backend FAILS LOUDLY under the default plan()
-  (workers construct a bare backend — behaviors are never silently dropped), and
-  `plan(backend="module:attr")` is the supported path: the worker IMPORTS the factory (no
-  behavior dict is ever pickled) and reproduces the sequential result bit for bit.
+- a session recorded with a behavior-carrying backend carries its behaviors under the default
+  plan() (graphed#123 ships them by value), and a worker backend that lacks them FAILS LOUDLY —
+  behaviors are never silently dropped; `plan(backend="module:attr")` is the import-ref path:
+  the worker IMPORTS the factory (no behavior dict is ever pickled) and reproduces the
+  sequential result bit for bit.
 """
 
 from __future__ import annotations
@@ -122,12 +123,19 @@ def _behavior_session() -> tuple[Any, Any]:
     return h, reference
 
 
-def test_default_plan_fails_loudly_when_behaviors_would_be_lost() -> None:
-    h, _ref = _behavior_session()
-    # the DEFAULT worker backend is constructed bare: the behavior property cannot evaluate.
+def test_default_plan_carries_behaviors_and_a_bare_backend_fails_loudly() -> None:
+    h, reference = _behavior_session()
+    # the DEFAULT worker backend carries the Session backend's behaviors (graphed#123)
+    default = ProcessExecutor(max_workers=2).run(h.plan(steps_per_file=2)).value
+    eager = bh.Histogram(bh.axis.Regular(20, 0.0, 20.0), storage=bh.storage.Int64())
+    eager.fill(reference)
+    assert np.array_equal(np.asarray(default.values(flow=True)), eager.values(flow=True))
+    # a bare worker backend cannot evaluate the behavior property.
     # Losing behaviors must be LOUD — never a silently wrong histogram (the dask-awkward lesson).
     with pytest.raises(Exception, match=r"mag|field|behavior"):
-        ProcessExecutor(max_workers=2).run(h.plan(steps_per_file=2))
+        ProcessExecutor(max_workers=2).run(
+            h.plan(steps_per_file=2, backend="graphed.awkward:AwkwardBackend")
+        )
 
 
 def test_behavior_backends_forward_by_import_ref() -> None:
