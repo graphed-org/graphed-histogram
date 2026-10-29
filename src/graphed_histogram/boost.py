@@ -76,6 +76,12 @@ for _obj in (
     add_histograms,
 ):
     _obj.__module__ = __name__
+    if isinstance(_obj, type):
+        # a bound method (`reduce.resolve_services`) pickles by its function's module
+        for _attr in vars(_obj).values():
+            if callable(_attr):
+                _attr.__module__ = __name__
+del _obj, _attr
 
 V = TypeVar("V")
 H = TypeVar("H", bound="Histogram")
