@@ -39,7 +39,7 @@ that can hand a dataset out in slices; here a parquet file, in real work your RO
     jet_pt.fill(events.Jet.pt)
     met_pt.fill(events.MET.pt)
 
-    plan = gh.plan({"jet_pt": jet_pt, "met_pt": met_pt}, steps_per_file=3)
+    plan = gh.plan({"jet_pt": jet_pt, "met_pt": met_pt})
     out = gh.unpack(SequentialRunner().run(plan).value)
     print(out["jet_pt"].view())
     print(out["met_pt"].view())
@@ -283,8 +283,7 @@ worker would otherwise rewrite underneath the run.
 
     if __name__ == "__main__":
         ak.to_parquet(EVENTS, "jets.parquet")
-        plan = gh.plan({"jet_pt": staged()}, steps_per_file=3,
-                       backend="graphed.awkward:AwkwardBackend")
+        plan = gh.plan({"jet_pt": staged()}, backend="graphed.awkward:AwkwardBackend")
         parallel = gh.unpack(ProcessPoolExecutor(max_workers=3).run(plan).value)["jet_pt"]
         serial = gh.unpack(SequentialRunner().run(plan).value)["jet_pt"]
         print(parallel.view()["value"])
@@ -357,7 +356,7 @@ boost axis constructors take no ``name=`` keyword, so the name is an attribute y
         return h
 
     def run(h):
-        return gh.unpack(SequentialRunner().run(gh.plan({"h": h}, steps_per_file=2)).value)["h"]
+        return gh.unpack(SequentialRunner().run(gh.plan({"h": h})).value)["h"]
 
     one = run(staged(variation_axis=True))
     print([type(ax).__name__ for ax in one.axes])
@@ -535,7 +534,7 @@ named-axis fills unchanged. They live in the ``hist.graphed`` module, which ``hi
 
     print(h.staged_fills(), "fill recorded")
 
-    out = SequentialRunner().run(h.plan(steps_per_file=2)).value
+    out = SequentialRunner().run(h.plan()).value
     print(type(out).__name__, [axis.name for axis in out.axes], out.axes[0].label)
 
     print(out[{"met": sum}], type(out).__name__)
@@ -591,7 +590,7 @@ and ``graphed-histogram``.
         storage=bh.storage.Int64(),
     )
     h.fill(events.channel, events.met)
-    out = SequentialRunner().run(h.plan(steps_per_file=3)).value
+    out = SequentialRunner().run(h.plan()).value
     print(list(out.axes[0]))
     print(out.axes[1].size, out.axes[1].edges[0], out.axes[1].edges[-1])
     print(out.values())
@@ -729,7 +728,7 @@ its graph and its result do not change.
         return h.fill(events.channel, events.met, weight=events.w)
 
     out = gh.unpack(SequentialRunner().run(
-        gh.plan({"chunked": met(), "dense": gh.dense_backed(met())}, steps_per_file=3)
+        gh.plan({"chunked": met(), "dense": gh.dense_backed(met())})
     ).value)
     chunked = out["chunked"]
     print(chunked == out["dense"], type(chunked) is bh.Histogram)
@@ -780,7 +779,7 @@ partial, and hands a receipt through the tree.
     big.fill(events.x)
     small.fill(events.x, weight=[events.x * 0.5])
 
-    plan = gh.plan({"big": big, "small": small}, steps_per_file=4)
+    plan = gh.plan({"big": big, "small": small})
     for name, memory_mb, predicted, n in ctx.servers():
         print(name, memory_mb, f"{predicted / 2**20:.1f} MiB", n)
     spec = plan.services[0]

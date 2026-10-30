@@ -508,7 +508,7 @@ class Histogram(bh.Histogram):
     def plan(
         self,
         *,
-        steps_per_file: int = 1,
+        steps_per_file: int | None = None,
         backend: Callable[[], Any] | str | None = None,
         partitions: Sequence[Partition] | None = None,
     ) -> Plan[bh.Histogram]:
@@ -517,8 +517,9 @@ class Histogram(bh.Histogram):
         Run it later with any runner. Thin specialization of :func:`graphed.aggregate_plan` — this
         histogram's fills are the outputs, summed per partition and added across them; ``backend``
         is each worker's evaluation backend (factory/class or ``"module:attr"`` import ref for
-        behavior-carrying backends, which do not pickle); ``partitions`` lets the caller shape
-        partitioning itself. For several histograms that share a sub-graph, plan them together with
+        behavior-carrying backends, which do not pickle); ``steps_per_file`` overrides the source's
+        own setting (``None`` keeps it); ``partitions`` lets the caller shape partitioning itself.
+        For several histograms that share a sub-graph, plan them together with
         :func:`plan` so the shared work runs ONCE.
         """
         if not self._fill_nodes:
@@ -716,7 +717,7 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
 def plan(
     histograms: Mapping[str, Histogram] | Sequence[Histogram],
     *,
-    steps_per_file: int = 1,
+    steps_per_file: int | None = None,
     backend: Callable[[], Any] | str | None = None,
     partitions: Sequence[Partition] | None = None,
 ) -> Plan[dict[SlotKey, Any]]:
@@ -728,6 +729,7 @@ def plan(
     ``compute(dict_of_hists)`` analogue; ``run(plan).value`` is a flat slot-keyed mapping — a bare
     output name for an output no variation reaches, ``(output, label)`` for a varied one — which
     :func:`graphed_histogram.unpack` turns into the user-facing per-output shape.
+    ``steps_per_file`` overrides the source's own setting (``None`` keeps it).
     Column projection covers the union of all histograms' fills. Histserv-backed histograms are
     served: their servers are in ``plan.services``.
     """

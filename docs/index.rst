@@ -56,7 +56,7 @@ through uproot's ``uproot.graphed`` works the same way.
    jets = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
    jets.fill(evt.jet_pt)                      # ragged values flatten at fill time
 
-   plan = gh.plan({"met": met, "jet_pt": jets}, steps_per_file=4)
+   plan = gh.plan({"met": met, "jet_pt": jets})
    out = gh.unpack(SequentialRunner().run(plan).value)
 
    print(out["met"].values())
@@ -101,7 +101,7 @@ pool, a dask cluster or a parsl pool changes no analysis code:
        jets = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
        jets.fill(evt.jet_pt)
 
-       plan = gh.plan({"met": met, "jet_pt": jets}, steps_per_file=4)
+       plan = gh.plan({"met": met, "jet_pt": jets})
        out = gh.unpack(ProcessPoolExecutor(max_workers=2).run(plan).value)
        print(out["met"].values())
        print(out["jet_pt"].values())
