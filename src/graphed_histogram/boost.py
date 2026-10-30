@@ -150,37 +150,21 @@ class UnrunHistogramWarning(UserWarning):
     """
 
 
-#: not all of `functools.WRAPPER_ASSIGNMENTS`: the docs build mocks boost_histogram, and a mock's
-#: `__type_params__` is not the tuple a function must hold
-_WRAPPED = ("__name__", "__qualname__", "__doc__")
-
-
-def _warns(base: Callable[..., Any]) -> Any:
+def _warns(base: Callable[..., Any], *, reflected: bool = False) -> Any:
     """Return ``base`` warning first for each operand with staged fills."""
 
-    @wraps(base, assigned=_WRAPPED)
+    # not all of `functools.WRAPPER_ASSIGNMENTS`: the docs build mocks boost_histogram, and a
+    # mock's `__type_params__` is not the tuple a function must hold
+    @wraps(base, assigned=("__name__", "__qualname__", "__doc__"))
     def seam(self: Histogram, *args: Any, **kwargs: Any) -> Any:
         for operand in (self, *args):
             if isinstance(operand, Histogram):
                 _warn_if_unrun(operand)
+        if reflected and isinstance(args[0], bh.Histogram):
+            return NotImplemented
         return base(self, *args, **kwargs)
 
     return seam
-
-
-def _warns_reflected(base: Callable[..., Any]) -> Any:
-    """Return ``base`` warning first; a histogram on the left keeps its own forward operator."""
-
-    @wraps(base, assigned=_WRAPPED)
-    def seam(self: Histogram, other: Any) -> Any:
-        _warn_if_unrun(self)
-        return NotImplemented if isinstance(other, bh.Histogram) else base(self, other)
-
-    return seam
-
-
-#: what a fill records, each of which a copy of the histogram must not share with the original
-_RECORDED = ("_fill_nodes", "_evaluators", "_partials", "_label_maps", "_fill_specs")
 
 
 class Histogram(bh.Histogram):
@@ -205,16 +189,19 @@ class Histogram(bh.Histogram):
     __ne__ = _warns(bh.Histogram.__ne__)
     __mul__ = _warns(bh.Histogram.__mul__)
     __truediv__ = _warns(bh.Histogram.__truediv__)
+    # ahead of `__iadd__`'s and `__isub__`'s seams, so the copy they run on inherits the warning
+    __add__ = _warns(bh.Histogram.__add__)
+    __sub__ = _warns(bh.Histogram.__sub__)
     __iadd__ = _warns(bh.Histogram.__iadd__)
     __isub__ = _warns(bh.Histogram.__isub__)
     __imul__ = _warns(bh.Histogram.__imul__)
     __itruediv__ = _warns(bh.Histogram.__itruediv__)
     # a right operand of a subclass goes first, so `eager + h` lands here before eager's `__add__`
-    __radd__ = _warns_reflected(bh.Histogram.__radd__)
-    __rmul__ = _warns_reflected(bh.Histogram.__rmul__)
+    __radd__ = _warns(bh.Histogram.__radd__, reflected=True)
+    __rmul__ = _warns(bh.Histogram.__rmul__, reflected=True)
     if hasattr(bh.Histogram, "__rsub__"):  # boost-histogram 1.8 added these two together
-        __rsub__ = _warns_reflected(bh.Histogram.__rsub__)
-        __rtruediv__ = _warns_reflected(bh.Histogram.__rtruediv__)
+        __rsub__ = _warns(bh.Histogram.__rsub__, reflected=True)
+        __rtruediv__ = _warns(bh.Histogram.__rtruediv__, reflected=True)
 
     def __init__(self, *axes: Any, storage: Any = None, metadata: Any = None) -> None:
         """Build an empty deferred histogram; ``storage`` defaults to ``Double``."""
@@ -245,14 +232,11 @@ class Histogram(bh.Histogram):
         self._histserv: Any = None
         #: partials and merges dense (`dense_backed`); outside graph identity
         self._dense: bool = False
-        #: what `warn_explicit` has shown, per file: its key has no filename, and a per-module
-        #: record would hide the next histogram's read of the same line
-        self._warned: dict[str, dict[Any, Any]] = {}
 
     def _import_bh_(self) -> None:
-        for name in _RECORDED:
-            if name in self.__dict__:
-                self.__dict__[name] = copy.copy(self.__dict__[name])
+        # what a fill records, which a copy must not share with the original
+        for name in ("_fill_nodes", "_evaluators", "_partials", "_label_maps", "_fill_specs"):
+            self.__dict__[name] = copy.copy(self.__dict__[name])
 
     @classmethod
     def _export_bh_(cls, target: bh.Histogram) -> None:
@@ -262,11 +246,14 @@ class Histogram(bh.Histogram):
 
     def __repr__(self) -> str:
         """Show the histogram, marked with its staged fills when it has any."""
-        return _marked(self) if _staged(self) else super().__repr__()
+        n = self.staged_fills()
+        # a clone holds no fills, and its repr reads no staged storage
+        plain = repr(type(self)._clone(self._hist)) if n else super().__repr__()
+        return f"{plain} # {n} staged fill{'s' if n > 1 else ''}, not run" if n else plain
 
     def __str__(self) -> str:
         """Draw the histogram; with staged fills there is nothing to draw, so show its repr."""
-        return _marked(self) if _staged(self) else super().__str__()
+        return repr(self) if self.staged_fills() else super().__str__()
 
     # ---- recording -------------------------------------------------------------------------
     def fill(
@@ -566,7 +553,7 @@ class Histogram(bh.Histogram):
 
     def staged_fills(self) -> int:
         """Return how many fill nodes this histogram has recorded."""
-        return len(self._fill_nodes)
+        return len(self.__dict__.get("_fill_nodes", ()))
 
     def fill_nodes(self) -> list[Array]:
         """Return the recorded fill nodes, in recording order, without label attribution."""
@@ -656,48 +643,35 @@ class Histogram(bh.Histogram):
         )
 
 
-def _staged(h: bh.Histogram) -> int:
-    """Return how many fills ``h`` has staged; ``hist.Hist(h)`` carries them in ``__dict__``."""
-    return len(h.__dict__.get("_fill_nodes", ()))
-
-
-def _in_memory_class(h: bh.Histogram) -> type[bh.Histogram]:
-    """Return the in-memory class ``h``'s deferred class extends (``hist.Hist`` for hist's)."""
-    return next(
-        c for c in type(h).__mro__ if issubclass(c, bh.Histogram) and not issubclass(c, Histogram)
-    )
-
-
-def _marked(h: bh.Histogram) -> str:
-    """Return ``h``'s repr with its staged fills marked; the plain repr reads no staged storage."""
-    n = _staged(h)
-    plain = repr(_in_memory_class(h)._clone(h._hist))
-    return f"{plain} # {n} staged fill{'s' if n > 1 else ''}, not run"
-
-
 def _warn_if_unrun(h: bh.Histogram) -> None:
-    """Warn at the user's line if ``h`` has staged fills."""
-    if _staged(h):
+    """Warn at the user's line if ``h`` has staged fills; ``hist.Hist(h)`` carries them too."""
+    if Histogram.staged_fills(h):
         where = capture()
         warnings.warn_explicit(
-            f"{_marked(h)}: this histogram has not run, so it reads as empty, and what you do "
-            "with it here (arithmetic, h[...], project, ==, hist.Hist(h)) is not recorded into "
-            "the run. Use `filled = graphed.materialize(h)`, or run a plan, and read `filled`: "
-            "`h` itself stays un-run.",
+            "this histogram has not run, so it reads as empty, and what you do with it here "
+            "(arithmetic, h[...], project, ==, hist.Hist(h)) is not recorded into the run. Use "
+            "`filled = graphed.materialize(h)`, or run a plan, and read `filled`: `h` itself "
+            "stays un-run.",
             UnrunHistogramWarning,
             where.filename,
             where.lineno,
-            registry=h.__dict__["_warned"].setdefault(where.filename, {}),
+            # per file, as its key has no filename; per histogram, or the next one's read of this
+            # line would be hidden
+            registry=h.__dict__.setdefault("_warned", {}).setdefault(where.filename, {}),
         )
 
 
 def _kind(h: Histogram) -> Kind:
     """Return what ``h``'s results are.
 
-    That is its in-memory class, carrying the public attributes ``h`` set (None is every one's
+    That is the in-memory class its deferred class extends (``hist.Hist`` for
+    ``hist.graphed.Hist``), carrying the public attributes ``h`` set (None is every one's
     default).
     """
-    return _in_memory_class(h), tuple(
+    cls = next(
+        c for c in type(h).__mro__ if issubclass(c, bh.Histogram) and not issubclass(c, Histogram)
+    )
+    return cls, tuple(
         (k, v) for k, v in vars(h).items() if not k.startswith("_") and v is not None
     )
 

@@ -166,7 +166,7 @@ def test_the_warning_says_what_to_do_and_what_is_lost() -> None:
     h = _staged()
     (w,) = _recorded(h.values)
     text = str(w.message)
-    assert "1 staged fill, not run" in text
+    assert "\n" not in text
     assert "not recorded into the run" in text
     assert "filled = graphed.materialize(h)" in text
     assert "`h` itself stays un-run" in text
@@ -207,6 +207,34 @@ def test_repeat_reads_on_one_line_warn_once_per_histogram() -> None:
             each.values()
 
     assert len(_recorded(reads)) == 2
+
+
+def test_copies_of_one_template_warn_once_each() -> None:
+    template, x = _empty(), _x()
+    copies = [copy.copy(template).fill(x) for _ in range(3)]
+
+    def reads() -> None:
+        for each in copies:
+            each.values()
+
+    assert len(_recorded(reads)) == 3
+
+
+@pytest.mark.parametrize(
+    "use",
+    [lambda h: h * 2, lambda h: h + h, lambda h: h - h, lambda h: 1.0 - h, lambda h: h[2:5]],
+    ids=["mul", "add", "sub", "rsub", "slice"],
+)
+def test_one_use_warns_once_though_it_copies_the_histogram(use: Callable[[Any], object]) -> None:
+    h = _staged()
+    assert len(_recorded(lambda: use(h))) == 1
+
+
+def test_the_suite_filter_sees_a_multi_axis_histogram() -> None:
+    x = _x()
+    h = hg.Hist.new.Reg(5, 0, 200, name="x").Reg(5, 0, 200, name="y").Double().fill(x, x)
+    with pytest.raises(gh.UnrunHistogramWarning):
+        h.values()
 
 
 def test_a_read_on_another_line_warns_again() -> None:

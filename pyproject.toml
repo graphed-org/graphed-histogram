@@ -67,7 +67,7 @@ addopts = "-q"
 faulthandler_timeout = 200
 # no internal path may read a histogram with staged fills; by message, because naming
 # gh.UnrunHistogramWarning here imports the package before coverage starts
-filterwarnings = ["error:.*this histogram has not run:UserWarning"]
+filterwarnings = ["error:this histogram has not run:UserWarning"]
 
 [tool.coverage.run]
 branch = true

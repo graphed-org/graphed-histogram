@@ -69,9 +69,8 @@ that ran and found nothing. To keep those two apart, using ``h``'s bins while it
 warns, at your line, even when the read happens deep inside ``h.plot()`` or
 ``mplhep.histplot(h)``::
 
-    UnrunHistogramWarning: Hist(Regular(50, 0, 200, name='met'), storage=Double()) # 1 staged fill,
-    not run: this histogram has not run, so it reads as empty, and what you do with it here
-    (arithmetic, h[...], project, ==, hist.Hist(h)) is not recorded into the run. Use
+    UnrunHistogramWarning: this histogram has not run, so it reads as empty, and what you do with
+    it here (arithmetic, h[...], project, ==, hist.Hist(h)) is not recorded into the run. Use
     `filled = graphed.materialize(h)`, or run a plan, and read `filled`: `h` itself stays un-run.
 
 That covers every read of the bins (``values``, ``variances``, ``counts``, ``view``, ``sum``,
@@ -80,6 +79,10 @@ That covers every read of the bins (``values``, ``variances``, ``counts``, ``vie
 still does what it always did, which is the point of the second half of the message: ``h * 2`` and
 ``h[2:5]`` read the empty storage, and running ``h`` afterwards gives the histogram you filled, not
 a doubled or sliced one. Scale and slice the result instead.
+
+A few uses stay silent. ``eager += h``, and ``==`` or ``!=`` between a ``hist.Hist`` and a plain
+``gh.boost.Histogram``, reach no code here. ``h.sort(axis)``, ``h.expand_cats()`` and
+``h.integrate(axis, [...])`` read inside hist's own ignore-warnings block.
 
 Nothing else warns. A histogram with no fills reads as the empty histogram it is, which is useful
 for a test, and a run's result is an ordinary histogram even if the run saw no events. The text
