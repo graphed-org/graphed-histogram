@@ -1,6 +1,24 @@
 What changed
 ============
 
+Unreleased
+----------
+
+Added
+~~~~~
+
+* Reading a histogram with staged fills warns, at your line: ``gh.UnrunHistogramWarning``, a
+  ``UserWarning`` that the standard warning filter turns into an error. That covers every read of
+  its bins and what builds on them (``h[...]``, ``project``, arithmetic, ``==``, ``hist.Hist(h)``),
+  none of which is recorded into the run (:ref:`reading-before-it-runs`).
+* ``repr(h)`` and ``str(h)`` end in ``# N staged fills, not run`` while ``h`` has staged fills.
+
+Fixed
+~~~~~
+
+* ``copy.copy(h)`` and ``h.copy(deep=False)`` no longer share what ``h`` recorded, so a fill on the
+  copy stages on the copy alone.
+
 0.0.7
 -----
 

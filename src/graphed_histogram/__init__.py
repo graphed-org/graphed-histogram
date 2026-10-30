@@ -20,6 +20,7 @@ from ._spec import spec_of as _spec_of_hist
 from .boost import (
     FillEvaluator,
     Histogram,
+    UnrunHistogramWarning,
     add_histograms,
     dense_backed,
     factory,
@@ -53,6 +54,7 @@ def evaluators(*histograms: Histogram) -> dict[str, Callable[..., object]]:
 __all__ = [
     "FillEvaluator",
     "Histogram",
+    "UnrunHistogramWarning",
     "add_histograms",
     "boost",
     "content_hash",

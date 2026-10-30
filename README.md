@@ -60,7 +60,7 @@ print(result.values())
 # [3 4 3 1]
 ```
 
-`h` keeps the eager boost API (axes, storage, views of the empty state); what changed is
+`h` keeps its axes and storage type, and warns if you read its bins before it runs; what changed is
 that `.fill()` stages work and evaluation belongs to a runner. Ragged values flatten at fill
 time, exactly as an eager `fill(ak.flatten(...))` would.
 

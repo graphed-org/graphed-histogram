@@ -42,6 +42,8 @@ dev = [
   "pyarrow",
   "pandas",
   "diff_cover",
+  # the plotting path of the unrun-histogram warning
+  "mplhep",
 ]
 docs = ["sphinx", "furo"]
 # filling on histserv servers (graphed_histogram.histserv); grpcio ships no free-threaded wheel
@@ -63,6 +65,9 @@ pythonpath = ["src", "tests/frozen/m23", "tests/_corpus"]
 addopts = "-q"
 # Below run_bounded's 240 s, so a hang prints the stuck stack before the bare HARD TIMEOUT.
 faulthandler_timeout = 200
+# no internal path may read a histogram with staged fills; by message, because naming
+# gh.UnrunHistogramWarning here imports the package before coverage starts
+filterwarnings = ["error:.*this histogram has not run:UserWarning"]
 
 [tool.coverage.run]
 branch = true
