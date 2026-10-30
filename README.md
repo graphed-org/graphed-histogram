@@ -29,7 +29,8 @@ Building `graphed` from source (no wheel for your platform) needs a Rust toolcha
 A complete program: awkward events in, a filled `boost_histogram.Histogram` out. The only
 new ingredient over eager boost-histogram is a *source* — the object that hands your dataset
 out in chunks, so workers each fill their piece. Here it is a parquet file; a ROOT file read
-through uproot's `uproot.graphed` works the same way.
+through uproot's `uproot.graphed` works the same way, with `steps_per_file` set on the plan:
+`gh.plan({...}, steps_per_file=4)`.
 
 ```python
 import awkward as ak
@@ -54,7 +55,7 @@ evt = from_parquet("events", "events.parquet", steps_per_file=2, session=s)
 h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
 h.fill(evt.Jet.pt)                         # records the fill; nothing is read yet
 
-plan = h.plan(steps_per_file=2)            # 2 chunks -> 2 fill tasks + a combine
+plan = h.plan()                            # 2 chunks -> 2 fill tasks + a combine
 result = SequentialRunner().run(plan).value
 print(result.values())
 # [3 4 3 1]
@@ -86,7 +87,7 @@ if __name__ == "__main__":
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
     h.fill(evt.Jet.pt)
 
-    result = ProcessPoolExecutor(max_workers=2).run(h.plan(steps_per_file=2)).value
+    result = ProcessPoolExecutor(max_workers=2).run(h.plan()).value
     print(result.values())
     # [3 4 3 1]
 ```
@@ -116,7 +117,7 @@ graph, so a selection feeding several histograms is read and evaluated once, and
 columns any fill touches are read off disk.
 
 ```python
-plan = gh.plan({"met": hmet, "jet_pt": h}, steps_per_file=2)
+plan = gh.plan({"met": hmet, "jet_pt": h})
 out = gh.unpack(SequentialRunner().run(plan).value)   # {name: histogram}
 print(out["jet_pt"].values())
 # [3 4 3 1]

@@ -18,6 +18,10 @@ Fixed
 
 * ``copy.copy(h)`` and ``h.copy(deep=False)`` no longer share what ``h`` recorded, so a fill on the
   copy stages on the copy alone.
+* ``gh.plan`` and ``h.plan()`` keep the partitioning chosen at read time: ``steps_per_file`` now
+  defaults to ``None``, the source's own setting, as in ``graphed.aggregate_plan``, so
+  ``from_parquet(..., steps_per_file=3)`` gives three tasks without repeating it on the plan. An
+  explicit value still overrides, and a source that sets nothing is still one step per file.
 
 0.0.7
 -----
