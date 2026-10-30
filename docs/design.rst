@@ -145,9 +145,11 @@ Counting the reads takes a source you wrote yourself, which is also the shortest
 source owes a runner: ``partitions(steps_per_file)`` names the slices the dataset will be cut into
 (``Partition.blind`` when the row count is not known until a worker opens the file), and
 ``read_partition`` is handed one of them plus the columns the graph asked for, and returns that
-slice. ``from_parquet`` is exactly this, written for you. The ``form`` says what the columns look
-like without reading any of them — an awkward typetracer array, which is what
-``to_typetracer(forget_length=True)`` builds — so the graph can be typed before a byte moves.
+slice. An optional ``steps_per_file`` attribute sets how many slices per file a plan asks for when
+it is not told; without one, a plan asks for one. ``from_parquet`` is exactly this, written for
+you. The ``form`` says what the columns look like without reading any of them — an awkward
+typetracer array, which is what ``to_typetracer(forget_length=True)`` builds — so the graph can be
+typed before a byte moves.
 
 .. code-block:: python
 

@@ -29,7 +29,8 @@ Your first deferred histogram
 Awkward events in, two filled ``boost_histogram.Histogram`` objects out. The one new
 ingredient over eager boost-histogram is a **source**: the object that hands your dataset
 out in chunks, so each task fills its own piece. Here it is a parquet file; a ROOT file read
-through uproot's ``uproot.graphed`` works the same way.
+through uproot's ``uproot.graphed`` works the same way, with ``steps_per_file`` set on the plan:
+``gh.plan({...}, steps_per_file=4)``.
 
 .. code-block:: python
 

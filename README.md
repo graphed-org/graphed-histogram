@@ -29,7 +29,8 @@ Building `graphed` from source (no wheel for your platform) needs a Rust toolcha
 A complete program: awkward events in, a filled `boost_histogram.Histogram` out. The only
 new ingredient over eager boost-histogram is a *source* — the object that hands your dataset
 out in chunks, so workers each fill their piece. Here it is a parquet file; a ROOT file read
-through uproot's `uproot.graphed` works the same way.
+through uproot's `uproot.graphed` works the same way, with `steps_per_file` set on the plan:
+`gh.plan({...}, steps_per_file=4)`.
 
 ```python
 import awkward as ak

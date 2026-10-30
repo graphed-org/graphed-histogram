@@ -63,7 +63,8 @@ Run it
 
    Everything after ``histograms`` is keyword-only. ``steps_per_file=`` sets how many chunks
    each file becomes; left out, the source's own setting applies
-   (``from_parquet(steps_per_file=)``). ``partitions=`` takes the chunking itself instead, a
+   (``from_parquet(steps_per_file=)``), or one chunk per file for a source that has none, such
+   as ``uproot.graphed``. ``partitions=`` takes the chunking itself instead, a
    ``Sequence[graphed.core.Partition]`` — ``partitions=[Partition.blind("events.parquet", "",
    i, 4) for i in range(4)]`` is what ``steps_per_file=4`` builds for you (``blind`` means the
    chunk's row range is resolved when a worker opens the file, not now). ``backend=`` is the
