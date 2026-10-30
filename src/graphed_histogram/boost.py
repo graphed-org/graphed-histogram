@@ -572,8 +572,9 @@ class Histogram(bh.Histogram):
         """
         if self._histserv is not None:
             raise GraphedError(
-                "graphed.materialize runs no servers, and this histogram is histserv-backed; plan "
-                "it through graphed_histogram.plan({name: hist}) on an executor that starts them"
+                "graphed.materialize runs no servers, so it cannot fill this histserv-backed "
+                "histogram: run the analysis to fill it, through graphed_histogram.plan({name: "
+                "hist}) on an executor that starts them"
             )
         if not self._fill_nodes:
             return PlanPieces(
