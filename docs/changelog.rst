@@ -16,6 +16,14 @@ Added
   source, which has no plan, fills too. A histserv-backed histogram needs a plan on an executor
   that starts its servers, so ``materialize`` raises naming that.
 
+Fixed
+~~~~~
+
+* ``gh.plan`` and ``h.plan()`` keep the partitioning chosen at read time: ``steps_per_file`` now
+  defaults to ``None``, the source's own setting, as in ``graphed.aggregate_plan``, so
+  ``from_parquet(..., steps_per_file=3)`` gives three tasks without repeating it on the plan. An
+  explicit value still overrides, and a source that sets nothing is still one step per file.
+
 0.0.7
 -----
 
