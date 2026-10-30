@@ -54,7 +54,7 @@ Fill it
 Run it
 ------
 
-``gh.plan(histograms, *, steps_per_file=1, backend=None, partitions=None)``
+``gh.plan(histograms, *, steps_per_file=None, backend=None, partitions=None)``
    One plan for several histograms — ``gh.plan({"pt": h1, "mass": h2})`` — and the
    ``compute(dict_of_hists)`` analogue. All their fills compile into one graph, so a
    selection feeding both histograms is read and evaluated once, and only the columns some
@@ -62,14 +62,16 @@ Run it
    and names the results ``"0"``, ``"1"``, … by position.
 
    Everything after ``histograms`` is keyword-only. ``steps_per_file=`` sets how many chunks
-   each file becomes. ``partitions=`` takes the chunking itself instead, a
+   each file becomes; left out, the source's own setting applies
+   (``from_parquet(steps_per_file=)``), or one chunk per file for a source that has none, such
+   as ``uproot.graphed``. ``partitions=`` takes the chunking itself instead, a
    ``Sequence[graphed.core.Partition]`` — ``partitions=[Partition.blind("events.parquet", "",
    i, 4) for i in range(4)]`` is what ``steps_per_file=4`` builds for you (``blind`` means the
    chunk's row range is resolved when a worker opens the file, not now). ``backend=`` is the
    evaluation backend each worker builds, as a class/factory or an importable
    ``"module:attr"`` string.
 
-``h.plan(*, steps_per_file=1, backend=None, partitions=None)``
+``h.plan(*, steps_per_file=None, backend=None, partitions=None)``
    The same for a single histogram; its run value is that one filled histogram rather than
    a mapping, so there is nothing to unpack. It refuses a histogram whose fills carry variations, because summing every staged fill
    into one histogram would silently merge the variations together — use ``gh.plan`` there,
@@ -132,7 +134,7 @@ can take. Needs ``graphed[awkward]``.
 
    print(gh.label_listing({"met": h}))               # before running anything
 
-   value = SequentialRunner().run(gh.plan({"met": h}, steps_per_file=2)).value
+   value = SequentialRunner().run(gh.plan({"met": h})).value
    print(sorted(value))                              # what the runner returns
    out = gh.unpack(value)                            # what you work with
    print(sorted(out["met"]))
