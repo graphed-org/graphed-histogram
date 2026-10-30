@@ -1,6 +1,21 @@
 What changed
 ============
 
+Unreleased
+----------
+
+Requires ``graphed`` with ``graphed.PlanPieces``.
+
+Added
+~~~~~
+
+* ``graphed.materialize(h)`` takes a deferred histogram (``gh.Histogram``, ``hist.graphed.Hist``)
+  and returns a new filled histogram, as a runner does: the class you instantiated, or
+  ``{label: histogram}`` for a varied one, in one read of each source with the call's other
+  results. ``h`` itself stays un-run. A histogram with no fills comes back empty, and an in-memory
+  source, which has no plan, fills too. A histserv-backed histogram needs a plan on an executor
+  that starts its servers, so ``materialize`` raises naming that.
+
 0.0.7
 -----
 

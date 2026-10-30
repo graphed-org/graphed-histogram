@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # graphed 0.0.10 from PyPI.
-  GRAPHED: "graphed[awkward,numpy]==0.0.10"
+  # graphed#159 for graphed.PlanPieces, until the release that carries it.
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@476a2ef7e9ce9b1cc3e611a4a2c91d862e00dbf4"
   # exec-local stays a separate package (used by the M23 process-executor integration tests);
   # 0.0.7 is the first release that applies Plan.finalize
   EXECLOCAL: "graphed-executors>=0.0.7"
