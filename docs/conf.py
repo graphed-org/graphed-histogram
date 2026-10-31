@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.metadata
+
 project = "graphed-histogram"
 author = "graphed-org"
-release = "0.0.7"
+release = importlib.metadata.version("graphed-histogram")
 
 extensions = [
     "sphinx.ext.autodoc",
