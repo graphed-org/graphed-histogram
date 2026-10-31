@@ -10,12 +10,18 @@ is :func:`add_histograms`, and ANY runner's ``run(plan).value`` IS the aggregate
 ``session.materialize(fill_node)`` evaluates a fill on the spot. On fixed axes, Int64 counts are
 exact under any combine tree, and float sums' bits are fixed by the runner family and the
 partition count. Growth axes combine to the reference stated in the docs' "Growth axes" section.
+
+A fill leaves this object's storage empty, so reading one with staged fills warns
+(:class:`UnrunHistogramWarning`).
 """
 
 from __future__ import annotations
 
+import copy
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from functools import wraps
 from typing import Any, TypeVar
 
 import boost_histogram as bh
@@ -24,6 +30,7 @@ from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan
 from graphed.core import Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key, external_key
+from graphed.provenance import capture
 
 from ._chunked import Kind, dense
 from ._combine import (
@@ -135,15 +142,66 @@ class _Lowering:
     labels: tuple[str, ...]
 
 
+class UnrunHistogramWarning(UserWarning):
+    """A histogram with staged fills was read, or used, as though it held data.
+
+    Its storage is empty until it runs, and what is done with it is not recorded into the run. To
+    make this an error: ``warnings.filterwarnings("error", category=UnrunHistogramWarning)``.
+    """
+
+
+def _warns(base: Callable[..., Any], *, reflected: bool = False) -> Any:
+    """Return ``base`` warning first for each operand with staged fills."""
+
+    # not all of `functools.WRAPPER_ASSIGNMENTS`: the docs build mocks boost_histogram, and a
+    # mock's `__type_params__` is not the tuple a function must hold
+    @wraps(base, assigned=("__name__", "__qualname__", "__doc__"))
+    def seam(self: Histogram, *args: Any, **kwargs: Any) -> Any:
+        for operand in (self, *args):
+            if isinstance(operand, Histogram):
+                _warn_if_unrun(operand)
+        if reflected and isinstance(args[0], bh.Histogram):
+            return NotImplemented
+        return base(self, *args, **kwargs)
+
+    return seam
+
+
 class Histogram(bh.Histogram):
     """A ``boost_histogram.Histogram`` whose fills are DEFERRED graphed computations.
 
     ``fill`` records and returns ``self`` (fills accumulate). Evaluation is graphed's, not a
     method of this class: ``plan()`` exports a plan for any runner — the runner's result IS the
     aggregated histogram — and ``session.materialize(fill_node)`` evaluates one fill on the spot
-    (an in-memory source's whole dataset in one chunk). The eager boost API (axes, storage, views
-    of the EMPTY state) remains available.
+    (an in-memory source's whole dataset in one chunk). This object never holds the result: its
+    axes and storage type stay available, and with no fill recorded it reads as the empty histogram
+    it is, but reading it with fills staged warns (:class:`UnrunHistogramWarning`).
     """
+
+    view = _warns(bh.Histogram.view)
+    sum = _warns(bh.Histogram.sum)
+    empty = _warns(bh.Histogram.empty)
+    project = _warns(bh.Histogram.project)
+    reset = _warns(bh.Histogram.reset)
+    __getitem__ = _warns(bh.Histogram.__getitem__)
+    __eq__ = _warns(bh.Histogram.__eq__)
+    # boost-histogram 1.7 reaches none of the other seams from these three
+    __ne__ = _warns(bh.Histogram.__ne__)
+    __mul__ = _warns(bh.Histogram.__mul__)
+    __truediv__ = _warns(bh.Histogram.__truediv__)
+    # ahead of `__iadd__`'s and `__isub__`'s seams, so the copy they run on inherits the warning
+    __add__ = _warns(bh.Histogram.__add__)
+    __sub__ = _warns(bh.Histogram.__sub__)
+    __iadd__ = _warns(bh.Histogram.__iadd__)
+    __isub__ = _warns(bh.Histogram.__isub__)
+    __imul__ = _warns(bh.Histogram.__imul__)
+    __itruediv__ = _warns(bh.Histogram.__itruediv__)
+    # a right operand of a subclass goes first, so `eager + h` lands here before eager's `__add__`
+    __radd__ = _warns(bh.Histogram.__radd__, reflected=True)
+    __rmul__ = _warns(bh.Histogram.__rmul__, reflected=True)
+    if hasattr(bh.Histogram, "__rsub__"):  # boost-histogram 1.8 added these two together
+        __rsub__ = _warns(bh.Histogram.__rsub__, reflected=True)
+        __rtruediv__ = _warns(bh.Histogram.__rtruediv__, reflected=True)
 
     def __init__(self, *axes: Any, storage: Any = None, metadata: Any = None) -> None:
         """Build an empty deferred histogram; ``storage`` defaults to ``Double``."""
@@ -174,6 +232,28 @@ class Histogram(bh.Histogram):
         self._histserv: Any = None
         #: partials and merges dense (`dense_backed`); outside graph identity
         self._dense: bool = False
+
+    def _import_bh_(self) -> None:
+        # what a fill records, which a copy must not share with the original
+        for name in ("_fill_nodes", "_evaluators", "_partials", "_label_maps", "_fill_specs"):
+            self.__dict__[name] = copy.copy(self.__dict__[name])
+
+    @classmethod
+    def _export_bh_(cls, target: bh.Histogram) -> None:
+        if not isinstance(target, Histogram):
+            _warn_if_unrun(target)
+        super()._export_bh_(target)
+
+    def __repr__(self) -> str:
+        """Show the histogram, marked with its staged fills when it has any."""
+        n = self.staged_fills()
+        # a clone holds no fills, and its repr reads no staged storage
+        plain = repr(type(self)._clone(self._hist)) if n else super().__repr__()
+        return f"{plain} # {n} staged fill{'s' if n > 1 else ''}, not run" if n else plain
+
+    def __str__(self) -> str:
+        """Draw the histogram; with staged fills there is nothing to draw, so show its repr."""
+        return repr(self) if self.staged_fills() else super().__str__()
 
     # ---- recording -------------------------------------------------------------------------
     def fill(
@@ -473,7 +553,7 @@ class Histogram(bh.Histogram):
 
     def staged_fills(self) -> int:
         """Return how many fill nodes this histogram has recorded."""
-        return len(self._fill_nodes)
+        return len(self.__dict__.get("_fill_nodes", ()))
 
     def fill_nodes(self) -> list[Array]:
         """Return the recorded fill nodes, in recording order, without label attribution."""
@@ -561,6 +641,24 @@ class Histogram(bh.Histogram):
             partitions=partitions,
             on_compiled=on_compiled,
             finalize=dense,
+        )
+
+
+def _warn_if_unrun(h: bh.Histogram) -> None:
+    """Warn at the user's line if ``h`` has staged fills; ``hist.Hist(h)`` carries them too."""
+    if Histogram.staged_fills(h):
+        where = capture()
+        warnings.warn_explicit(
+            "this histogram has not run, so it reads as empty, and what you do with it here "
+            "(arithmetic, h[...], project, ==, hist.Hist(h)) is not recorded into the run. Use "
+            "`filled = graphed.materialize(h)`, or run a plan, and read `filled`: `h` itself "
+            "stays un-run.",
+            UnrunHistogramWarning,
+            where.filename,
+            where.lineno,
+            # per file, as its key has no filename; per histogram, or the next one's read of this
+            # line would be hidden
+            registry=h.__dict__.setdefault("_warned", {}).setdefault(where.filename, {}),
         )
 
 

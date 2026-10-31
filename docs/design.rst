@@ -51,12 +51,60 @@ Printed output::
     [3 2 1 0]
     11.0
 
-Three things to notice. ``gh.boost.Histogram`` is a ``boost_histogram.Histogram`` — the eager API
-(axes, storage, views of the empty state) is all still there, and ragged fill values flatten
-completely, exactly as boost does them. There is no ``.compute()``: you build a plan and hand it
+Three things to notice. ``gh.boost.Histogram`` is a ``boost_histogram.Histogram`` — its axes and
+storage type are all still there (:ref:`reading-before-it-runs` covers its bins), and ragged fill
+values flatten completely, exactly as boost does them. There is no ``.compute()``: you build a plan and hand it
 to a runner, and ``run(plan).value`` **is** the aggregated result. And you name your histograms
 when you plan them, so the results come back keyed by those names.
 
+
+.. _reading-before-it-runs:
+
+Reading a histogram before it runs
+----------------------------------
+
+A fill records; it puts nothing in the histogram you called it on, and running it hands back a new
+histogram. So ``h`` itself reads as empty, forever, and a plot of it looks exactly like a histogram
+that ran and found nothing. To keep those two apart, using ``h``'s bins while it has staged fills
+warns, at your line, even when the read happens deep inside ``h.plot()`` or
+``mplhep.histplot(h)``::
+
+    UnrunHistogramWarning: this histogram has not run, so it reads as empty, and what you do with
+    it here (arithmetic, h[...], project, ==, hist.Hist(h)) is not recorded into the run. Use
+    `filled = graphed.materialize(h)`, or run a plan, and read `filled`: `h` itself stays un-run.
+
+That covers every read of the bins (``values``, ``variances``, ``counts``, ``view``, ``sum``,
+``to_numpy``, ``np.asarray``, the ``plot`` family), and everything that would build on them:
+``h[...]``, ``project``, ``integrate``, arithmetic, ``==``, ``reset``, ``hist.Hist(h)``. The call
+still does what it always did, which is the point of the second half of the message: ``h * 2`` and
+``h[2:5]`` read the empty storage, and running ``h`` afterwards gives the histogram you filled, not
+a doubled or sliced one. Scale and slice the result instead.
+
+A few uses stay silent. ``eager += h``, and ``==`` or ``!=`` between a ``hist.Hist`` and a plain
+``gh.boost.Histogram``, reach no code here. ``h.sort(axis)``, ``h.expand_cats()`` and
+``h.integrate(axis, [...])`` read inside hist's own ignore-warnings block.
+
+Nothing else warns. A histogram with no fills reads as the empty histogram it is, which is useful
+for a test, and a run's result is an ordinary histogram even if the run saw no events. The text
+repr carries the difference too: ``repr(h)`` and ``str(h)`` end in ``# 1 staged fill, not run``.
+
+To make it an error, use the standard warning filter, in code or in pytest::
+
+    warnings.filterwarnings("error", category=gh.UnrunHistogramWarning)
+
+.. code-block:: toml
+
+    [tool.pytest.ini_options]
+    filterwarnings = ["error::graphed_histogram.UnrunHistogramWarning"]
+
+``python -W`` and ``PYTHONWARNINGS`` cannot name this category: Python parses them before
+``site-packages`` is importable, and answers ``Invalid -W option ignored``.
+``-W error::UserWarning`` works, for every ``UserWarning``.
+
+It shows once per histogram per line, because a plot reads a histogram several times. Three
+histograms read on one line warn three times, and a read on another line, or in another notebook
+cell, warns again. Running the same notebook cell again on the same ``h`` does not; for every read,
+``warnings.filterwarnings("always", category=gh.UnrunHistogramWarning)``.
 
 Why filling is free until you run
 ---------------------------------
