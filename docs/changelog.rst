@@ -15,10 +15,17 @@ Added
   results. ``h`` itself stays un-run. A histogram with no fills comes back empty, and an in-memory
   source, which has no plan, fills too. A histserv-backed histogram needs a plan on an executor
   that starts its servers, so ``materialize`` raises naming that.
+* Reading a histogram with staged fills warns, at your line: ``gh.UnrunHistogramWarning``, a
+  ``UserWarning`` that the standard warning filter turns into an error. That covers every read of
+  its bins and what builds on them (``h[...]``, ``project``, arithmetic, ``==``, ``hist.Hist(h)``),
+  none of which is recorded into the run (:ref:`reading-before-it-runs`).
+* ``repr(h)`` and ``str(h)`` end in ``# N staged fills, not run`` while ``h`` has staged fills.
 
 Fixed
 ~~~~~
 
+* ``copy.copy(h)`` and ``h.copy(deep=False)`` no longer share what ``h`` recorded, so a fill on the
+  copy stages on the copy alone.
 * ``gh.plan`` and ``h.plan()`` keep the partitioning chosen at read time: ``steps_per_file`` now
   defaults to ``None``, the source's own setting, as in ``graphed.aggregate_plan``, so
   ``from_parquet(..., steps_per_file=3)`` gives three tasks without repeating it on the plan. An

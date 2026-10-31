@@ -11,8 +11,9 @@ Build a histogram
 -----------------
 
 ``gh.boost.Histogram(*axes, storage=..., metadata=...)``
-   A ``boost_histogram.Histogram`` whose fills are deferred. Same axes, same storages,
-   same eager API for axes/storage/views of the empty state. All standard boost storages
+   A ``boost_histogram.Histogram`` whose fills are deferred. Same axes, same storages. It never
+   holds the result, so reading its bins with fills staged warns (``gh.UnrunHistogramWarning``,
+   :ref:`reading-before-it-runs`). All standard boost storages
    and the Regular / Variable / Integer / IntCategory / StrCategory / Boolean axes work;
    ``growth=True`` works on Regular, Integer, IntCategory and StrCategory (:ref:`growth-axes`).
 
@@ -29,6 +30,10 @@ Build a histogram
    The same deferred histogram behind ``hist``'s builder — ``Hist.new.Reg(100, 0, 200,
    name="met").Double()`` — with named-axis fills, and names and labels that survive the run.
    ``hist`` ships the ``hist.graphed`` module from 2.12 on — ``pip install "hist>=2.12"``.
+
+``gh.UnrunHistogramWarning``
+   The ``UserWarning`` raised when a histogram with staged fills is read or used as though it held
+   data. ``warnings.filterwarnings("error", category=gh.UnrunHistogramWarning)`` makes it an error.
 
 Fill it
 -------
