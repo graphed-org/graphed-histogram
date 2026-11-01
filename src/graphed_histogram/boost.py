@@ -57,6 +57,7 @@ from ._fill import (
     _fill_chash,
     _fill_params,
     _fold_labels,
+    _lifted,
     _mixed_row_spaces,
     _WeightGuard,
 )
@@ -357,7 +358,7 @@ class Histogram(bh.Histogram):
             )
         # weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
         # a real graph input and evaluation multiplies them elementwise
-        all_weights = _factor_list(weight)
+        all_weights = _lifted(_factor_list(weight), values)
         if not all(isinstance(w, (Array, Varied, *_SCALARS)) for w in all_weights):
             raise TypeError("weights must be graphed Arrays or scalar constants")
         if sample is not None and not isinstance(sample, (Array, Varied, *_SCALARS)):

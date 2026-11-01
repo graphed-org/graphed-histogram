@@ -11,7 +11,8 @@ from typing import Any
 import boost_histogram as bh
 import graphed
 import numpy as np
-from graphed import GraphedError, Varied
+from graphed import Array, GraphedError, Varied
+from graphed.systematics import ScalarFactor
 
 from ._chunked import Partial, dense, empty
 from ._spec import content_hash, spec_of
@@ -286,6 +287,24 @@ class _WeightGuard:
         if not _drops_rows(value) and wide == _rows(_flat(value)):
             return _renest(value, factor)
         raise GraphedError(self.message)
+
+
+def _lifted(factors: list[Any], values: Sequence[Operand]) -> list[Any]:
+    """Multiply each scalar factor into the first array factor, or into ones when there is none.
+
+    A `ScalarFactor` holds no node, so it can only reach the fill through an array.
+    """
+    flat = [factor for factor in factors if isinstance(factor, ScalarFactor)]
+    if not flat:
+        return factors
+    rest = [factor for factor in factors if not isinstance(factor, ScalarFactor)]
+    arrays = [i for i, factor in enumerate(rest) if isinstance(factor, (Array, Varied))]
+    if not arrays:
+        arrays = [0]
+        rest.insert(0, graphed.member_of(values[0], "nominal") ** 0)
+    for factor in flat:
+        rest[arrays[0]] = rest[arrays[0]] * factor
+    return rest
 
 
 def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
