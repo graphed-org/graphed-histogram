@@ -13,7 +13,7 @@ import hist.graphed as hg
 import numpy as np
 import pytest
 from graphed import Session
-from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward import AwkwardBackend, from_awkward, gak, gnano
 from graphed.errors import GraphedTypeError
 from graphed.numpy import NumpyBackend, from_array
 
@@ -111,6 +111,28 @@ def test_a_varied_operand_is_checked_on_its_nominal_member() -> None:
     shifted = graphed.vary(ev.jet_pt, "jes", up=ev.jet_pt * 2.0, down=ev.jet_pt * 0.5)
     with pytest.raises(GraphedTypeError, match="axis 'njet' needs one value per entry"):
         _two_axes().fill(met=ev.met, njet=shifted)
+
+
+def test_a_shifted_member_is_checked_on_its_own_label() -> None:
+    _, ev = _events()
+    shifted = graphed.vary(ev.njet * 1.0, "jes", up=ev.jet_pt, down=ev.met)
+    with pytest.raises(GraphedTypeError, match="got '## \\* var \\* float64'"):
+        _two_axes().fill(met=ev.met, njet=shifted)
+
+
+def test_a_record_ambient_weight_is_refused() -> None:
+    _, ev = _events()
+    events = gnano.events(ev)
+    weighted = graphed.vary(events, "pu", events.muon, is_weight=True, up=events.muon)
+    with pytest.raises(GraphedTypeError, match="ambient weight got a record"):
+        _one_axis().fill(met=weighted.met)
+
+
+def test_an_unweighted_fill_ignores_a_record_ambient_weight() -> None:
+    session, ev = _events()
+    events = gnano.events(ev)
+    weighted = graphed.vary(events, "pu", events.muon, is_weight=True, up=events.muon)
+    assert _sum(session, _one_axis().fill(met=weighted.met, unweighted=True)) == 3.0
 
 
 def test_two_numpy_ranks_are_refused_too() -> None:

@@ -17,9 +17,11 @@ Fixed
 ~~~~~
 
 * A fill the recorded types rule out raises ``GraphedTypeError`` at the fill line, naming the axis
-  and the type, before any data is read: a record on an axis, a weight or ``sample=``, and axes at
-  different list depths (``fill(met=ev.MET_pt, njet=ev.Jet_pt)``, which paired the wrong values
-  silently when the counts happened to match). A jagged value alone still fills flattened.
+  and the type, before any data is read: a record on an axis, a weight, the ambient weight or
+  ``sample=``, and, in any variation, axes at different list depths
+  (``fill(met=ev.MET_pt, njet=ev.Jet_pt)``, which paired the wrong values silently when the counts
+  happened to match). A jagged value alone still fills flattened; a flattened axis beside a jagged
+  one is refused too, so flatten every jagged axis.
 * ``copy.copy(h)`` and ``h.copy(deep=False)`` no longer share what ``h`` recorded, so a fill on the
   copy stages on the copy alone.
 * ``gh.plan`` and ``h.plan()`` keep the partitioning chosen at read time: ``steps_per_file`` now
