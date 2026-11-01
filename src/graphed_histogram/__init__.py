@@ -15,6 +15,7 @@ from collections.abc import Callable
 import boost_histogram as bh
 
 from . import boost
+from ._fill import _VERSION
 from ._spec import content_hash, zero_of
 from ._spec import spec_of as _spec_of_hist
 from .boost import (
@@ -32,6 +33,8 @@ from .boost import (
     plan,
     unpack,
 )
+
+__version__ = _VERSION
 
 
 def spec_of(hist: object) -> str:
@@ -55,6 +58,7 @@ __all__ = [
     "FillEvaluator",
     "Histogram",
     "UnrunHistogramWarning",
+    "__version__",
     "add_histograms",
     "boost",
     "content_hash",
@@ -71,3 +75,7 @@ __all__ = [
     "unpack",
     "zero_of",
 ]
+
+
+def __dir__() -> list[str]:
+    return __all__

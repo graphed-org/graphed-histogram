@@ -12,6 +12,12 @@ Added
   its bins and what builds on them (``h[...]``, ``project``, arithmetic, ``==``, ``hist.Hist(h)``),
   none of which is recorded into the run (:ref:`reading-before-it-runs`).
 * ``repr(h)`` and ``str(h)`` end in ``# N staged fills, not run`` while ``h`` has staged fills.
+* ``graphed_histogram.__version__``, read from the installed package.
+
+Changed
+~~~~~~~
+
+* ``dir(graphed_histogram)`` is ``__all__``, so tab completion shows the public names only.
 
 Fixed
 ~~~~~
