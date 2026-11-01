@@ -22,13 +22,14 @@ import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 import boost_histogram as bh
 import graphed
 from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan
 from graphed.core import Partition, PayloadDescriptor
 from graphed.core.execution import Plan
+from graphed.errors import GraphedTypeError
 from graphed.execute import Key, external_key
 from graphed.provenance import capture
 
@@ -53,6 +54,7 @@ from ._fill import (
     _blame,
     _constants,
     _declare_axis_spec,
+    _depth,
     _factor_list,
     _fill_chash,
     _fill_params,
@@ -126,6 +128,15 @@ def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
             f"{len(label_maps)} of them — read the flat list from Histogram.fill_nodes()"
         )
     return dict(label_maps[0])
+
+
+def _form_of(operand: Operand) -> Any:
+    member = graphed.member_of(operand, "nominal")
+    return member.session.form(member)
+
+
+def _refuse(detail: str) -> NoReturn:
+    raise GraphedTypeError("histogram.fill", capture(), detail)
 
 
 @dataclass(frozen=True)
@@ -379,7 +390,34 @@ class Histogram(bh.Histogram):
                 "collide — drop the pre-existing 'variation' axis or use sibling fills"
             )
 
+        self._check_types(args, weights, recorded_sample)
         return values, all_weights, weights, recorded_sample
+
+    def _check_types(
+        self, args: Sequence[Operand], weights: Sequence[Operand], sample: Operand | None
+    ) -> None:
+        """Refuse what the recorded types rule out; lengths are only knowable at run time.
+
+        A factor deeper than the axes stays legal: it can flatten to their length.
+        """
+        axes = [
+            (f"axis {ax.__dict__.get('name') or i!r}", _form_of(arg))
+            for i, (ax, arg) in enumerate(zip(self.axes, args, strict=True))
+            if not isinstance(arg, _SCALARS)
+        ]
+        factors = [("weight", _form_of(w)) for w in weights]
+        if sample is not None:
+            factors.append(("sample", _form_of(sample)))
+        for role, form in (*axes, *factors):
+            if getattr(getattr(form, "tt", None), "fields", ()):
+                _refuse(f"{role} got a record ({form.describe()!r}); pick a field")
+        ranked = sorted((a for a in axes if _depth(a[1])), key=lambda a: _depth(a[1]) or 0)
+        if ranked and _depth(ranked[0][1]) != _depth(ranked[-1][1]):
+            (flat, flat_form), (deep, deep_form) = ranked[0], ranked[-1]
+            _refuse(
+                f"{deep} needs one value per entry of {flat} ({flat_form.describe()!r}); "
+                f"got {deep_form.describe()!r}; flatten it or pick one per entry"
+            )
 
     def _record_sibling_fill(self, low: _Lowering) -> None:
         """Lower one fill in sibling mode: one node per label."""
