@@ -15,7 +15,7 @@ import pytest
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, gnano
 from graphed.errors import GraphedTypeError
-from graphed.numpy import NumpyBackend, from_array
+from graphed.numpy import NumpyBackend, from_array, from_record
 
 import graphed_histogram as gh
 
@@ -47,6 +47,10 @@ def _two_axes() -> Any:
     return hg.Hist.new.Reg(10, 0, 5, name="met").Reg(5, 0, 5, name="njet").Double()
 
 
+def _mean() -> Any:
+    return hg.Hist.new.Reg(10, 0, 5, name="met").Mean()
+
+
 def _sum(session: Session, histogram: Any) -> float:
     return float(session.materialize(histogram.fill_nodes()[0]).sum(flow=True))  # type: ignore[attr-defined]
 
@@ -70,6 +74,28 @@ def _sum(session: Session, histogram: Any) -> float:
         (lambda ev: _one_axis().fill(met=ev.muon), r"axis 'met' got a record"),
         (lambda ev: _one_axis().fill(met=ev.met, weight=ev.muon), r"weight got a record"),
         (lambda ev: _one_axis().fill(met=ev.met, weight=[ev.w, ev.muon]), r"weight got a record"),
+        (lambda ev: _mean().fill(met=ev.met, sample=ev.muon), r"sample got a record"),
+        (
+            lambda ev: _mean().fill(met=ev.met, sample=ev.jet_pt),
+            r"sample needs one value per entry of axis 'met'",
+        ),
+        (
+            lambda ev: _mean().fill(met=ev.jet_pt, sample=ev.met),
+            r"axis 'met' needs one value per entry of sample",
+        ),
+        (
+            lambda ev: gh.boost.Histogram(bh.axis.Regular(5, 0, 5), bh.axis.Regular(5, 0, 5)).fill(
+                ev.met, ev.jet_pt
+            ),
+            r"axis 1 needs one value per entry of axis 0",
+        ),
+        (
+            lambda ev: _two_axes().fill(
+                met=ev.met,
+                njet=graphed.vary(ev.jet_pt, "jes", up=ev.jet_pt * 2.0, down=ev.jet_pt * 0.5),
+            ),
+            r"axis 'njet' needs one value per entry",
+        ),
     ],
 )
 def test_a_ruled_out_fill_is_refused_before_anything_is_recorded(
@@ -79,12 +105,6 @@ def test_a_ruled_out_fill_is_refused_before_anything_is_recorded(
     with pytest.raises(GraphedTypeError, match=message) as caught:
         fill(ev)
     assert caught.value.provenance.filename == __file__
-
-
-def test_a_record_sample_is_refused() -> None:
-    _, ev = _events()
-    with pytest.raises(GraphedTypeError, match="sample got a record"):
-        hg.Hist.new.Reg(10, 0, 5, name="met").Mean().fill(met=ev.met, sample=ev.muon)
 
 
 def test_a_refusal_points_at_the_fill_line_and_adds_no_node() -> None:
@@ -97,20 +117,6 @@ def test_a_refusal_points_at_the_fill_line_and_adds_no_node() -> None:
     assert caught.value.provenance.lineno == line
     assert session.node_count() == before
     assert histogram.fill_nodes() == []
-
-
-def test_an_unnamed_axis_is_named_by_position() -> None:
-    _, ev = _events()
-    h = gh.boost.Histogram(bh.axis.Regular(5, 0, 5), bh.axis.Regular(5, 0, 5))
-    with pytest.raises(GraphedTypeError, match="axis 1 needs one value per entry of axis 0"):
-        h.fill(ev.met, ev.jet_pt)
-
-
-def test_a_varied_operand_is_checked_on_its_nominal_member() -> None:
-    _, ev = _events()
-    shifted = graphed.vary(ev.jet_pt, "jes", up=ev.jet_pt * 2.0, down=ev.jet_pt * 0.5)
-    with pytest.raises(GraphedTypeError, match="axis 'njet' needs one value per entry"):
-        _two_axes().fill(met=ev.met, njet=shifted)
 
 
 def test_a_shifted_member_is_checked_on_its_own_label() -> None:
@@ -170,7 +176,14 @@ def test_a_valid_fill_records_and_evaluates(fill: Callable[[Any], Any], total: f
     assert _sum(session, fill(ev)) == total
 
 
-def test_a_sampled_fill_of_a_jagged_value_stays_valid() -> None:
+def test_a_sample_at_the_axes_depth_stays_valid() -> None:
     session, ev = _events()
-    filled = hg.Hist.new.Reg(10, 0, 5, name="met").Mean().fill(met=ev.jet_pt, sample=ev.met)
+    filled = _mean().fill(met=ev.jet_pt, sample=ev.jet_eta)
     assert session.materialize(filled.fill_nodes()[0]).sum(flow=True).count == 3.0  # type: ignore[attr-defined]
+
+
+def test_a_numpy_record_is_refused() -> None:
+    session = Session(NumpyBackend())
+    record = from_record(session=session, name="r", x=np.arange(3.0), y=np.arange(3.0))
+    with pytest.raises(GraphedTypeError, match="axis 'met' got a record"):
+        _one_axis().fill(met=record)

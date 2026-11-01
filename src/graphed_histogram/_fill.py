@@ -6,12 +6,13 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, NoReturn
 
 import boost_histogram as bh
 import graphed
 import numpy as np
-from graphed import GraphedError, Varied
+from graphed import GraphedError, GraphedTypeError, Varied
+from graphed.provenance import capture
 
 from ._chunked import Partial, dense, empty
 from ._spec import content_hash, spec_of
@@ -182,6 +183,11 @@ def _depth(form: object) -> int | None:
     return ndim if isinstance(ndim, int) and ndim > 0 else None
 
 
+def _is_record(form: object) -> bool:
+    tt = getattr(form, "tt", None)  # the awkward form's typetracer
+    return bool(getattr(tt if tt is not None else form, "fields", None))
+
+
 def _option_anywhere(layout_form: object) -> bool:
     """Tell whether an awkward layout form carries a missing value at any level.
 
@@ -237,6 +243,50 @@ def _mixed_row_spaces(session: Any, value: Operand, applied: Sequence[Operand]) 
         if other is not None and other < depth:
             return True
     return False
+
+
+def _form_of(operand: Operand, label: str) -> Any:
+    member = graphed.member_of(operand, label)
+    return member.session.form(member)
+
+
+def _refuse(detail: str) -> NoReturn:
+    raise GraphedTypeError("histogram.fill", capture(), detail)
+
+
+def check_fill_types(
+    axes: Sequence[Any],
+    args: Sequence[Operand],
+    ambient: Operand | None,
+    weights: Sequence[Operand],
+    sample: Operand | None,
+) -> None:
+    """Refuse what the recorded types rule out; lengths are only knowable at run time.
+
+    Axes and ``sample=`` flatten independently, so they must share a list depth, in each label's
+    own members. A factor may be deeper: one per-object entry per event lines up.
+    """
+    columns = [
+        (f"axis {axis.__dict__.get('name') or i!r}", arg)
+        for i, (axis, arg) in enumerate(zip(axes, args, strict=True))
+        if not isinstance(arg, _SCALARS)
+    ]
+    if sample is not None:
+        columns.append(("sample", sample))
+    factors = [] if ambient is None else [("ambient weight", ambient)]
+    factors += [("weight", weight) for weight in weights]
+    for label in _fold_labels([operand for _, operand in (*columns, *factors)]):
+        forms = [(role, _form_of(operand, label)) for role, operand in columns]
+        for role, form in (*forms, *((r, _form_of(f, label)) for r, f in factors)):
+            if _is_record(form):
+                _refuse(f"{role} got a record ({form.describe()!r}); pick a field")
+        by_depth = {depth: entry for entry in forms if (depth := _depth(entry[1]))}
+        if len(by_depth) > 1:
+            (flat, flat_form), (deep, deep_form) = by_depth[min(by_depth)], by_depth[max(by_depth)]
+            _refuse(
+                f"{deep} needs one value per entry of {flat} ({flat_form.describe()!r}); "
+                f"got {deep_form.describe()!r}; flatten it or pick one per entry"
+            )
 
 
 def _rows(values: object) -> int | None:

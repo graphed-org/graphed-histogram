@@ -22,11 +22,11 @@ import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import wraps
-from typing import Any, NoReturn, TypeVar
+from typing import Any, TypeVar
 
 import boost_histogram as bh
 import graphed
-from graphed import Array, CompiledGraph, GraphedError, GraphedTypeError, Varied, aggregate_plan
+from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan
 from graphed.core import Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key, external_key
@@ -53,13 +53,13 @@ from ._fill import (
     _blame,
     _constants,
     _declare_axis_spec,
-    _depth,
     _factor_list,
     _fill_chash,
     _fill_params,
     _fold_labels,
     _mixed_row_spaces,
     _WeightGuard,
+    check_fill_types,
 )
 from ._fill import (
     FillEvaluator as FillEvaluator,
@@ -127,15 +127,6 @@ def fill_nodes_by_label(hist: Histogram) -> dict[str, Array]:
             f"{len(label_maps)} of them — read the flat list from Histogram.fill_nodes()"
         )
     return dict(label_maps[0])
-
-
-def _form_of(operand: Operand, label: str) -> Any:
-    member = graphed.member_of(operand, label)
-    return member.session.form(member)
-
-
-def _refuse(detail: str) -> NoReturn:
-    raise GraphedTypeError("histogram.fill", capture(), detail)
 
 
 @dataclass(frozen=True)
@@ -299,7 +290,7 @@ class Histogram(bh.Histogram):
         given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
-        self._check_types(args, ambient, weights, recorded_sample)
+        check_fill_types(self.axes, args, ambient, weights, recorded_sample)
         axes = [graphed.reindex_to(value, ctx) for value in values]
         # the ambient one already is
         factors = [graphed.reindex_to(value, ctx) for value in weights]
@@ -391,41 +382,6 @@ class Histogram(bh.Histogram):
             )
 
         return values, all_weights, weights, recorded_sample
-
-    def _check_types(
-        self,
-        args: Sequence[Operand],
-        ambient: Operand | None,
-        weights: Sequence[Operand],
-        sample: Operand | None,
-    ) -> None:
-        """Refuse what the recorded types rule out; lengths are only knowable at run time.
-
-        Each label is checked on its own members, the ones its node pairs. A factor deeper than
-        the axes stays legal: it can flatten to their length.
-        """
-        values = [
-            (f"axis {ax.__dict__.get('name') or i!r}", arg)
-            for i, (ax, arg) in enumerate(zip(self.axes, args, strict=True))
-            if not isinstance(arg, _SCALARS)
-        ]
-        factors = [("weight", w) for w in weights]
-        if ambient is not None:
-            factors.append(("ambient weight", ambient))
-        if sample is not None:
-            factors.append(("sample", sample))
-        for label in _fold_labels([operand for _, operand in (*values, *factors)]):
-            axes = [(role, _form_of(value, label)) for role, value in values]
-            for role, form in (*axes, *((r, _form_of(f, label)) for r, f in factors)):
-                if getattr(getattr(form, "tt", None), "fields", ()):
-                    _refuse(f"{role} got a record ({form.describe()!r}); pick a field")
-            ranked = sorted((a for a in axes if _depth(a[1])), key=lambda a: _depth(a[1]) or 0)
-            if ranked and _depth(ranked[0][1]) != _depth(ranked[-1][1]):
-                (flat, flat_form), (deep, deep_form) = ranked[0], ranked[-1]
-                _refuse(
-                    f"{deep} needs one value per entry of {flat} ({flat_form.describe()!r}); "
-                    f"got {deep_form.describe()!r}; flatten it or pick one per entry"
-                )
 
     def _record_sibling_fill(self, low: _Lowering) -> None:
         """Lower one fill in sibling mode: one node per label."""

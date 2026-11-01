@@ -41,8 +41,8 @@ Fill it
 ``h.fill(*arrays, weight=None, sample=None, threads=None, unweighted=False, variation_axis=False)``
    Records the fill and returns ``h``, so fills accumulate. Values must be ``graphed``
    arrays; ragged values flatten, exactly as an eager ``fill(ak.flatten(...))`` would.
-   Axes must share a list depth: flatten every jagged axis or none. A record, or axes at
-   different depths, raises ``GraphedTypeError`` at the fill line.
+   Axes and ``sample=`` must share a list depth: flatten every jagged one or none. A record,
+   or different depths, raises ``GraphedTypeError`` at the fill line.
    ``threads=`` is accepted so boost-histogram call sites port unchanged, and ignored:
    how many threads or workers touch this fill is the runner's business, set where you
    build the runner.
