@@ -18,6 +18,9 @@ Fixed
 
 * ``copy.copy(h)`` and ``h.copy(deep=False)`` no longer share what ``h`` recorded, so a fill on the
   copy stages on the copy alone.
+* ``h.copy()`` and ``copy.deepcopy(h)`` work on a histogram with staged fills, which raised
+  ``cannot pickle 'builtins.GraphStore' object``. The copy shares the recorded graph and any
+  histserv context, and owns its storage, axes and list of fills.
 * ``gh.plan`` and ``h.plan()`` keep the partitioning chosen at read time: ``steps_per_file`` now
   defaults to ``None``, the source's own setting, as in ``graphed.aggregate_plan``, so
   ``from_parquet(..., steps_per_file=3)`` gives three tasks without repeating it on the plan. An

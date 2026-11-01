@@ -238,6 +238,11 @@ class Histogram(bh.Histogram):
         for name in ("_fill_nodes", "_evaluators", "_partials", "_label_maps", "_fill_specs"):
             self.__dict__[name] = copy.copy(self.__dict__[name])
 
+    def __deepcopy__(self, memo: Any) -> Any:
+        """Copy storage, axes and fill lists; the recorded nodes stay on the session's graph."""
+        memo.update((id(item), item) for item in (self._histserv, *self._fill_nodes))
+        return super().__deepcopy__(memo)
+
     @classmethod
     def _export_bh_(cls, target: bh.Histogram) -> None:
         if not isinstance(target, Histogram):
