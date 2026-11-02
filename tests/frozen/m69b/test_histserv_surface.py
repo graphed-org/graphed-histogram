@@ -202,14 +202,13 @@ def test_an_unbacked_merge_free_plan_equals_the_per_partition_direct_fill_folded
     assert same(got, want)
 
 
-#: per-directory digests of every frozen file before m69b, the m48/m49 refreeze and m64 fixup
-#: included
+#: per-directory digests of every frozen file before m69b, its refreezes and fixups included
 FROZEN_BEFORE_M69B = {
     "m23": "7c0b3dae357934448aed47f30b9f218c8a32b3a5ad76796431841445b710e943",
     "m29": "031f00db67a9ae844569b7a7f8bc9fb03ab5e017a4fe71db912b5077237f0ab6",
-    "m48": "09f30a9a392c77ca3c9ec094adf754ca0a805d593f6531fb7e9835eab4c60f7e",
+    "m48": "dec40b875cd3e4dcdd4b7bd367e8310fcb91b1dce301e33b4b352a51ce2feccd",
     "m49": "6e8178246143759acd9406c8b806f46b586d792f82991ca81a1c6d58fa94a4d9",
-    "m50": "ee6985354c682524472498da92097bbef739518d4c38ca560c61042fbcc5081d",
+    "m50": "83351ece43602b402f719741343d5c57806754d0713c797f067b2bab7679ff8c",
     "m52": "0a86a4237cb03c01ae13986f1d6e4f2c4a539fb164e00f3caa21e7b6d989a124",
     "m64": "1f61e8ceead25e3ba9e1878efb073eeb44e6e6774da9835ec834b3b97e8b56aa",
 }

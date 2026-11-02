@@ -221,7 +221,9 @@ def test_collated_served_plans_route_each_plan_to_its_own_servers(tmp_path: Path
         plans[name] = gh.plan(_hists(ev, ctx), steps_per_file=3)
         _twin_session, twin_ev = events(path)
         twins[name] = (
-            SequentialRunner().run(gh.plan(_hists(twin_ev, None), steps_per_file=3)).value
+            SequentialRunner()
+            .run(gh.boost._one_plan(_hists(twin_ev, None), steps_per_file=3))
+            .value
         )
     collated = collate(plans)
     with servers(len(collated.services)) as started:

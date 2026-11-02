@@ -40,7 +40,7 @@ that can hand a dataset out in slices; here a parquet file, in real work your RO
     met_pt.fill(events.MET.pt)
 
     plan = gh.plan({"jet_pt": jet_pt, "met_pt": met_pt})
-    out = gh.unpack(SequentialRunner().run(plan).value)
+    out = SequentialRunner().run(plan).value
     print(out["jet_pt"].view())
     print(out["met_pt"].view())
     print(out["jet_pt"].sum())
@@ -243,20 +243,17 @@ typed before a byte moves.
     wide.fill(selected)
 
     value = SequentialRunner().run(gh.plan({"lead": lead, "wide": wide}, steps_per_file=3)).value
-    print(sorted(value))
-    print(gh.unpack(value)["lead"].view(), gh.unpack(value)["wide"].view())
+    print(value["lead"].view(), value["wide"].view())
     print(len(source.reads), "partition reads for 2 histograms")
 
 Printed output::
 
-    ['lead', 'wide']
     [4 4 0 0] [8 0]
     3 partition reads for 2 histograms
 
-Three partitions, three reads — for both histograms together. The run's value is a flat mapping,
-which ``gh.unpack`` turns into the shape you want: ``{name: histogram}`` here, and
-``{name: {label: histogram}}`` once variations are involved. Unpack it and index by the names you
-planned with; the flat keys are the plan's business, not yours.
+Three partitions, three reads — for both histograms together. The run's value has the shape you
+planned with: ``{name: histogram}`` here, and ``{name: {label: histogram}}`` once variations are
+involved.
 
 If you only ever have one histogram, ``h.plan(...)`` skips the naming and gives you the histogram
 directly. It refuses fills that carry variations, because summing them into one histogram would
@@ -334,8 +331,8 @@ worker would otherwise rewrite underneath the run.
     if __name__ == "__main__":
         ak.to_parquet(EVENTS, "jets.parquet")
         plan = gh.plan({"jet_pt": staged()}, backend="graphed.awkward:AwkwardBackend")
-        parallel = gh.unpack(ProcessPoolExecutor(max_workers=3).run(plan).value)["jet_pt"]
-        serial = gh.unpack(SequentialRunner().run(plan).value)["jet_pt"]
+        parallel = ProcessPoolExecutor(max_workers=3).run(plan).value["jet_pt"]
+        serial = SequentialRunner().run(plan).value["jet_pt"]
         print(parallel.view()["value"])
         print(parallel.view()["variance"])
         print((parallel.view() == serial.view()).all())
@@ -406,7 +403,7 @@ boost axis constructors take no ``name=`` keyword, so the name is an attribute y
         return h
 
     def run(h):
-        return gh.unpack(SequentialRunner().run(gh.plan({"h": h})).value)["h"]
+        return SequentialRunner().run(gh.plan({"h": h})).value["h"]
 
     one = run(staged(variation_axis=True))
     print([type(ax).__name__ for ax in one.axes])
@@ -777,9 +774,9 @@ its graph and its result do not change.
         )
         return h.fill(events.channel, events.met, weight=events.w)
 
-    out = gh.unpack(SequentialRunner().run(
+    out = SequentialRunner().run(
         gh.plan({"chunked": met(), "dense": gh.dense_backed(met())})
-    ).value)
+    ).value
     chunked = out["chunked"]
     print(chunked == out["dense"], type(chunked) is bh.Histogram)
     print(chunked.values(flow=True)[2])  # "emu" is undeclared: the overflow bin

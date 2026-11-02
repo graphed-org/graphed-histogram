@@ -53,7 +53,7 @@ def fileset(tmp_path: Path) -> dict[str, Any]:
 
 
 def _by_hand(hists: dict[str, Any]) -> dict[str, Any]:
-    plan = graphed.collate({name: gh.plan(h) for name, h in hists.items()})
+    plan = graphed.collate({name: gh.boost._one_plan(h) for name, h in hists.items()})
     value = SequentialRunner().run(plan).value
     return {name: gh.unpack(v) for name, v in value.items()}
 
@@ -94,10 +94,18 @@ def test_a_bare_histogram_is_its_histogram(tmp_path: Path) -> None:
     assert type(SequentialRunner().run(gh.plan(_hist(ev.x))).value) is hist.Hist
 
 
-def test_a_flat_mapping_keeps_its_slot_keys(tmp_path: Path) -> None:
+def test_a_flat_mapping_comes_back_by_output_and_label(tmp_path: Path) -> None:
     ev = _events(tmp_path / "a.parquet", 0.0)
-    value = SequentialRunner().run(gh.plan({"h": _hist(ev.x, _varied(ev.x))})).value
-    assert ("h", "nominal") in value
+    plan = gh.plan({"a": _hist(ev.x, _varied(ev.x)), "b": _hist(ev.x)})
+    value = RUNNERS["process"]().run(plan).value
+    assert list(value["a"]) == ["nominal", "s_up", "s_down"]
+    assert type(value["b"]) is hist.Hist
+    assert gh.unpack(value)["a"]["s_up"] is value["a"]["s_up"]
+
+
+def test_a_mapping_keeps_keys_that_are_not_strings(tmp_path: Path) -> None:
+    ev = _events(tmp_path / "a.parquet", 0.0)
+    assert list(SequentialRunner().run(gh.plan({2024: _hist(ev.x)})).value) == [2024]
 
 
 def test_a_sequence_keeps_its_names(tmp_path: Path) -> None:
@@ -107,12 +115,40 @@ def test_a_sequence_keeps_its_names(tmp_path: Path) -> None:
 
 
 def test_unpack_is_idempotent_and_recurses(fileset: dict[str, Any]) -> None:
-    plan = graphed.collate({name: gh.plan(h) for name, h in fileset.items()})
+    plan = graphed.collate({name: gh.boost._one_plan(h) for name, h in fileset.items()})
     collated = SequentialRunner().run(plan).value
     assert ("zmass", "nominal") in collated["DY"]
     once = gh.unpack(collated)
     assert list(once["DY"]["zmass"]) == ["nominal", "s_up", "s_down"]
     assert gh.unpack(once) == once
+
+
+def test_a_collate_of_plans_keeps_each_shape(fileset: dict[str, Any]) -> None:
+    plan = graphed.collate({name: gh.plan(h) for name, h in fileset.items()})
+    value = SequentialRunner().run(plan).value
+    assert list(value["DY"]["zmass"]) == ["nominal", "s_up", "s_down"]
+    assert value["TT"]["n"].sum().value == 8
+
+
+def test_the_slot_keys_tell_each_output_shape_apart(tmp_path: Path) -> None:
+    ev = _events(tmp_path / "a.parquet", 0.0)
+    axis = _hist(ev.x, _varied(ev.x), variation_axis=True)
+    outputs = {"axis": axis, "sibling": _hist(ev.x, _varied(ev.x)), "bare": _hist(ev.x)}
+    value = SequentialRunner().run(gh.boost._one_plan(outputs)).value
+    assert set(value) == {
+        ("axis", None),
+        ("sibling", "nominal"),
+        ("sibling", "s_up"),
+        ("sibling", "s_down"),
+        "bare",
+    }
+
+
+def test_a_tuple_key_refuses_at_any_depth(tmp_path: Path) -> None:
+    h = _hist(_events(tmp_path / "a.parquet", 0.0).x)
+    for histograms in ({("DY", "2018"): h}, {"DY": {("a", None): h}}):
+        with pytest.raises(TypeError, match="nest the mapping"):
+            gh.plan(histograms)
 
 
 def test_label_listing_takes_the_nesting(fileset: dict[str, Any]) -> None:
