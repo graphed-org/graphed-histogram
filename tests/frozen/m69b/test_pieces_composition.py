@@ -75,7 +75,7 @@ def compose(
 
     marked = [counter, *p.fill_nodes] if counter_first else [*p.fill_nodes, counter]
     fire: Callable[[CompiledGraph], Any] = on_compiled if hook else skip_hook
-    return aggregate_plan(
+    plan = aggregate_plan(
         *marked,
         reduce=reduce,
         combine=combine,
@@ -83,6 +83,8 @@ def compose(
         externals=p.externals,
         on_compiled=fire,
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _weighted(ev: Any) -> gh.boost.Histogram:

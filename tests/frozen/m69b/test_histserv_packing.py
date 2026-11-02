@@ -247,7 +247,7 @@ def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(pa
         return histserv_api().backed(made, ctx) if back else made
 
     def built(p: Any) -> Plan[Any]:
-        return aggregate_plan(
+        plan = aggregate_plan(
             *p.fill_nodes,
             reduce=p.reduce,
             combine=p.combine,
@@ -256,6 +256,8 @@ def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(pa
             on_compiled=p.on_compiled,
             steps_per_file=3,
         )
+        assert isinstance(plan, Plan)
+        return plan
 
     p = boost_api().pieces({"h": hist()})
     adaptive = dataclasses.replace(built(p), next_tasks=lambda _ctx: None)

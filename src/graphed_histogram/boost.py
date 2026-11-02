@@ -22,12 +22,12 @@ import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast, overload
 
 import boost_histogram as bh
 import graphed
 from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan, collate
-from graphed.core import Partition, PayloadDescriptor
+from graphed.core import DurablePlanV2, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key, external_key
 from graphed.provenance import capture
@@ -599,9 +599,10 @@ class Histogram(bh.Histogram):
         is each worker's evaluation backend (factory/class or ``"module:attr"`` import ref for
         behavior-carrying backends, which do not pickle); ``steps_per_file`` overrides the source's
         own setting (``None`` keeps it); ``partitions`` lets the caller shape partitioning itself.
-        Over a ``graphed.join`` the fills run per join destination and ``partitions`` is refused.
-        For several histograms that share a sub-graph, plan them together with :func:`plan` so the
-        shared work runs ONCE.
+        Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, with no ``tasks`` or
+        ``process``: the fills run per join destination and ``partitions`` is refused. For several
+        histograms that share a sub-graph, plan them together with :func:`plan` so the shared work
+        runs ONCE.
         """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
@@ -631,7 +632,7 @@ class Histogram(bh.Histogram):
             reduce.positions = _positions(compiled, self._fill_nodes)
             return _variation_labels((("this histogram", self),), compiled)
 
-        return aggregate_plan(
+        plan = aggregate_plan(
             *self._fill_nodes,
             reduce=reduce,
             combine=add_histograms,
@@ -643,6 +644,8 @@ class Histogram(bh.Histogram):
             on_compiled=on_compiled,
             finalize=dense,
         )
+        # the static type stays Plan: widening it reaches frozen suites
+        return cast("Plan[bh.Histogram]", plan)
 
 
 def _warn_if_unrun(h: bh.Histogram) -> None:
@@ -754,11 +757,16 @@ class HistogramPieces:
         self.reduce.positions = _positions(compiled, self.fill_nodes)
         return _variation_labels(self.items, compiled)
 
-    def serve(self, plan: Plan[V]) -> Plan[V]:
+    @overload
+    def serve(self, plan: Plan[V]) -> Plan[V]: ...
+    @overload
+    def serve(self, plan: DurablePlanV2) -> DurablePlanV2: ...
+    def serve(self, plan: Plan[V] | DurablePlanV2) -> Plan[V] | DurablePlanV2:
         """Return ``plan`` with its histserv-backed slots served.
 
         The slots are sized, packed onto servers and declared in ``plan.services``; ``plan`` itself
-        comes back when no slot is backed.
+        comes back when no slot is backed. A backed slot refuses a plan with ``next_tasks`` or over
+        a join, which has no tasks to size by.
         """
         if not self.backing:
             return plan
@@ -868,18 +876,17 @@ def _one_plan(
     **kwargs: Any,
 ) -> Plan[Any]:
     p = pieces(histograms)
-    return p.serve(
-        aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
-            *p.fill_nodes,
-            reduce=p.reduce,
-            combine=p.combine,
-            empty=p.empty,
-            externals=p.externals,
-            on_compiled=p.on_compiled,
-            finalize=finalize or p.finalize,
-            **kwargs,
-        )
+    built = aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
+        *p.fill_nodes,
+        reduce=p.reduce,
+        combine=p.combine,
+        empty=p.empty,
+        externals=p.externals,
+        on_compiled=p.on_compiled,
+        finalize=finalize or p.finalize,
+        **kwargs,
     )
+    return cast("Plan[Any]", p.serve(built))
 
 
 def plan(

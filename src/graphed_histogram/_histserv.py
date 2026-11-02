@@ -16,7 +16,7 @@ import boost_histogram as bh
 import hist
 import numpy as np
 from graphed import GraphedError
-from graphed.core import Partition
+from graphed.core import DurablePlanV2, Partition
 from graphed.core.execution import Plan, WorkerResources
 from graphed.services import (
     Bindable,
@@ -494,7 +494,7 @@ class _Served:
 
 
 def _serve(
-    plan: Plan[V], session: Any, backing: Sequence[tuple[SlotKey, str, Context]]
+    plan: Plan[V] | DurablePlanV2, session: Any, backing: Sequence[tuple[SlotKey, str, Context]]
 ) -> Plan[V]:
     """Size, pack and declare ``backing``'s slots for ``plan``: the work of ``pieces.serve``."""
     if not isinstance(plan, Plan) or plan.next_tasks is not None:
