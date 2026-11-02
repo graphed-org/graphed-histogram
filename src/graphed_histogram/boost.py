@@ -821,6 +821,11 @@ def _leaves(histograms: Any, path: _Path = ()) -> list[tuple[_Path, Histogram]]:
     if isinstance(histograms, Histogram):
         return [(path, histograms)]
     if isinstance(histograms, Mapping):
+        for key in histograms:
+            if isinstance(key, tuple):  # :func:`unpack` reads a tuple as (output, label)
+                raise TypeError(
+                    f"gh.plan takes no tuple keys; nest the mapping instead of {key!r}"
+                )
         return [leaf for key, value in histograms.items() for leaf in _leaves(value, (*path, key))]
     if isinstance(histograms, Iterable) and not path:
         return _leaves({str(i): h for i, h in enumerate(histograms)})
@@ -899,9 +904,9 @@ def plan(
     all histograms' fills.
 
     Histserv-backed histograms are served, in a flat mapping over one Session, and their servers
-    are in ``plan.services``. That value stays slot-keyed — a bare output name, or
-    ``(output, label)`` for a varied one — holding receipts until
-    :func:`graphed_histogram.unpack` reads them.
+    are in ``plan.services``. That value stays slot-keyed, a bare output name or
+    ``(output, label)`` for a varied one, and :func:`graphed_histogram.unpack` turns it into the
+    same shape, reading any receipts.
     """
     leaves = _leaves(histograms)
     flat = {_named(path): h for path, h in leaves}
@@ -983,7 +988,7 @@ def _variation_labels(
 
 
 def unpack(value: Mapping[Any, Any]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
-    """Unpack the executed plan's flat slot-keyed value into the per-output shape.
+    """Unpack a slot-keyed value, a served plan's or ``pieces``', into the per-output shape.
 
     The shape is decided by the KEY FORM, which is total and per output — a bare output name is
     that output's bare histogram, ``(output, label)`` keys gather into ``{label: hist}``, and

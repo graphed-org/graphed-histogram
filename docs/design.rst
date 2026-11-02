@@ -243,20 +243,17 @@ typed before a byte moves.
     wide.fill(selected)
 
     value = SequentialRunner().run(gh.plan({"lead": lead, "wide": wide}, steps_per_file=3)).value
-    print(sorted(value))
-    print(gh.unpack(value)["lead"].view(), gh.unpack(value)["wide"].view())
+    print(value["lead"].view(), value["wide"].view())
     print(len(source.reads), "partition reads for 2 histograms")
 
 Printed output::
 
-    ['lead', 'wide']
     [4 4 0 0] [8 0]
     3 partition reads for 2 histograms
 
-Three partitions, three reads — for both histograms together. The run's value is a flat mapping,
-which ``gh.unpack`` turns into the shape you want: ``{name: histogram}`` here, and
-``{name: {label: histogram}}`` once variations are involved. Unpack it and index by the names you
-planned with; the flat keys are the plan's business, not yours.
+Three partitions, three reads — for both histograms together. The run's value has the shape you
+planned with: ``{name: histogram}`` here, and ``{name: {label: histogram}}`` once variations are
+involved.
 
 If you only ever have one histogram, ``h.plan(...)`` skips the naming and gives you the histogram
 directly. It refuses fills that carry variations, because summing them into one histogram would

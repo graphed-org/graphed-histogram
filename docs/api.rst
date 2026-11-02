@@ -84,10 +84,11 @@ Run it
    servers only ``gh.plan`` declares.
 
 ``gh.unpack(value)``
-   Turns what a runner returns into ``{name: histogram}``, or ``{name: {label: histogram}}``
-   for a name whose fills carry variations. A histogram filled with ``variation_axis=True``
-   comes back as a single histogram under its name, carrying the variations on its axis. A
-   histserv receipt comes back as its server histogram, left on the server.
+   Turns the slot-keyed value of a histserv-backed plan, or of ``gh.boost.pieces``, into
+   ``{name: histogram}``, or ``{name: {label: histogram}}`` for a name whose fills carry
+   variations. A histogram filled with ``variation_axis=True`` comes back as a single histogram
+   under its name, carrying the variations on its axis. A histserv receipt comes back as its
+   server histogram, left on the server. A value already in that shape unpacks to itself.
 
 ``gh.boost.pieces(histograms)``
    The parts ``gh.plan`` builds its plan from — ``fill_nodes``, ``reduce``, ``combine``,
@@ -139,9 +140,7 @@ can take. Needs ``graphed[awkward]``.
 
    print(gh.label_listing({"met": h}))               # before running anything
 
-   value = SequentialRunner().run(gh.plan({"met": h})).value
-   print(sorted(value))                              # what the runner returns
-   out = gh.unpack(value)                            # what you work with
+   out = SequentialRunner().run(gh.plan({"met": h})).value
    print(sorted(out["met"]))
    print(out["met"]["nominal"].values())
    print(out["met"]["sf_up"].values())
@@ -149,7 +148,6 @@ can take. Needs ``graphed[awkward]``.
 .. code-block:: text
 
    {'met': ['nominal', 'sf_up', 'sf_down']}
-   [('met', 'nominal'), ('met', 'sf_down'), ('met', 'sf_up')]
    ['nominal', 'sf_down', 'sf_up']
    [6. 6. 2. 2.]
    [9. 9. 3. 3.]

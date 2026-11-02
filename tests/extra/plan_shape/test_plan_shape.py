@@ -53,7 +53,7 @@ def fileset(tmp_path: Path) -> dict[str, Any]:
 
 
 def _by_hand(hists: dict[str, Any]) -> dict[str, Any]:
-    plan = graphed.collate({name: gh.plan(h) for name, h in hists.items()})
+    plan = graphed.collate({name: gh.boost._one_plan(h) for name, h in hists.items()})
     value = SequentialRunner().run(plan).value
     return {name: gh.unpack(v) for name, v in value.items()}
 
@@ -114,11 +114,34 @@ def test_a_sequence_keeps_its_names(tmp_path: Path) -> None:
     assert list(value) == ["0", "1"]
 
 
-def test_unpack_is_idempotent_and_recurses() -> None:
-    h = bh.Histogram(bh.axis.Regular(1, 0, 1))
-    once = gh.unpack({"DY": {("zmass", "nominal"): h, ("zmass", "s_up"): h, "n": h}})
-    assert once == {"DY": {"zmass": {"nominal": h, "s_up": h}, "n": h}}
+def test_unpack_is_idempotent_and_recurses(fileset: dict[str, Any]) -> None:
+    plan = graphed.collate({name: gh.boost._one_plan(h) for name, h in fileset.items()})
+    collated = SequentialRunner().run(plan).value
+    assert ("zmass", "nominal") in collated["DY"]
+    once = gh.unpack(collated)
+    assert list(once["DY"]["zmass"]) == ["nominal", "s_up", "s_down"]
     assert gh.unpack(once) == once
+
+
+def test_the_slot_keys_tell_each_output_shape_apart(tmp_path: Path) -> None:
+    ev = _events(tmp_path / "a.parquet", 0.0)
+    axis = _hist(ev.x, _varied(ev.x), variation_axis=True)
+    outputs = {"axis": axis, "sibling": _hist(ev.x, _varied(ev.x)), "bare": _hist(ev.x)}
+    value = SequentialRunner().run(gh.boost._one_plan(outputs)).value
+    assert set(value) == {
+        ("axis", None),
+        ("sibling", "nominal"),
+        ("sibling", "s_up"),
+        ("sibling", "s_down"),
+        "bare",
+    }
+
+
+def test_a_tuple_key_refuses_at_any_depth(tmp_path: Path) -> None:
+    h = _hist(_events(tmp_path / "a.parquet", 0.0).x)
+    for histograms in ({("DY", "2018"): h}, {"DY": {("a", None): h}}):
+        with pytest.raises(TypeError, match="nest the mapping"):
+            gh.plan(histograms)
 
 
 def test_label_listing_takes_the_nesting(fileset: dict[str, Any]) -> None:
