@@ -137,7 +137,7 @@ def fill_mixed_program(mode_axis: bool, *, source: Any) -> gh.boost.Histogram:
 
 # ---- execution + slot inspection -------------------------------------------------------------
 def execute(histograms: dict[str, gh.boost.Histogram], steps: int = 3) -> dict[Any, bh.Histogram]:
-    """Run a group plan and return the flat slot-keyed combine payload (§6.1c)."""
+    """Run a group plan and return its value, keyed by output then label."""
     return dict(SequentialRunner().run(gh.plan(histograms, steps_per_file=steps)).value)
 
 
