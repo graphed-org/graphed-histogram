@@ -1,11 +1,10 @@
 """m50 — §6.2 scaling, STRUCTURALLY (R0.10a — no wall-clock in a frozen test).
 
-Per partition, axis mode ships ONE combine payload entry against `N+1` in sibling mode — the length
-of the per-partition combine payload under §6.1c's key shape: one `(output, label)` entry per label
-in sibling mode, ONE `(output, None)` entry in axis mode. Scoped to WEIGHT labels only and one
-output, so the `1`-vs-`N+1` count is unambiguous (a mixed program's axis side still records
-`1 + |S|` fill nodes). Plus bin-for-bin equality, so the single slot is not achieved by dropping
-universes.
+A plan's value holds ONE histogram for an axis-mode output against `N+1` in sibling mode: one
+`{label: histogram}` entry per label in sibling mode, ONE bare histogram in axis mode. Scoped to
+WEIGHT labels only and one output, so the `1`-vs-`N+1` count is unambiguous (a mixed program's axis
+side still records `1 + |S|` fill nodes). Plus bin-for-bin equality, so the single histogram is not
+achieved by dropping universes.
 
 The "allocates one histogram object" and the N≈100 wall-clock comparison are implementer-report
 measurements (R0.11), NOT frozen here. Exercises the axis-mode slot, absent at the baseline: FAILS
@@ -27,16 +26,15 @@ import graphed_histogram as gh
 WEIGHT_LABELS = ("nominal", "wgt_up", "wgt_down")  # N+1 = 3, N = 2 non-nominal weight variations
 
 
-def test_axis_mode_ships_one_slot_where_sibling_ships_n_plus_one() -> None:
+def test_axis_mode_returns_one_histogram_where_sibling_returns_n_plus_one() -> None:
     _s, ea, _srca = partitioned()
-    axis_value = gh.unpack(execute({"h": fill_weight_program(True, source=ea)}))
+    axis_value = execute({"h": fill_weight_program(True, source=ea)})
     _s2, es, _srcs = partitioned()
-    sibling_value = gh.unpack(execute({"h": fill_weight_program(False, source=es)}))
+    sibling_value = execute({"h": fill_weight_program(False, source=es)})
 
-    assert set(axis_value) == {"h"}  # exactly one combine entry, keyed by the MODE
+    assert set(axis_value) == {"h"}  # one output, whatever the mode
     assert not isinstance(axis_value["h"], dict)
     assert len(sibling_value["h"]) == len(WEIGHT_LABELS)  # N+1 = 3 labelled entries
-    assert len(gh.unpack(axis_value)) == 1  # one output
 
 
 def test_the_single_axis_slot_carries_every_universe_bin_for_bin() -> None:

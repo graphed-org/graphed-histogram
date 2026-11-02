@@ -78,7 +78,7 @@ def test_a_varied_program_the_optimizer_does_not_merge_plans_normally() -> None:
     assert list(result["met"]) == ["nominal", "sig_up", "sig_down"]
 
 
-def test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill() -> None:
+def test_a_record_time_dedup_keeps_both_labels_off_one_evaluated_fill() -> None:
     """§1.2's dedup case, the result-mapping half. Three labels, TWO distinct fill nodes: the
     shared id replicates into both slots. A raw index into the undeduplicated fill list overruns
     the value list `evaluate_ir` returns, which is an opaque worker-side `IndexError`.
@@ -93,7 +93,7 @@ def test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill() -> None:
 
     _s2, partitioned, _source = partitioned_events()
     shared = _deduping(partitioned)
-    value = gh.unpack(SequentialRunner().run(gh.plan({"met": shared}, steps_per_file=3)).value)
+    value = SequentialRunner().run(gh.plan({"met": shared}, steps_per_file=3)).value
     assert set(value["met"]) == {"nominal", "sig_up", "sig_down"}
     nominal = np.asarray(value["met"]["nominal"].view(flow=True)["value"])
     assert np.array_equal(np.asarray(value["met"]["sig_up"].view(flow=True)["value"]), nominal)

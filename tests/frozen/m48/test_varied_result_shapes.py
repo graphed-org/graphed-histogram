@@ -45,16 +45,15 @@ def _mixed() -> tuple[dict[Any, bh.Histogram], gh.boost.Histogram]:
     return value, varied
 
 
-def test_the_plans_combined_value_is_the_flat_slot_keyed_mapping() -> None:
-    """§6.1c: `(output, label)` slots for a varied output, today's BARE `output_name` key for an
+def test_the_plans_value_is_keyed_by_output_then_label() -> None:
+    """§6.1c: `{label: histogram}` for a varied output, a BARE histogram under its name for an
     output no variation reaches — the rule that keeps the already-frozen m23 suite green.
     """
     value, _varied = _mixed()
-    result = gh.unpack(value)
-    assert set(result) == {"varied", "plain"}
-    assert set(result["varied"]) == set(LABELS)
+    assert set(value) == {"varied", "plain"}
+    assert set(value["varied"]) == set(LABELS)
     assert all(
-        isinstance(hist, bh.Histogram) for hist in (*result["varied"].values(), result["plain"])
+        isinstance(hist, bh.Histogram) for hist in (*value["varied"].values(), value["plain"])
     )
 
 
