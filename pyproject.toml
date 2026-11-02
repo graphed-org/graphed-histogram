@@ -121,6 +121,6 @@ files = ["src", "tests", "scripts"]
 disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
-module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "hist.*", "pyarrow.*", "histserv.*", "grpc.*"]
+module = ["numpy.*", "boost_histogram.*", "awkward.*", "graphed.numpy.*", "graphed_exec_local.*", "graphed_executors.*", "hist.*", "pyarrow.*", "histserv.*", "grpc.*"]
 ignore_missing_imports = true
 follow_imports = "skip"

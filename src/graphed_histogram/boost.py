@@ -599,6 +599,7 @@ class Histogram(bh.Histogram):
         is each worker's evaluation backend (factory/class or ``"module:attr"`` import ref for
         behavior-carrying backends, which do not pickle); ``steps_per_file`` overrides the source's
         own setting (``None`` keeps it); ``partitions`` lets the caller shape partitioning itself.
+        Over a ``graphed.join`` the fills run per join destination and ``partitions`` is refused.
         For several histograms that share a sub-graph, plan them together with :func:`plan` so the
         shared work runs ONCE.
         """
@@ -860,7 +861,12 @@ class _Nested:
         return out
 
 
-def _one_plan(histograms: Mapping[str, Histogram], **kwargs: Any) -> Plan[Any]:
+def _one_plan(
+    histograms: Mapping[str, Histogram],
+    *,
+    finalize: Callable[[Any], Any] | None = None,
+    **kwargs: Any,
+) -> Plan[Any]:
     p = pieces(histograms)
     return p.serve(
         aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
@@ -870,7 +876,7 @@ def _one_plan(histograms: Mapping[str, Histogram], **kwargs: Any) -> Plan[Any]:
             empty=p.empty,
             externals=p.externals,
             on_compiled=p.on_compiled,
-            finalize=p.finalize,
+            finalize=finalize or p.finalize,
             **kwargs,
         )
     )
@@ -901,6 +907,10 @@ def plan(
     setting (``None`` keeps it). Column projection covers the union of all histograms' fills.
     Histserv-backed histograms are served, in a flat mapping over one Session: their servers are
     in ``plan.services``.
+
+    Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, for ``SequentialRunner`` or
+    ``SubmitRunner``. Every output then reads past the join, in one Session, and neither
+    ``partitions`` nor histserv applies.
     """
     leaves = _leaves(histograms)
     flat = {_named(path): h for path, h in leaves}
@@ -924,7 +934,7 @@ def plan(
                 "receipts graphed_histogram.unpack reads"
             )
     if len(by_session) == 1:
-        return replace(_one_plan(flat, **kwargs), finalize=_Nested(paths))
+        return _one_plan(flat, finalize=_Nested(paths), **kwargs)
     if partitions is not None:
         raise TypeError("gh.plan(partitions=) names one source's tasks, and these are several")
     groups = {next(iter(group)): group for group in by_session.values()}

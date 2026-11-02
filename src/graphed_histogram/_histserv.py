@@ -497,10 +497,10 @@ def _serve(
     plan: Plan[V], session: Any, backing: Sequence[tuple[SlotKey, str, Context]]
 ) -> Plan[V]:
     """Size, pack and declare ``backing``'s slots for ``plan``: the work of ``pieces.serve``."""
-    if plan.next_tasks is not None:
+    if not isinstance(plan, Plan) or plan.next_tasks is not None:
         raise GraphedError(
             "histserv sizes its servers by the plan's tasks before the run, so a plan with "
-            "next_tasks cannot be served"
+            "next_tasks or over a join cannot be served: use a histogram without histserv"
         )
     seen: set[str] = set()
     for task in plan.tasks:
