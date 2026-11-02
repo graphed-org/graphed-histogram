@@ -59,6 +59,7 @@ from ._fill import (
     _fold_labels,
     _mixed_row_spaces,
     _WeightGuard,
+    check_fill_types,
 )
 from ._fill import (
     FillEvaluator as FillEvaluator,
@@ -294,6 +295,7 @@ class Histogram(bh.Histogram):
         given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
+        check_fill_types(self.axes, args, ambient, weights, recorded_sample)
         axes = [graphed.reindex_to(value, ctx) for value in values]
         # the ambient one already is
         factors = [graphed.reindex_to(value, ctx) for value in weights]
