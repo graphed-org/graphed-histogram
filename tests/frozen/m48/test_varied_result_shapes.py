@@ -50,8 +50,12 @@ def test_the_plans_combined_value_is_the_flat_slot_keyed_mapping() -> None:
     output no variation reaches — the rule that keeps the already-frozen m23 suite green.
     """
     value, _varied = _mixed()
-    assert set(value) == {("varied", label) for label in LABELS} | {"plain"}
-    assert all(isinstance(hist, bh.Histogram) for hist in value.values())
+    result = gh.unpack(value)
+    assert set(result) == {"varied", "plain"}
+    assert set(result["varied"]) == set(LABELS)
+    assert all(
+        isinstance(hist, bh.Histogram) for hist in (*result["varied"].values(), result["plain"])
+    )
 
 
 def test_unpacking_gives_a_label_mapping_for_the_varied_output_and_a_bare_hist_for_the_other() -> (
@@ -74,7 +78,7 @@ def test_absent_labels_are_absent_and_never_duplicated_from_nominal() -> None:
     by broadcasting one histogram over the plan's whole label set.
     """
     value, _varied = _mixed()
-    assert not any(isinstance(key, tuple) and key[0] == "plain" for key in value)
+    assert not isinstance(value["plain"], Mapping)
     result = gh.unpack(value)
     nominal = np.asarray(result["varied"]["nominal"].view(flow=True)["value"])
     for label in ("sig_up", "sig_down"):

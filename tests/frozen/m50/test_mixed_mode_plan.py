@@ -51,10 +51,11 @@ def _four_output_plan() -> tuple[dict[Any, Any], dict[str, gh.boost.Histogram]]:
 
 def test_the_four_slot_key_forms_are_disjoint_and_per_output() -> None:
     value, _hists = _four_output_plan()
-    assert ("ax", None) in value  # axis-mode varied → (output, None)
-    assert {("sib", label) for label in WEIGHT_LABELS} <= set(value)  # sibling → (output, label)
-    assert "plain" in value  # unvaried → today's bare output key
-    assert ("axnovar", None) in value  # the MODE, not the variation count, decides the key
+    result = gh.unpack(value)
+    assert not isinstance(result["ax"], Mapping)  # axis-mode varied → one histogram
+    assert set(result["sib"]) == set(WEIGHT_LABELS)  # sibling → {label: histogram}
+    assert "plain" in result  # unvaried → today's bare output key
+    assert not isinstance(result["axnovar"], Mapping)  # the MODE, not the variation count, decides
 
 
 def test_unpack_reads_each_shape_off_its_key() -> None:

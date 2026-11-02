@@ -891,16 +891,17 @@ def plan(
     ``compute(dict_of_hists)`` analogue. ``histograms`` is a histogram, a mapping or sequence of
     them, or mappings nested to any depth.
 
-    ``run(plan).value`` for a flat mapping over one Session is a flat slot-keyed mapping — a bare
-    output name for an output no variation reaches, ``(output, label)`` for a varied one — which
-    :func:`graphed_histogram.unpack` turns into the user-facing per-output shape. Nested mappings
-    and several Sessions, a coffea fileset's for one, come back in the nesting they went in, each
-    output a histogram or a ``{label: histogram}``. Each Session is one plan, collated
-    (:func:`graphed.collate`) into one with the sum of their tasks, so ``partitions`` needs one
-    Session, and a dataset with no tasks is absent. ``steps_per_file`` overrides the source's own
-    setting (``None`` keeps it). Column projection covers the union of all histograms' fills.
-    Histserv-backed histograms are served, in a flat mapping over one Session: their servers are
-    in ``plan.services``.
+    ``run(plan).value`` comes back in the nesting that went in, each output a histogram or a
+    ``{label: histogram}``. Over several Sessions, a coffea fileset's for one, each Session is one
+    plan, collated (:func:`graphed.collate`) into one with the sum of their tasks, so
+    ``partitions`` needs one Session, and a dataset with no tasks is absent. ``steps_per_file``
+    overrides the source's own setting (``None`` keeps it). Column projection covers the union of
+    all histograms' fills.
+
+    Histserv-backed histograms are served, in a flat mapping over one Session, and their servers
+    are in ``plan.services``. That value stays slot-keyed — a bare output name, or
+    ``(output, label)`` for a varied one — holding receipts until
+    :func:`graphed_histogram.unpack` reads them.
     """
     leaves = _leaves(histograms)
     flat = {_named(path): h for path, h in leaves}
@@ -915,15 +916,15 @@ def plan(
         "partitions": partitions,
     }
     paths = tuple(path for path, _ in leaves)
-    if len(by_session) < 2 and all(len(path) == 1 for path in paths):
-        return _one_plan(flat, **kwargs)
-    for name, h in flat.items():
-        if h.recording().histserv is not None:
+    served = [name for name, h in flat.items() if h.recording().histserv is not None]
+    if served:
+        if len(by_session) > 1 or any(len(path) != 1 for path in paths):
             raise TypeError(
-                f"histserv-backed output {name!r} needs a flat mapping over one Session, whose "
-                "receipts graphed_histogram.unpack reads"
+                f"histserv-backed output {served[0]!r} needs a flat mapping over one Session, "
+                "whose receipts graphed_histogram.unpack reads"
             )
-    if len(by_session) == 1:
+        return _one_plan(flat, **kwargs)
+    if len(by_session) < 2:
         return replace(_one_plan(flat, **kwargs), finalize=_Nested(paths))
     if partitions is not None:
         raise TypeError("gh.plan(partitions=) names one source's tasks, and these are several")

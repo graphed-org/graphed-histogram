@@ -29,13 +29,13 @@ WEIGHT_LABELS = ("nominal", "wgt_up", "wgt_down")  # N+1 = 3, N = 2 non-nominal 
 
 def test_axis_mode_ships_one_slot_where_sibling_ships_n_plus_one() -> None:
     _s, ea, _srca = partitioned()
-    axis_value = execute({"h": fill_weight_program(True, source=ea)})
+    axis_value = gh.unpack(execute({"h": fill_weight_program(True, source=ea)}))
     _s2, es, _srcs = partitioned()
-    sibling_value = execute({"h": fill_weight_program(False, source=es)})
+    sibling_value = gh.unpack(execute({"h": fill_weight_program(False, source=es)}))
 
-    assert set(axis_value) == {("h", None)}  # exactly one combine entry, keyed by the MODE
-    assert len(axis_value) == 1
-    assert len(sibling_value) == len(WEIGHT_LABELS)  # N+1 = 3 (output, label) entries
+    assert set(axis_value) == {"h"}  # exactly one combine entry, keyed by the MODE
+    assert not isinstance(axis_value["h"], dict)
+    assert len(sibling_value["h"]) == len(WEIGHT_LABELS)  # N+1 = 3 labelled entries
     assert len(gh.unpack(axis_value)) == 1  # one output
 
 

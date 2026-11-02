@@ -220,9 +220,9 @@ def test_collated_served_plans_route_each_plan_to_its_own_servers(tmp_path: Path
         ctx = histserv_api().Context(memory_mb=1024, workers=1, name=f"m69b-pieces-collate-{name}")
         plans[name] = gh.plan(_hists(ev, ctx), steps_per_file=3)
         _twin_session, twin_ev = events(path)
-        twins[name] = (
-            SequentialRunner().run(gh.plan(_hists(twin_ev, None), steps_per_file=3)).value
-        )
+        twin_plan = gh.plan(_hists(twin_ev, None), steps_per_file=3)
+        twin_plan.finalize = gh._combine._dense_slots
+        twins[name] = SequentialRunner().run(twin_plan).value
     collated = collate(plans)
     with servers(len(collated.services)) as started:
         bound, by_name = bind(collated, started)

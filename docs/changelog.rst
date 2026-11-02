@@ -12,8 +12,8 @@ Added
   ``{"DY": {"zmass": h}, ...}`` is one plan with the sum of the tasks, with no ``graphed.collate`` or
   ``gh.unpack``. An output is a histogram or a ``{label: histogram}``. ``gh.label_listing`` takes
   nested mappings, and ``gh.unpack`` recurses into a collated value and unpacks an unpacked one to
-  itself. A flat mapping over one Session keeps its slot-keyed value. ``gh.plan`` now also names its
-  outputs in ``repr(plan)``, on a graphed whose plans show them.
+  itself, so code that still calls it keeps working. ``gh.plan`` now also names its outputs in
+  ``repr(plan)``, on a graphed whose plans show them.
 * Reading a histogram with staged fills warns, at your line: ``gh.UnrunHistogramWarning``, a
   ``UserWarning`` that the standard warning filter turns into an error. That covers every read of
   its bins and what builds on them (``h[...]``, ``project``, arithmetic, ``==``, ``hist.Hist(h)``),

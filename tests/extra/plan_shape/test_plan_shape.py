@@ -94,10 +94,18 @@ def test_a_bare_histogram_is_its_histogram(tmp_path: Path) -> None:
     assert type(SequentialRunner().run(gh.plan(_hist(ev.x))).value) is hist.Hist
 
 
-def test_a_flat_mapping_keeps_its_slot_keys(tmp_path: Path) -> None:
+def test_a_flat_mapping_comes_back_by_output_and_label(tmp_path: Path) -> None:
     ev = _events(tmp_path / "a.parquet", 0.0)
-    value = SequentialRunner().run(gh.plan({"h": _hist(ev.x, _varied(ev.x))})).value
-    assert ("h", "nominal") in value
+    plan = gh.plan({"a": _hist(ev.x, _varied(ev.x)), "b": _hist(ev.x)})
+    value = RUNNERS["process"]().run(plan).value
+    assert list(value["a"]) == ["nominal", "s_up", "s_down"]
+    assert type(value["b"]) is hist.Hist
+    assert gh.unpack(value)["a"]["s_up"] is value["a"]["s_up"]
+
+
+def test_a_mapping_keeps_keys_that_are_not_strings(tmp_path: Path) -> None:
+    ev = _events(tmp_path / "a.parquet", 0.0)
+    assert list(SequentialRunner().run(gh.plan({2024: _hist(ev.x)})).value) == [2024]
 
 
 def test_a_sequence_keeps_its_names(tmp_path: Path) -> None:
@@ -106,12 +114,10 @@ def test_a_sequence_keeps_its_names(tmp_path: Path) -> None:
     assert list(value) == ["0", "1"]
 
 
-def test_unpack_is_idempotent_and_recurses(fileset: dict[str, Any]) -> None:
-    plan = graphed.collate({name: gh.plan(h) for name, h in fileset.items()})
-    collated = SequentialRunner().run(plan).value
-    assert ("zmass", "nominal") in collated["DY"]
-    once = gh.unpack(collated)
-    assert list(once["DY"]["zmass"]) == ["nominal", "s_up", "s_down"]
+def test_unpack_is_idempotent_and_recurses() -> None:
+    h = bh.Histogram(bh.axis.Regular(1, 0, 1))
+    once = gh.unpack({"DY": {("zmass", "nominal"): h, ("zmass", "s_up"): h, "n": h}})
+    assert once == {"DY": {"zmass": {"nominal": h, "s_up": h}, "n": h}}
     assert gh.unpack(once) == once
 
 

@@ -93,10 +93,10 @@ def test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill() -> None:
 
     _s2, partitioned, _source = partitioned_events()
     shared = _deduping(partitioned)
-    value = SequentialRunner().run(gh.plan({"met": shared}, steps_per_file=3)).value
-    assert set(value) == {("met", "nominal"), ("met", "sig_up"), ("met", "sig_down")}
-    nominal = np.asarray(value[("met", "nominal")].view(flow=True)["value"])
-    assert np.array_equal(np.asarray(value[("met", "sig_up")].view(flow=True)["value"]), nominal)
+    value = gh.unpack(SequentialRunner().run(gh.plan({"met": shared}, steps_per_file=3)).value)
+    assert set(value["met"]) == {"nominal", "sig_up", "sig_down"}
+    nominal = np.asarray(value["met"]["nominal"].view(flow=True)["value"])
+    assert np.array_equal(np.asarray(value["met"]["sig_up"].view(flow=True)["value"]), nominal)
     assert not np.array_equal(
-        np.asarray(value[("met", "sig_down")].view(flow=True)["value"]), nominal
+        np.asarray(value["met"]["sig_down"].view(flow=True)["value"]), nominal
     )
