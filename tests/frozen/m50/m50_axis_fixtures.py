@@ -135,8 +135,8 @@ def fill_mixed_program(mode_axis: bool, *, source: Any) -> gh.boost.Histogram:
     return h
 
 
-# ---- execution + slot inspection -------------------------------------------------------------
-def execute(histograms: dict[str, gh.boost.Histogram], steps: int = 3) -> dict[Any, bh.Histogram]:
+# ---- execution + node inspection -------------------------------------------------------------
+def execute(histograms: dict[str, gh.boost.Histogram], steps: int = 3) -> dict[Any, Any]:
     """Run a group plan and return its value: a histogram or `{label: histogram}` per output."""
     return dict(SequentialRunner().run(gh.plan(histograms, steps_per_file=steps)).value)
 

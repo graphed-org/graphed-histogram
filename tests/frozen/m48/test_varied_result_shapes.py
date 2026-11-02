@@ -1,9 +1,7 @@
 """m48/H3 — §6.1a result shapes in SIBLING mode, plus §2.3d's *accepting* representative.
 
-Two shapes are frozen in ONE anchor because freezing the nested user-facing shape alone would red
-an implementation conforming to §6.1c's flat keying: the executed plan's value is the flat
-slot-keyed `{(output, label) -> bh.Histogram}` mapping, and `graphed_histogram.unpack` is what
-turns it into `{output_name: hist | {label: hist}}`.
+The executed plan's value is `{output_name: hist | {label: hist}}`, and `graphed_histogram.unpack`
+gives back that shape, so one anchor freezes both.
 
 Scoped to sibling mode deliberately — §6.2's axis mode is m50 and has a third result shape, so
 nothing here may freeze a general rule m50 must contradict.
@@ -29,7 +27,7 @@ import graphed_histogram as gh
 LABELS = ("nominal", "sig_up", "sig_down")
 
 
-def _mixed() -> tuple[dict[Any, bh.Histogram], gh.boost.Histogram]:
+def _mixed() -> tuple[dict[Any, Any], gh.boost.Histogram]:
     """A MIXED plan: one output a variation reaches, one it does not."""
     _session, events, _source = partitioned_events()
     factor = events.MET.pt * 0.01
