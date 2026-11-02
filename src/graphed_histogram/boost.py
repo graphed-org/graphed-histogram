@@ -19,14 +19,14 @@ from __future__ import annotations
 
 import copy
 import warnings
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import wraps
 from typing import Any, TypeVar
 
 import boost_histogram as bh
 import graphed
-from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan
+from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan, collate
 from graphed.core import Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key, external_key
@@ -817,25 +817,55 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     )
 
 
-def plan(
-    histograms: Mapping[str, Histogram] | Sequence[Histogram],
-    *,
-    steps_per_file: int | None = None,
-    backend: Callable[[], Any] | str | None = None,
-    partitions: Sequence[Partition] | None = None,
-) -> Plan[dict[SlotKey, Any]]:
-    """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
+#: where one output sits in what the caller passed to :func:`plan`: the mapping keys down to it
+_Path = tuple[Any, ...]
 
-    All their fills compile into ONE IR, so a sub-graph feeding multiple histograms (e.g. a trijet
-    selection feeding both a pT and a b-tag histogram) is read and evaluated ONCE — not once per
-    histogram as separate ``Histogram.plan()`` calls would. The dask-histogram
-    ``compute(dict_of_hists)`` analogue; ``run(plan).value`` is a flat slot-keyed mapping — a bare
-    output name for an output no variation reaches, ``(output, label)`` for a varied one — which
-    :func:`graphed_histogram.unpack` turns into the user-facing per-output shape.
-    ``steps_per_file`` overrides the source's own setting (``None`` keeps it). Column projection
-    covers the union of all histograms' fills. Histserv-backed histograms are served: their
-    servers are in ``plan.services``.
-    """
+
+def _leaves(histograms: Any, path: _Path = ()) -> list[tuple[_Path, Histogram]]:
+    """Return each histogram in a nesting of mappings, with its path, in mapping order."""
+    if isinstance(histograms, Histogram):
+        return [(path, histograms)]
+    if isinstance(histograms, Mapping):
+        return [leaf for key, value in histograms.items() for leaf in _leaves(value, (*path, key))]
+    if isinstance(histograms, Iterable) and not path:
+        return _leaves({str(i): h for i, h in enumerate(histograms)})
+    held = _named(path) or "the argument"
+    raise TypeError(f"gh.plan takes histograms; {held} is {type(histograms).__name__}")
+
+
+def _named(path: _Path) -> str:
+    return "/".join(map(str, path))
+
+
+def _session_of(h: Histogram) -> Any:
+    return h.fill_nodes()[0].session if h.staged_fills() else None
+
+
+@dataclass(frozen=True)
+class _Nested:
+    """A plan's finalize: its value in the shape the caller passed to :func:`plan`."""
+
+    paths: tuple[_Path, ...]
+    collated: bool = False
+
+    def __call__(self, value: Mapping[Any, Any]) -> Any:
+        slots = (
+            {k: v for part in value.values() for k, v in part.items()} if self.collated else value
+        )
+        results = unpack(slots)
+        if self.paths == ((),):
+            return next(iter(results.values()))
+        out: dict[Any, Any] = {}
+        for path in self.paths:
+            if _named(path) in results:
+                node = out
+                for key in path[:-1]:
+                    node = node.setdefault(key, {})
+                node[path[-1]] = results[_named(path)]
+        return out
+
+
+def _one_plan(histograms: Mapping[str, Histogram], **kwargs: Any) -> Plan[Any]:
     p = pieces(histograms)
     return p.serve(
         aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
@@ -844,13 +874,67 @@ def plan(
             combine=p.combine,
             empty=p.empty,
             externals=p.externals,
-            backend=backend,
-            steps_per_file=steps_per_file,
-            partitions=partitions,
             on_compiled=p.on_compiled,
             finalize=p.finalize,
+            **kwargs,
         )
     )
+
+
+def plan(
+    histograms: Any,
+    *,
+    steps_per_file: int | None = None,
+    backend: Callable[[], Any] | str | None = None,
+    partitions: Sequence[Partition] | None = None,
+) -> Plan[Any]:
+    """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
+
+    All their fills compile into ONE IR, so a sub-graph feeding multiple histograms (e.g. a trijet
+    selection feeding both a pT and a b-tag histogram) is read and evaluated ONCE — not once per
+    histogram as separate ``Histogram.plan()`` calls would. The dask-histogram
+    ``compute(dict_of_hists)`` analogue. ``histograms`` is a histogram, a mapping or sequence of
+    them, or mappings nested to any depth.
+
+    ``run(plan).value`` for a flat mapping over one Session is a flat slot-keyed mapping — a bare
+    output name for an output no variation reaches, ``(output, label)`` for a varied one — which
+    :func:`graphed_histogram.unpack` turns into the user-facing per-output shape. Nested mappings
+    and several Sessions, a coffea fileset's for one, come back in the nesting they went in, each
+    output a histogram or a ``{label: histogram}``. Each Session is one plan, collated
+    (:func:`graphed.collate`) into one with the sum of their tasks, so ``partitions`` needs one
+    Session, and a dataset with no tasks is absent. ``steps_per_file`` overrides the source's own
+    setting (``None`` keeps it). Column projection covers the union of all histograms' fills.
+    Histserv-backed histograms are served, in a flat mapping over one Session: their servers are
+    in ``plan.services``.
+    """
+    leaves = _leaves(histograms)
+    flat = {_named(path): h for path, h in leaves}
+    if len(flat) != len(leaves):
+        raise ValueError("gh.plan: two outputs have the same '/'-joined name")
+    by_session: dict[Any, dict[str, Histogram]] = {}
+    for name, h in flat.items():
+        by_session.setdefault(_session_of(h), {})[name] = h
+    kwargs: dict[str, Any] = {
+        "steps_per_file": steps_per_file,
+        "backend": backend,
+        "partitions": partitions,
+    }
+    paths = tuple(path for path, _ in leaves)
+    if len(by_session) < 2 and all(len(path) == 1 for path in paths):
+        return _one_plan(flat, **kwargs)
+    for name, h in flat.items():
+        if h.recording().histserv is not None:
+            raise TypeError(
+                f"histserv-backed output {name!r} needs a flat mapping over one Session, whose "
+                "receipts graphed_histogram.unpack reads"
+            )
+    if len(by_session) == 1:
+        return replace(_one_plan(flat, **kwargs), finalize=_Nested(paths))
+    if partitions is not None:
+        raise TypeError("gh.plan(partitions=) names one source's tasks, and these are several")
+    groups = {next(iter(group)): group for group in by_session.values()}
+    collated = collate({name: _one_plan(group, **kwargs) for name, group in groups.items()})
+    return replace(collated, finalize=_Nested(paths, collated=True))
 
 
 def _cone(node: Array) -> set[int]:
@@ -902,7 +986,7 @@ def _variation_labels(
     )
 
 
-def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
+def unpack(value: Mapping[Any, Any]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
     """Unpack the executed plan's flat slot-keyed value into the per-output shape.
 
     The shape is decided by the KEY FORM, which is total and per output — a bare output name is
@@ -912,9 +996,14 @@ def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, b
     output's shape is ambiguous, in a mixed plan exactly as in a single-mode one.
     ``graphed.labels``/``universe``/``nominal`` read both shapes uniformly. A histserv receipt
     unpacks to its server histogram's snapshot, which stays on the server.
+
+    A collated ``{dataset: value}`` unpacks per dataset, and an unpacked value unpacks to itself.
     """
     out: dict[str, Any] = {}
     for key, held in value.items():
+        if isinstance(held, Mapping):
+            out[key] = unpack(held)
+            continue
         hist = held.snapshot() if isinstance(held, Receipt) else dense(held)
         if not isinstance(key, tuple):
             out[key] = hist
@@ -938,11 +1027,11 @@ def dense_backed(h: H) -> H:
     return h
 
 
-def label_listing(histograms: Mapping[str, Histogram]) -> dict[str, list[str]]:
+def label_listing(histograms: Mapping[Any, Any]) -> dict[Any, Any]:
     """List each output's variation labels: the plan-level ``{output: [labels]}`` listing.
 
     Each output maps to its variation labels in FOLD order (nominal first, then vary-tag insertion
-    order); an unvaried output maps to ``["nominal"]``.
+    order); an unvaried output maps to ``["nominal"]``. Nested mappings list in the same nesting.
 
     MODE-INDEPENDENT: an axis-mode output lists the SAME labels as its sibling twin, because both
     modes populate ``_label_maps`` with the same fold-ordered set. The labels come from the fill's
@@ -950,7 +1039,10 @@ def label_listing(histograms: Mapping[str, Histogram]) -> dict[str, list[str]]:
     key — which carries no label, so a key-reading listing would answer ``[None]``/``[]`` for an
     axis-mode output.
     """
-    return {name: list(_output_labels(hist)) for name, hist in histograms.items()}
+    return {
+        name: label_listing(h) if isinstance(h, Mapping) else list(_output_labels(h))
+        for name, h in histograms.items()
+    }
 
 
 def factory(

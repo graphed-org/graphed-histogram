@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -13,7 +15,7 @@ from graphed.core import GraphStore
 
 from ._chunked import BH, Chunked, Kind, Partial, as_kind, dense, empty
 from ._histserv import Receipt, SlotKey, _ship
-from ._spec import zero_of
+from ._spec import _make_axis, zero_of
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,10 @@ class _SumFills:
     dense: bool = False
     kind: Kind = BH
 
+    def output_summaries(self) -> list[str]:
+        """Describe this histogram for a plan's repr."""
+        return [_summary("", self.spec, self.kind, 1)]
+
     def __call__(self, fills: list[object]) -> Partial:
         """Sum the fills into this slot's partial, as ``kind``.
 
@@ -139,6 +145,17 @@ class _SumFills:
             if not (isinstance(total, Chunked) and total.iadd(fill)):
                 total = add_histograms(total, fill)
         return total
+
+
+def _summary(name: str, spec: str, kind: Kind, labels: int) -> str:
+    """Say what one output is: ``mass (Hist, 120 bins, 3 labels)``."""
+    axes = [_make_axis(axis) for axis in json.loads(spec)["axes"]]
+    bins = math.prod(max(axis.size, 1) for axis in axes)
+    grows = "+" if any(axis.traits.growth for axis in axes) else ""
+    shape = f"{kind[0].__name__}, {bins}{grows} bin{'' if bins == 1 and not grows else 's'}"
+    if labels > 1:
+        shape += f", {labels} labels"
+    return f"{name} ({shape})" if name else shape
 
 
 #: the slot layout: per slot, its key, the RECORD ids of the fills it sums (one per staged fill, so
@@ -161,6 +178,17 @@ class _GroupReduce:
     positions: dict[int, int] = field(default_factory=dict)
     dense: tuple[SlotKey, ...] = ()
     kinds: tuple[tuple[SlotKey, Kind], ...] = ()
+
+    def output_summaries(self) -> list[str]:
+        """Describe each output for a plan's repr, counting the labels that are slots of it."""
+        kinds = dict(self.kinds)
+        outputs: dict[str, list[tuple[SlotKey, str]]] = {}
+        for key, _ids, spec in self.layout:
+            outputs.setdefault(key[0] if isinstance(key, tuple) else key, []).append((key, spec))
+        return [
+            _summary(name, slots[0][1], kinds.get(slots[0][0], BH), len(slots))
+            for name, slots in outputs.items()
+        ]
 
     def __call__(self, fills: list[object]) -> dict[SlotKey, Any]:
         if not self.positions:
