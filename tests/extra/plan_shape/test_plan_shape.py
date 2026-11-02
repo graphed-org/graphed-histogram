@@ -123,6 +123,13 @@ def test_unpack_is_idempotent_and_recurses(fileset: dict[str, Any]) -> None:
     assert gh.unpack(once) == once
 
 
+def test_a_collate_of_plans_keeps_each_shape(fileset: dict[str, Any]) -> None:
+    plan = graphed.collate({name: gh.plan(h) for name, h in fileset.items()})
+    value = SequentialRunner().run(plan).value
+    assert list(value["DY"]["zmass"]) == ["nominal", "s_up", "s_down"]
+    assert value["TT"]["n"].sum().value == 8
+
+
 def test_the_slot_keys_tell_each_output_shape_apart(tmp_path: Path) -> None:
     ev = _events(tmp_path / "a.parquet", 0.0)
     axis = _hist(ev.x, _varied(ev.x), variation_axis=True)
