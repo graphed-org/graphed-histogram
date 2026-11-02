@@ -12,8 +12,8 @@ Added
   ``{"DY": {"zmass": h}, ...}`` is one plan with the sum of the tasks, with no ``graphed.collate`` or
   ``gh.unpack``. An output is a histogram or a ``{label: histogram}``. ``gh.label_listing`` takes
   nested mappings, and ``gh.unpack`` recurses into a collated value and unpacks an unpacked one to
-  itself. A flat mapping over one Session keeps its slot-keyed value. ``gh.plan`` now also names its
-  outputs in ``repr(plan)``, on a graphed whose plans show them.
+  itself. ``gh.plan`` now also names its outputs in ``repr(plan)``, on a graphed whose plans show
+  them.
 * ``h.plan()`` and ``gh.plan()`` run over a ``graphed.join``, keyed or positional, with several
   outputs past the join, in any nesting. A plan over a join runs on ``SequentialRunner`` and
   ``SubmitRunner``; it cannot be collated with other Sessions.
@@ -28,6 +28,11 @@ Changed
 ~~~~~~~
 
 * ``dir(graphed_histogram)`` is ``__all__``, so tab completion shows the public names only.
+* ``run(gh.plan({...})).value`` is ``{name: histogram}`` or ``{name: {label: histogram}}``, so
+  ``value["met"]["nominal"]`` replaces ``value[("met", "nominal")]``. Code that calls ``gh.unpack``
+  keeps working. A histserv-backed plan keeps the slot keys, for every output in it, and
+  ``gh.unpack`` reads those as before. A tuple key in the mapping refuses, as ``gh.unpack`` would
+  read it as ``(output, label)``: nest the mapping instead.
 
 Fixed
 ~~~~~

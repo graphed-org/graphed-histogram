@@ -1,9 +1,7 @@
 """m48/H3 — §6.1a result shapes in SIBLING mode, plus §2.3d's *accepting* representative.
 
-Two shapes are frozen in ONE anchor because freezing the nested user-facing shape alone would red
-an implementation conforming to §6.1c's flat keying: the executed plan's value is the flat
-slot-keyed `{(output, label) -> bh.Histogram}` mapping, and `graphed_histogram.unpack` is what
-turns it into `{output_name: hist | {label: hist}}`.
+The executed plan's value is `{output_name: hist | {label: hist}}`, and `graphed_histogram.unpack`
+gives back that shape, so one anchor freezes both.
 
 Scoped to sibling mode deliberately — §6.2's axis mode is m50 and has a third result shape, so
 nothing here may freeze a general rule m50 must contradict.
@@ -29,7 +27,7 @@ import graphed_histogram as gh
 LABELS = ("nominal", "sig_up", "sig_down")
 
 
-def _mixed() -> tuple[dict[Any, bh.Histogram], gh.boost.Histogram]:
+def _mixed() -> tuple[dict[Any, Any], gh.boost.Histogram]:
     """A MIXED plan: one output a variation reaches, one it does not."""
     _session, events, _source = partitioned_events()
     factor = events.MET.pt * 0.01
@@ -45,13 +43,16 @@ def _mixed() -> tuple[dict[Any, bh.Histogram], gh.boost.Histogram]:
     return value, varied
 
 
-def test_the_plans_combined_value_is_the_flat_slot_keyed_mapping() -> None:
-    """§6.1c: `(output, label)` slots for a varied output, today's BARE `output_name` key for an
+def test_the_plans_value_is_keyed_by_output_then_label() -> None:
+    """§6.1c: `{label: histogram}` for a varied output, a BARE histogram under its name for an
     output no variation reaches — the rule that keeps the already-frozen m23 suite green.
     """
     value, _varied = _mixed()
-    assert set(value) == {("varied", label) for label in LABELS} | {"plain"}
-    assert all(isinstance(hist, bh.Histogram) for hist in value.values())
+    assert set(value) == {"varied", "plain"}
+    assert set(value["varied"]) == set(LABELS)
+    assert all(
+        isinstance(hist, bh.Histogram) for hist in (*value["varied"].values(), value["plain"])
+    )
 
 
 def test_unpacking_gives_a_label_mapping_for_the_varied_output_and_a_bare_hist_for_the_other() -> (
@@ -74,7 +75,7 @@ def test_absent_labels_are_absent_and_never_duplicated_from_nominal() -> None:
     by broadcasting one histogram over the plan's whole label set.
     """
     value, _varied = _mixed()
-    assert not any(isinstance(key, tuple) and key[0] == "plain" for key in value)
+    assert not isinstance(value["plain"], Mapping)
     result = gh.unpack(value)
     nominal = np.asarray(result["varied"]["nominal"].view(flow=True)["value"])
     for label in ("sig_up", "sig_down"):

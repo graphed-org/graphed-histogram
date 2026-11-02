@@ -118,7 +118,7 @@ columns any fill touches are read off disk.
 
 ```python
 plan = gh.plan({"met": hmet, "jet_pt": h})
-out = gh.unpack(SequentialRunner().run(plan).value)   # {name: histogram}
+out = SequentialRunner().run(plan).value   # {name: histogram}
 print(out["jet_pt"].values())
 # [3 4 3 1]
 ```
