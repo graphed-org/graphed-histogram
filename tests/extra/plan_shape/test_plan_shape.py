@@ -14,7 +14,7 @@ import pytest
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_parquet
 from graphed.checkpoint import resumable
-from graphed.core.execution import SequentialRunner
+from graphed.core.execution import Plan, SequentialRunner
 from graphed_exec_local import ProcessPoolExecutor, ThreadExecutor
 
 import graphed_histogram as gh
@@ -63,6 +63,7 @@ def test_a_fileset_comes_back_nested_and_equal_to_the_collate_form(
     fileset: dict[str, Any], runner: str
 ) -> None:
     plan = gh.plan(fileset)
+    assert isinstance(plan, Plan)
     out = RUNNERS[runner]().run(plan).value
     want = _by_hand(fileset)
     assert len(plan.tasks) == 4

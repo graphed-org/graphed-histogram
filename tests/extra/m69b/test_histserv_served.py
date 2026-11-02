@@ -47,9 +47,11 @@ def _plans(path: str, name: str, **kwargs: Any) -> tuple[Plan[Any], Plan[Any]]:
                 )
         return out
 
-    return gh.plan(hists(True), steps_per_file=3, **kwargs), gh.plan(
-        hists(False), steps_per_file=3, **kwargs
-    )
+    plan = gh.plan(hists(True), steps_per_file=3, **kwargs)
+    unbacked = gh.plan(hists(False), steps_per_file=3, **kwargs)
+    assert isinstance(plan, Plan)
+    assert isinstance(unbacked, Plan)
+    return plan, unbacked
 
 
 @pytest.fixture(scope="module")

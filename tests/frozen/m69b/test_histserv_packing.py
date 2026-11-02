@@ -77,7 +77,9 @@ def _plan(path: str, steps: int, sizes: dict[str, tuple[float, Any]]) -> Plan[An
         )
         hist.fill(ev.x)
         hists[name] = hist if ctx is None else histserv_api().backed(hist, ctx)
-    return gh.plan(hists, steps_per_file=steps)
+    plan = gh.plan(hists, steps_per_file=steps)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _servers(ctx: Any) -> dict[str, Any]:
@@ -220,7 +222,9 @@ def _labelled(path: str, bins: int, ctx: Any) -> Plan[Any]:
     hist = gh.boost.Histogram(bh.axis.Regular(bins, 0.0, 1.0), storage=bh.storage.Weight())
     w = graphed.vary(ev.w, "sf", points={str(i): ev.w * (1 + (i + 1) / 64) for i in range(31)})
     hist.fill(ev.x, weight=[w], variation_axis=True)
-    return gh.plan({"huge": histserv_api().backed(hist, ctx)}, steps_per_file=3)
+    plan = gh.plan({"huge": histserv_api().backed(hist, ctx)}, steps_per_file=3)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def test_a_slot_past_the_message_ceiling_is_refused_naming_the_sizes(path: str) -> None:
@@ -264,8 +268,11 @@ def test_an_adaptive_plan_a_repeated_partition_and_a_second_serve_are_refused(pa
     with pytest.raises(REFUSED, match=r"\bnext_tasks\b"):
         p.serve(adaptive)
 
-    part = gh.plan({"u": hist(back=False)}, steps_per_file=3).tasks[0].partition
+    plan = gh.plan({"u": hist(back=False)}, steps_per_file=3)
+    assert isinstance(plan, Plan)
+    part = plan.tasks[0].partition
     unbacked = gh.plan({"u": hist(back=False)}, partitions=[part, part])
+    assert isinstance(unbacked, Plan)
     assert len(unbacked.tasks) == 2 and unbacked.services == ()
     with pytest.raises(REFUSED, match=r"(?i)\bpartitions?\b"):
         gh.plan({"h": hist()}, partitions=[part, part])

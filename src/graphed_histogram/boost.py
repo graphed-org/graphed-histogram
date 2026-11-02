@@ -22,7 +22,7 @@ import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import wraps
-from typing import Any, TypeVar, cast, overload
+from typing import Any, TypeVar, overload
 
 import boost_histogram as bh
 import graphed
@@ -591,7 +591,7 @@ class Histogram(bh.Histogram):
         steps_per_file: int | None = None,
         backend: Callable[[], Any] | str | None = None,
         partitions: Sequence[Partition] | None = None,
-    ) -> Plan[bh.Histogram]:
+    ) -> Plan[bh.Histogram] | DurablePlanV2:
         """Build a plan: one fill task per partition, combined by :func:`add_histograms`.
 
         Run it later with any runner. Thin specialization of :func:`graphed.aggregate_plan` — this
@@ -632,7 +632,7 @@ class Histogram(bh.Histogram):
             reduce.positions = _positions(compiled, self._fill_nodes)
             return _variation_labels((("this histogram", self),), compiled)
 
-        plan = aggregate_plan(
+        return aggregate_plan(
             *self._fill_nodes,
             reduce=reduce,
             combine=add_histograms,
@@ -644,8 +644,6 @@ class Histogram(bh.Histogram):
             on_compiled=on_compiled,
             finalize=dense,
         )
-        # the static type stays Plan: widening it reaches frozen suites
-        return cast("Plan[bh.Histogram]", plan)
 
 
 def _warn_if_unrun(h: bh.Histogram) -> None:
@@ -879,7 +877,7 @@ def _one_plan(
     *,
     finalize: Callable[[Any], Any] | None = None,
     **kwargs: Any,
-) -> Plan[Any]:
+) -> Plan[Any] | DurablePlanV2:
     p = pieces(histograms)
     built = aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
         *p.fill_nodes,
@@ -891,7 +889,7 @@ def _one_plan(
         finalize=finalize or p.finalize,
         **kwargs,
     )
-    return cast("Plan[Any]", p.serve(built))
+    return p.serve(built)
 
 
 def plan(
@@ -900,7 +898,7 @@ def plan(
     steps_per_file: int | None = None,
     backend: Callable[[], Any] | str | None = None,
     partitions: Sequence[Partition] | None = None,
-) -> Plan[Any]:
+) -> Plan[Any] | DurablePlanV2:
     """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
 
     All their fills compile into ONE IR, so a sub-graph feeding multiple histograms (e.g. a trijet

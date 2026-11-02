@@ -16,7 +16,10 @@ Added
   them.
 * ``h.plan()`` and ``gh.plan()`` run over a ``graphed.join``, keyed or positional, with several
   outputs past the join, in any nesting. A plan over a join runs on ``SequentialRunner`` and
-  ``SubmitRunner``; it cannot be collated with other Sessions.
+  ``SubmitRunner``; it cannot be collated with other Sessions. Both are annotated
+  ``Plan | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process``, or passes the plan
+  to a runner typed for ``Plan`` alone, such as ``ProcessPoolExecutor``, narrows with
+  ``isinstance(plan, graphed.core.Plan)``.
 * Reading a histogram with staged fills warns, at your line: ``gh.UnrunHistogramWarning``, a
   ``UserWarning`` that the standard warning filter turns into an error. That covers every read of
   its bins and what builds on them (``h[...]``, ``project``, arithmetic, ``==``, ``hist.Hist(h)``),
