@@ -80,7 +80,10 @@ def _plans(path: str, name: str) -> tuple[Plan[Any], Plan[Any], Any]:
     for key, hist in backed.items():
         if key != "local":
             hs.backed(hist, ctx)
-    return gh.plan(backed, steps_per_file=3), gh.plan(_hists(path), steps_per_file=3), ctx
+    plan, unbacked = gh.plan(backed, steps_per_file=3), gh.plan(_hists(path), steps_per_file=3)
+    assert isinstance(plan, Plan)
+    assert isinstance(unbacked, Plan)
+    return plan, unbacked, ctx
 
 
 def _stored(slot: Any) -> int:
@@ -105,6 +108,7 @@ def test_receipts_ride_the_tree_and_each_server_holds_exactly_its_slots(tmp_path
     hs = histserv_api()
     path = write_events(str(tmp_path / "e.parquet"))
     plan, twin_plan, _ctx = _plans(path, "m69b-fill-path")
+    twin_plan.finalize = gh._combine._dense_slots
     twin = SequentialRunner().run(twin_plan).value
     where = assigned(plan)
     per_server = Counter(where.values())
@@ -163,6 +167,7 @@ def test_server_names_bound_to_one_endpoint_run_on_one_server(tmp_path: Path) ->
     plan, twin_plan, _ctx = _plans(path, "m69b-fill-shared-endpoint")
     names = server_names(plan)
     assert len(names) >= 2
+    twin_plan.finalize = gh._combine._dense_slots
     twin = SequentialRunner().run(twin_plan).value
     with servers(1) as (only,):
         bound = bind_services(plan, dict.fromkeys(names, only.endpoint))

@@ -75,7 +75,7 @@ def compose(
 
     marked = [counter, *p.fill_nodes] if counter_first else [*p.fill_nodes, counter]
     fire: Callable[[CompiledGraph], Any] = on_compiled if hook else skip_hook
-    return aggregate_plan(
+    plan = aggregate_plan(
         *marked,
         reduce=reduce,
         combine=combine,
@@ -83,6 +83,8 @@ def compose(
         externals=p.externals,
         on_compiled=fire,
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _weighted(ev: Any) -> gh.boost.Histogram:
@@ -176,6 +178,7 @@ def test_gh_plan_of_backed_merged_fills_equals_a_direct_fill_done_twice(tmp_path
         _merged(ev), histserv_api().Context(memory_mb=1024, workers=1, name="m69b-pieces-merged")
     )
     plan = gh.plan({"h": hist}, steps_per_file=3)
+    assert isinstance(plan, Plan)
     with servers(len(plan.services)) as started:
         bound, _by_name = bind(plan, started)
         value = run_bounded(lambda: resolve_services(bound, SequentialRunner().run(bound).value))
@@ -221,13 +224,16 @@ def test_collated_served_plans_route_each_plan_to_its_own_servers(tmp_path: Path
         plans[name] = gh.plan(_hists(ev, ctx), steps_per_file=3)
         _twin_session, twin_ev = events(path)
         twins[name] = (
-            SequentialRunner().run(gh.plan(_hists(twin_ev, None), steps_per_file=3)).value
+            SequentialRunner()
+            .run(gh.boost._one_plan(_hists(twin_ev, None), steps_per_file=3))
+            .value
         )
     collated = collate(plans)
     with servers(len(collated.services)) as started:
         bound, by_name = bind(collated, started)
         value = run_bounded(lambda: SequentialRunner().run(bound).value)
         for name, plan in plans.items():
+            assert isinstance(plan, Plan)
             mine = {by_name[server].endpoint for server in assigned(plan).values()}
             others = {s.endpoint for s in by_name.values()} - mine
             receipts = [v for v in value[name].values() if isinstance(v, histserv_api().Receipt)]

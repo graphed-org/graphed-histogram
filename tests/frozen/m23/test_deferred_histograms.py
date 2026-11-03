@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from graphed import Array, Session
 from graphed.core import Partition
-from graphed.core.execution import SequentialRunner
+from graphed.core.execution import Plan, SequentialRunner
 from graphed.numpy import NumpyBackend
 from graphed.numpy.forms import NumpyForm
 
@@ -298,6 +298,7 @@ def test_plan_accepts_explicit_partitions() -> None:
         for lo in range(0, len(DATA), 300)
     )
     plan = h.plan(partitions=explicit)
+    assert isinstance(plan, Plan)
     assert len(plan.tasks) == len(explicit)
     got = SequentialRunner().run(plan).value
     eager = bh.Histogram(bh.axis.Regular(10, 0.0, 10.0), storage=bh.storage.Int64())

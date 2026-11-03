@@ -54,7 +54,9 @@ def _plan(path: str, tag: str | None, weight: str = "w") -> Plan[Any]:
         hs.backed(h, a)
         hs.backed(o, a)
         hs.backed(g, b)
-    return gh.plan({"h": h, "o": o, "g": g}, steps_per_file=3)
+    plan = gh.plan({"h": h, "o": o, "g": g}, steps_per_file=3)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _per_server(plan: Plan[Any]) -> Counter[str]:
@@ -105,7 +107,9 @@ def test_histograms_are_created_on_the_first_call_once_and_on_a_bound_pickle_onc
 def test_a_process_pool_creates_once_and_equals_the_local_run(tmp_path: Path) -> None:
     path = write_events(str(tmp_path / "e.parquet"))
     plan = _plan(path, "pool", weight="wi")
-    local = SequentialRunner().run(_plan(path, None, weight="wi")).value
+    local_plan = _plan(path, None, weight="wi")
+    local_plan.finalize = gh._combine._dense_slots
+    local = SequentialRunner().run(local_plan).value
     want = _per_server(plan)
     with servers(len(plan.services)) as started:
         bound, by_name = bind(plan, started)

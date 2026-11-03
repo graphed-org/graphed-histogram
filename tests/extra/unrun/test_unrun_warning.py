@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 import boost_histogram as bh
+import graphed
 import hist
 import hist.graphed as hg
 import numpy as np
@@ -335,3 +336,36 @@ def test_a_copys_fill_stages_on_the_copy_alone() -> None:
     assert (h.staged_fills(), c.staged_fills()) == (1, 2)
     assert (len(h.recording().fill_specs), len(c.recording().fill_specs)) == (1, 2)
     assert (_run(h).sum(), _run(c).sum()) == (len(DATA), 2 * len(DATA))
+
+
+@pytest.mark.parametrize("deep_copy", [lambda h: h.copy(), copy.deepcopy])
+def test_a_deep_copy_shares_the_graph_and_owns_its_fills(deep_copy: Callable[[Any], Any]) -> None:
+    x = _x()
+    h = _empty().fill(x)
+    h.axes[0].metadata = {"unit": "GeV"}
+    c = deep_copy(h)
+    c.fill(x + 1)
+
+    assert h.staged_fills() == 1 and c.staged_fills() == 2
+    assert c.fill_nodes()[0] is h.fill_nodes()[0]
+    assert c.axes[0].metadata == h.axes[0].metadata
+    assert c.axes[0].metadata is not h.axes[0].metadata
+    assert _run(h).sum() == len(DATA)
+    assert _run(c).sum() == 2 * len(DATA)
+
+
+def test_a_deep_copy_shares_the_histserv_context() -> None:
+    h = _staged()
+    context = object()
+    h.hold_partials(histserv=context)
+    assert h.copy().recording().histserv is context
+
+
+def test_a_deep_copy_keeps_a_varied_fill_on_the_graph() -> None:
+    x = _x()
+    h = hg.Hist.new.Reg(50, 0, 200, name="x").Weight()
+    h.fill(x, weight=graphed.vary(x * 0.5, "s", up=x * 0.75, down=x * 0.25))
+    want = gh.unpack(SequentialRunner().run(gh.plan({"h": h})).value)["h"]
+    got = gh.unpack(SequentialRunner().run(gh.plan({"h": h.copy()})).value)["h"]
+    assert list(got) == list(want) == ["nominal", "s_up", "s_down"]
+    assert all(got[label] == want[label] for label in want)
