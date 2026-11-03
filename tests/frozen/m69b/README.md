@@ -27,7 +27,7 @@ histograms unbacked.
 | `test_the_single_histogram_plan_refuses_a_backed_histogram` | `Histogram.plan()` refuses a backed histogram | refusal | a backed histogram silently planned unserved |
 | `test_backing_and_planning_import_neither_histserv_nor_grpc` | no import before a bound run | child's `sys.modules` lacks both; control: `histserv` importable | an eager `histserv` import |
 | `test_an_unbacked_merge_free_plan_equals_...folded_in_partition_order` | unbacked `gh.plan` unchanged, `services == ()` | bit-for-bit vs a direct per-partition `bh` fold | an unbacked plan perturbed by the serve path |
-| `test_the_frozen_suites_before_m69b_are_unmodified_but_for_the_refreeze` | earlier frozen suites unmodified | per-directory sha256 of m23…m64 (m48/m49 at the refreeze) | an edited frozen suite |
+| `test_the_frozen_suites_before_m69b_are_unmodified_but_for_the_refreeze` | earlier frozen suites unmodified | per-directory sha256 of m23…m64 (m23, m48 and m49 at their refreezes) | an edited frozen suite |
 | `test_histserv_imports_wherever_the_gil_is_enabled` | `import histserv` where the GIL is enabled | skipped only on free-threaded builds | a broken histserv dependency |
 | **test_histserv_packing.py** (no server) | | | |
 | `test_slots_land_first_fit_in_stored_then_key_order_with_the_model_prediction` | sort (`stored` desc, `str(slot)`), (a) first open server it fits; `ctx.servers()`; spec fields and argv | exact slot → server map; each prediction = the model and ≤ size; `ServiceSpec`/`Launch` fields | insertion, ascending or reversed-tie order; a server past its prediction; a missing or mis-scaled model term |

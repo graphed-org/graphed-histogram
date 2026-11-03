@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from chunked_census import Events, take
 from graphed.awkward import AwkwardBackend, AwkwardForm
-from graphed.core.execution import LocalResources, SequentialRunner
+from graphed.core.execution import LocalResources, Plan, SequentialRunner
 from graphed_exec_local import ProcessPoolExecutor
 
 import graphed_histogram as gh
@@ -148,6 +148,7 @@ def _typed(ev: Any) -> dict[str, tuple[Any, Any]]:
 def test_the_run_value_is_the_instantiated_class(runner: str) -> None:
     typed = _typed(_events())
     plan = gh.plan({k: v[0] for k, v in typed.items()}, steps_per_file=3)
+    assert isinstance(plan, Plan)
     partial = plan.process(plan.tasks[0].partition, LocalResources())
     assert sorted(k for k, v in partial.items() if type(v) is Chunked) == sorted(
         k for k in typed if k.endswith("Weight-chunked")

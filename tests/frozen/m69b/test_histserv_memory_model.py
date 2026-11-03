@@ -59,7 +59,9 @@ def _warm(path: str, server: Server, name: str) -> int:
     hist.fill(ev.x)
     hs = histserv_api()
     hs.backed(hist, hs.Context(memory_mb=1024, workers=1, name=f"{name}-warm"))
-    bound = _bound(gh.plan({"warm": hist}, steps_per_file=1), server)
+    plan = gh.plan({"warm": hist}, steps_per_file=1)
+    assert isinstance(plan, Plan)
+    bound = _bound(plan, server)
     run_bounded(lambda: resolve_services(bound, SequentialRunner().run(bound).value))
     return reset_peak(server.proc.pid)
 
@@ -79,6 +81,7 @@ def _measure(
     for hist in hists.values():
         hs.backed(hist, ctx)
     plan = gh.plan(hists, steps_per_file=steps)
+    assert isinstance(plan, Plan)
     ((_name, _size, predicted_bytes, count),) = ctx.servers()
     assert count == len(hists) and len(plan.tasks) == steps
     with servers(1) as (server,):

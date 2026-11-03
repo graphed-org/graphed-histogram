@@ -80,7 +80,10 @@ def _plans(path: str, name: str) -> tuple[Plan[Any], Plan[Any], Any]:
     for key, hist in backed.items():
         if key != "local":
             hs.backed(hist, ctx)
-    return gh.plan(backed, steps_per_file=3), gh.plan(_hists(path), steps_per_file=3), ctx
+    plan, unbacked = gh.plan(backed, steps_per_file=3), gh.plan(_hists(path), steps_per_file=3)
+    assert isinstance(plan, Plan)
+    assert isinstance(unbacked, Plan)
+    return plan, unbacked, ctx
 
 
 def _stored(slot: Any) -> int:

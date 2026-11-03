@@ -54,7 +54,9 @@ def _plan(path: str, tag: str | None, weight: str = "w") -> Plan[Any]:
         hs.backed(h, a)
         hs.backed(o, a)
         hs.backed(g, b)
-    return gh.plan({"h": h, "o": o, "g": g}, steps_per_file=3)
+    plan = gh.plan({"h": h, "o": o, "g": g}, steps_per_file=3)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _per_server(plan: Plan[Any]) -> Counter[str]:

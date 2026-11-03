@@ -22,12 +22,12 @@ import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, overload
 
 import boost_histogram as bh
 import graphed
 from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan, collate
-from graphed.core import Partition, PayloadDescriptor
+from graphed.core import DurablePlanV2, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key, external_key
 from graphed.provenance import capture
@@ -598,7 +598,7 @@ class Histogram(bh.Histogram):
         steps_per_file: int | None = None,
         backend: Callable[[], Any] | str | None = None,
         partitions: Sequence[Partition] | None = None,
-    ) -> Plan[bh.Histogram]:
+    ) -> Plan[bh.Histogram] | DurablePlanV2:
         """Build a plan: one fill task per partition, combined by :func:`add_histograms`.
 
         Run it later with any runner. Thin specialization of :func:`graphed.aggregate_plan` — this
@@ -606,8 +606,10 @@ class Histogram(bh.Histogram):
         is each worker's evaluation backend (factory/class or ``"module:attr"`` import ref for
         behavior-carrying backends, which do not pickle); ``steps_per_file`` overrides the source's
         own setting (``None`` keeps it); ``partitions`` lets the caller shape partitioning itself.
-        For several histograms that share a sub-graph, plan them together with :func:`plan` so the
-        shared work runs ONCE.
+        Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, with no ``tasks`` or
+        ``process``: the fills run per join destination and ``partitions`` is refused. For several
+        histograms that share a sub-graph, plan them together with :func:`plan` so the shared work
+        runs ONCE.
         """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
@@ -760,11 +762,16 @@ class HistogramPieces:
         self.reduce.positions = _positions(compiled, self.fill_nodes)
         return _variation_labels(self.items, compiled)
 
-    def serve(self, plan: Plan[V]) -> Plan[V]:
+    @overload
+    def serve(self, plan: Plan[V]) -> Plan[V]: ...
+    @overload
+    def serve(self, plan: DurablePlanV2) -> DurablePlanV2: ...
+    def serve(self, plan: Plan[V] | DurablePlanV2) -> Plan[V] | DurablePlanV2:
         """Return ``plan`` with its histserv-backed slots served.
 
         The slots are sized, packed onto servers and declared in ``plan.services``; ``plan`` itself
-        comes back when no slot is backed.
+        comes back when no slot is backed. A backed slot refuses a plan with ``next_tasks`` or over
+        a join, which has no tasks to size by.
         """
         if not self.backing:
             return plan
@@ -872,20 +879,24 @@ class _Nested:
         return out
 
 
-def _one_plan(histograms: Mapping[str, Histogram], **kwargs: Any) -> Plan[Any]:
+def _one_plan(
+    histograms: Mapping[str, Histogram],
+    *,
+    finalize: Callable[[Any], Any] | None = None,
+    **kwargs: Any,
+) -> Plan[Any] | DurablePlanV2:
     p = pieces(histograms)
-    return p.serve(
-        aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
-            *p.fill_nodes,
-            reduce=p.reduce,
-            combine=p.combine,
-            empty=p.empty,
-            externals=p.externals,
-            on_compiled=p.on_compiled,
-            finalize=p.finalize,
-            **kwargs,
-        )
+    built = aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
+        *p.fill_nodes,
+        reduce=p.reduce,
+        combine=p.combine,
+        empty=p.empty,
+        externals=p.externals,
+        on_compiled=p.on_compiled,
+        finalize=finalize or p.finalize,
+        **kwargs,
     )
+    return p.serve(built)
 
 
 def plan(
@@ -894,7 +905,7 @@ def plan(
     steps_per_file: int | None = None,
     backend: Callable[[], Any] | str | None = None,
     partitions: Sequence[Partition] | None = None,
-) -> Plan[Any]:
+) -> Plan[Any] | DurablePlanV2:
     """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
 
     All their fills compile into ONE IR, so a sub-graph feeding multiple histograms (e.g. a trijet
@@ -914,6 +925,10 @@ def plan(
     are in ``plan.services``. That value stays slot-keyed, a bare output name or
     ``(output, label)`` for a varied one, and :func:`graphed_histogram.unpack` turns it into the
     same shape, reading any receipts.
+
+    Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, for ``SequentialRunner`` or
+    ``SubmitRunner``. Every output then reads past the join, in one Session, and neither
+    ``partitions`` nor histserv applies.
     """
     leaves = _leaves(histograms)
     flat = {_named(path): h for path, h in leaves}
@@ -937,7 +952,7 @@ def plan(
             )
         return _one_plan(flat, **kwargs)
     if len(by_session) < 2:
-        return replace(_one_plan(flat, **kwargs), finalize=_Nested(paths))
+        return _one_plan(flat, finalize=_Nested(paths), **kwargs)
     if partitions is not None:
         raise TypeError("gh.plan(partitions=) names one source's tasks, and these are several")
     groups = {next(iter(group)): group for group in by_session.values()}

@@ -32,7 +32,9 @@ def _plan(path: str, ctx: Any, back: bool) -> Plan[Any]:
     if back:
         histserv_api().backed(hist, ctx)
         histserv_api().backed(other, ctx)
-    return gh.plan({"h": hist, "o": other}, steps_per_file=3)
+    plan = gh.plan({"h": hist, "o": other}, steps_per_file=3)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def test_a_partition_run_twice_fills_once_and_another_partition_adds(tmp_path: Path) -> None:
