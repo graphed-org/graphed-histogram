@@ -59,6 +59,7 @@ from ._fill import (
     _fold_labels,
     _mixed_row_spaces,
     _WeightGuard,
+    check_fill_types,
 )
 from ._fill import (
     FillEvaluator as FillEvaluator,
@@ -238,6 +239,11 @@ class Histogram(bh.Histogram):
         for name in ("_fill_nodes", "_evaluators", "_partials", "_label_maps", "_fill_specs"):
             self.__dict__[name] = copy.copy(self.__dict__[name])
 
+    def __deepcopy__(self, memo: Any) -> Any:
+        """Copy storage, axes and fill lists; the recorded nodes stay on the session's graph."""
+        memo.update((id(item), item) for item in (self._histserv, *self._fill_nodes))
+        return super().__deepcopy__(memo)
+
     @classmethod
     def _export_bh_(cls, target: bh.Histogram) -> None:
         if not isinstance(target, Histogram):
@@ -289,6 +295,7 @@ class Histogram(bh.Histogram):
         given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
+        check_fill_types(self.axes, args, ambient, weights, recorded_sample)
         axes = [graphed.reindex_to(value, ctx) for value in values]
         # the ambient one already is
         factors = [graphed.reindex_to(value, ctx) for value in weights]

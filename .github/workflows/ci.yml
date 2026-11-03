@@ -13,7 +13,7 @@ concurrency:
 
 env:
   # graphed#195 (aggregate_plan over a join); moves to the graphed release that ships it.
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@c3b0b4c734644aabe66aecbc47dedd5b2b0e5a1b"
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@4521985cd4df00045ef00eddce6ae65de864a174"
   # exec-local stays a separate package (used by the M23 process-executor integration tests);
   # 0.0.7 is the first release that applies Plan.finalize
   EXECLOCAL: "graphed-executors>=0.0.7"
