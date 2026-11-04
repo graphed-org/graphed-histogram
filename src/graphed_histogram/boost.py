@@ -596,6 +596,7 @@ class Histogram(bh.Histogram):
         self,
         *,
         steps_per_file: int | None = None,
+        events_per_task: int | None = None,
         backend: Callable[[], Any] | str | None = None,
         partitions: Sequence[Partition] | None = None,
     ) -> Plan[bh.Histogram] | DurablePlanV2:
@@ -605,11 +606,12 @@ class Histogram(bh.Histogram):
         histogram's fills are the outputs, summed per partition and added across them; ``backend``
         is each worker's evaluation backend (factory/class or ``"module:attr"`` import ref for
         behavior-carrying backends, which do not pickle); ``steps_per_file`` overrides the source's
-        own setting (``None`` keeps it); ``partitions`` lets the caller shape partitioning itself.
+        own setting (``None`` keeps it); ``events_per_task`` instead cuts each file into tasks of
+        that many entries; ``partitions`` lets the caller shape partitioning itself.
         Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, with no ``tasks`` or
-        ``process``: the fills run per join destination and ``partitions`` is refused. For several
-        histograms that share a sub-graph, plan them together with :func:`plan` so the shared work
-        runs ONCE.
+        ``process``: the fills run per join destination, and ``partitions`` and
+        ``events_per_task`` are refused. For several histograms that share a sub-graph, plan them
+        together with :func:`plan` so the shared work runs ONCE.
         """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
@@ -647,6 +649,7 @@ class Histogram(bh.Histogram):
             externals=dict(self._partials),
             backend=backend,
             steps_per_file=steps_per_file,
+            events_per_task=events_per_task,
             partitions=partitions,
             on_compiled=on_compiled,
             finalize=dense,
@@ -903,6 +906,7 @@ def plan(
     histograms: Any,
     *,
     steps_per_file: int | None = None,
+    events_per_task: int | None = None,
     backend: Callable[[], Any] | str | None = None,
     partitions: Sequence[Partition] | None = None,
 ) -> Plan[Any] | DurablePlanV2:
@@ -918,8 +922,9 @@ def plan(
     ``{label: histogram}``. Over several Sessions, a coffea fileset's for one, each Session is one
     plan, collated (:func:`graphed.collate`) into one with the sum of their tasks, so
     ``partitions`` needs one Session, and a dataset with no tasks is absent. ``steps_per_file``
-    overrides the source's own setting (``None`` keeps it). Column projection covers the union of
-    all histograms' fills.
+    overrides the source's own setting (``None`` keeps it); ``events_per_task`` instead cuts each
+    file into tasks of that many entries. Column projection covers the union of all histograms'
+    fills.
 
     Histserv-backed histograms are served, in a flat mapping over one Session, and their servers
     are in ``plan.services``. That value stays slot-keyed, a bare output name or
@@ -928,7 +933,7 @@ def plan(
 
     Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, for ``SequentialRunner`` or
     ``SubmitRunner``. Every output then reads past the join, in one Session, and neither
-    ``partitions`` nor histserv applies.
+    ``partitions``, ``events_per_task`` nor histserv applies.
     """
     leaves = _leaves(histograms)
     flat = {_named(path): h for path, h in leaves}
@@ -939,6 +944,7 @@ def plan(
         by_session.setdefault(_session_of(h), {})[name] = h
     kwargs: dict[str, Any] = {
         "steps_per_file": steps_per_file,
+        "events_per_task": events_per_task,
         "backend": backend,
         "partitions": partitions,
     }
