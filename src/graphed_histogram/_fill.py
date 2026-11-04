@@ -339,6 +339,21 @@ class _WeightGuard:
         raise GraphedError(self.message)
 
 
+def _node_factors(factors: Sequence[Any]) -> list[Any]:
+    """Return the weight factors that are graph inputs: neither constants nor flat factors."""
+    return [factor for factor in factors if not isinstance(factor, (ScalarFactor, *_SCALARS))]
+
+
+def _ones(values: Sequence[Operand]) -> Any:
+    """Return ones shaped like the first value that has numbers; a refused record adds no node."""
+    for value in values:
+        try:
+            return graphed.member_of(value, "nominal") ** 0
+        except GraphedTypeError:  # a string axis has no power
+            continue
+    _refuse("a flat factor on weight= needs a numeric value or an array weight to multiply into")
+
+
 def _lifted(factors: list[Any], values: Sequence[Operand]) -> list[Any]:
     """Multiply each scalar factor into the first array factor, or into ones when there is none.
 
@@ -351,7 +366,7 @@ def _lifted(factors: list[Any], values: Sequence[Operand]) -> list[Any]:
     arrays = [i for i, factor in enumerate(rest) if isinstance(factor, (Array, Varied))]
     if not arrays:
         arrays = [0]
-        rest.insert(0, graphed.member_of(values[0], "nominal") ** 0)
+        rest.insert(0, _ones(values))
     for factor in flat:
         rest[arrays[0]] = rest[arrays[0]] * factor
     return rest

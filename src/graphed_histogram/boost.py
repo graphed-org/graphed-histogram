@@ -31,6 +31,7 @@ from graphed.core import DurablePlanV2, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import Key, external_key
 from graphed.provenance import capture
+from graphed.systematics import ScalarFactor
 
 from ._chunked import Kind, dense
 from ._combine import (
@@ -59,6 +60,7 @@ from ._fill import (
     _fold_labels,
     _lifted,
     _mixed_row_spaces,
+    _node_factors,
     _WeightGuard,
     check_fill_types,
 )
@@ -297,6 +299,9 @@ class Histogram(bh.Histogram):
         ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
         ambient = None if unweighted or ctx is None else graphed.weight(ctx)
         check_fill_types(self.axes, args, ambient, weights, recorded_sample)
+        # lifting records nodes, so it waits until every refusal has had its say
+        all_weights = _lifted(all_weights, values)
+        weights = _node_factors(all_weights)
         axes = [graphed.reindex_to(value, ctx) for value in values]
         # the ambient one already is
         factors = [graphed.reindex_to(value, ctx) for value in weights]
@@ -322,7 +327,7 @@ class Histogram(bh.Histogram):
         # broadcast step, one node, the same graph as before
         broadcast = (
             ctx is not None
-            or any(isinstance(value, Varied) for value in given)
+            or any(isinstance(value, Varied) for value in (*given, *weights))
             or _mixed_row_spaces(session, axes[0], applied)
         )
 
@@ -365,12 +370,12 @@ class Histogram(bh.Histogram):
             )
         # weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
         # a real graph input and evaluation multiplies them elementwise
-        all_weights = _lifted(_factor_list(weight), values)
-        if not all(isinstance(w, (Array, Varied, *_SCALARS)) for w in all_weights):
+        all_weights = _factor_list(weight)
+        if not all(isinstance(w, (Array, Varied, ScalarFactor, *_SCALARS)) for w in all_weights):
             raise TypeError("weights must be graphed Arrays or scalar constants")
         if sample is not None and not isinstance(sample, (Array, Varied, *_SCALARS)):
             raise TypeError("sample= must be a graphed Array or a scalar constant")
-        weights = [w for w in all_weights if not isinstance(w, _SCALARS)]
+        weights = _node_factors(all_weights)
         recorded_sample = None if isinstance(sample, _SCALARS) else sample
 
         if self._fill_specs and variation_axis != self._axis_mode:

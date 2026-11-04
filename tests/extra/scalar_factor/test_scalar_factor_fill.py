@@ -90,3 +90,41 @@ def test_a_factor_lands_on_the_varied_array_beside_it() -> None:
     ev = _events()
     varied = graphed.vary(ev.w, "sf", up=ev.w * 1.1)
     assert list(_filled(ev.x, [varied, _lumi()])) == ["nominal", "sf_up", "lumi_up", "lumi_down"]
+
+
+@pytest.mark.parametrize(
+    ("fill", "message"),
+    [
+        (lambda ev: ([ev[["w"]], _lumi()], ev.x), "weight got a record"),
+        (lambda ev: (_lumi(), ev.pt), "axis 1 needs one value per entry of axis 0"),
+    ],
+)
+def test_a_refused_fill_with_a_factor_names_its_type_and_adds_no_node(
+    fill: Any, message: str
+) -> None:
+    ev = _events(ak.zip({"x": EVENTS.x, "w": EVENTS.w, "pt": JETS.pt}, depth_limit=1))
+    (weight, second), first = fill(ev), ev.x
+    hist = Histogram(bh.axis.Regular(4, 0, 4), bh.axis.Regular(4, 0, 4))
+    before = ev.session.node_count()
+    with pytest.raises(graphed.GraphedTypeError, match=message):
+        hist.fill(first, second, weight=weight)
+    assert ev.session.node_count() == before
+
+
+STRINGS = ak.Array({"s": ["a", "b", "a", "b"], "x": [0.5, 1.5, 2.5, 3.5]})
+
+
+def test_a_factor_alone_takes_its_ones_from_a_numeric_value_after_a_string() -> None:
+    ev = _events(STRINGS)
+    hist = Histogram(bh.axis.StrCategory(["a", "b"]), bh.axis.Regular(4, 0, 4))
+    hist.fill(ev.s, ev.x, weight=_lumi())
+    views = {k: ev.session.materialize(n).view() for k, n in fill_nodes_by_label(hist).items()}
+    assert views["lumi_up"].sum() == pytest.approx(4 * UP)
+
+
+def test_a_factor_alone_on_strings_only_is_refused_and_adds_no_node() -> None:
+    s = _events(STRINGS).s
+    before = s.session.node_count()
+    with pytest.raises(graphed.GraphedTypeError, match="needs a numeric value or an array weight"):
+        Histogram(bh.axis.StrCategory(["a", "b"])).fill(s, weight=_lumi())
+    assert s.session.node_count() == before
