@@ -74,3 +74,13 @@ def test_a_source_without_its_own_steps_is_one_task(route: str) -> None:
     plan = _plan(route, _fresh().fill(events.met))
     assert len(plan.tasks) == 1
     assert _counts(route, plan) == COUNTS
+
+
+@pytest.mark.parametrize("route", ROUTES)
+def test_events_per_task_cuts_tasks_by_entries(route: str, parquet: str) -> None:
+    plan = _plan(route, _parquet_hist(parquet), events_per_task=4)
+    assert [(t.partition.entry_start, t.partition.entry_stop) for t in plan.tasks] == [
+        (0, 4),
+        (4, 6),
+    ]
+    assert _counts(route, plan) == COUNTS
