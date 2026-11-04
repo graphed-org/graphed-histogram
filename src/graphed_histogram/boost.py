@@ -609,9 +609,9 @@ class Histogram(bh.Histogram):
         own setting (``None`` keeps it); ``events_per_task`` instead cuts each file into tasks of
         that many entries; ``partitions`` lets the caller shape partitioning itself.
         Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, with no ``tasks`` or
-        ``process``: the fills run per join destination and ``partitions`` is refused. For several
-        histograms that share a sub-graph, plan them together with :func:`plan` so the shared work
-        runs ONCE.
+        ``process``: the fills run per join destination, and ``partitions`` and
+        ``events_per_task`` are refused. For several histograms that share a sub-graph, plan them
+        together with :func:`plan` so the shared work runs ONCE.
         """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
@@ -933,7 +933,7 @@ def plan(
 
     Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, for ``SequentialRunner`` or
     ``SubmitRunner``. Every output then reads past the join, in one Session, and neither
-    ``partitions`` nor histserv applies.
+    ``partitions``, ``events_per_task`` nor histserv applies.
     """
     leaves = _leaves(histograms)
     flat = {_named(path): h for path, h in leaves}
