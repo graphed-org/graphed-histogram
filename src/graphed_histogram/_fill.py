@@ -11,8 +11,9 @@ from typing import Any, NoReturn
 import boost_histogram as bh
 import graphed
 import numpy as np
-from graphed import GraphedError, GraphedTypeError, Varied
+from graphed import Array, GraphedError, GraphedTypeError, Varied
 from graphed.provenance import capture
+from graphed.systematics import ScalarFactor
 
 from ._chunked import Partial, dense, empty
 from ._spec import content_hash, spec_of
@@ -336,6 +337,39 @@ class _WeightGuard:
         if not _drops_rows(value) and wide == _rows(_flat(value)):
             return _renest(value, factor)
         raise GraphedError(self.message)
+
+
+def _node_factors(factors: Sequence[Any]) -> list[Any]:
+    """Return the weight factors that are graph inputs: neither constants nor flat factors."""
+    return [factor for factor in factors if not isinstance(factor, (ScalarFactor, *_SCALARS))]
+
+
+def _ones(values: Sequence[Operand]) -> Any:
+    """Return ones shaped like the first value that has numbers; a refused record adds no node."""
+    for value in values:
+        try:
+            return graphed.member_of(value, "nominal") ** 0
+        except GraphedTypeError:  # a string axis has no power
+            continue
+    _refuse("a flat factor on weight= needs a numeric value or an array weight to multiply into")
+
+
+def _lifted(factors: list[Any], values: Sequence[Operand]) -> list[Any]:
+    """Multiply each scalar factor into the first array factor, or into ones when there is none.
+
+    A `ScalarFactor` holds no node, so it can only reach the fill through an array.
+    """
+    flat = [factor for factor in factors if isinstance(factor, ScalarFactor)]
+    if not flat:
+        return factors
+    rest = [factor for factor in factors if not isinstance(factor, ScalarFactor)]
+    arrays = [i for i, factor in enumerate(rest) if isinstance(factor, (Array, Varied))]
+    if not arrays:
+        arrays = [0]
+        rest.insert(0, _ones(values))
+    for factor in flat:
+        rest[arrays[0]] = rest[arrays[0]] * factor
+    return rest
 
 
 def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
