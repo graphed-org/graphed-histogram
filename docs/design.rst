@@ -167,8 +167,8 @@ Printed output::
 
 ``from_awkward`` wraps an array that is already in memory, which is all you need to look at what
 was recorded. It has no chunks to hand out, though, so it cannot be planned: evaluate one of its
-fills with ``session.materialize(node)`` — the last line above — and use a chunked source like
-``from_parquet`` when you want ``.plan()``.
+fills with ``session.materialize(node)`` — the last line above — or fill the whole histogram with
+``graphed.materialize(h)``, and use a chunked source like ``from_parquet`` when you want ``.plan()``.
 
 Two fills, one evaluation — and the result still counts both, because the histogram remembers it
 asked for that step twice. You get the deduplication without changing what your program means.
@@ -331,7 +331,7 @@ worker would otherwise rewrite underneath the run.
     if __name__ == "__main__":
         ak.to_parquet(EVENTS, "jets.parquet")
         plan = gh.plan({"jet_pt": staged()}, backend="graphed.awkward:AwkwardBackend")
-        parallel = ProcessPoolExecutor(max_workers=3).run(plan).value["jet_pt"]
+        parallel = ProcessPoolExecutor(workers=3).run(plan).value["jet_pt"]
         serial = SequentialRunner().run(plan).value["jet_pt"]
         print(parallel.view()["value"])
         print(parallel.view()["variance"])
@@ -407,9 +407,9 @@ boost axis constructors take no ``name=`` keyword, so the name is an attribute y
 
     one = run(staged(variation_axis=True))
     print([type(ax).__name__ for ax in one.axes])
-    print(graphed.labels(one))
-    print(graphed.nominal(one).view()["value"])
-    print(graphed.universe(one, "sf_up").view()["value"])
+    print(graphed.systematics.labels(one))
+    print(graphed.systematics.nominal(one).view()["value"])
+    print(graphed.systematics.universe(one, "sf_up").view()["value"])
 
     many = run(staged(variation_axis=False))
     print(sorted(many))
@@ -427,8 +427,8 @@ Printed output::
 On fixed axes the two modes agree bin for bin: the nominal slice of the axis-mode histogram and
 the ``nominal`` entry of the sibling-mode mapping are the same numbers (on growth axes they agree
 label by label at equal category and bin edge, as :ref:`growth-axes` details). What differs is
-the container, and ``graphed.labels`` / ``graphed.nominal`` / ``graphed.universe`` read both
-shapes the same way — in axis mode they slice the axis away, in sibling mode they index the
+the container, and ``graphed.systematics.labels`` / ``nominal`` / ``universe`` read both shapes
+the same way — in axis mode they slice the axis away, in sibling mode they index the
 mapping.
 
 The axis-mode result is an ordinary ``bh.Histogram`` with one extra axis, so nothing downstream
@@ -436,7 +436,8 @@ needs a special case: it merges with ``gh.add_histograms`` like any other, and p
 ``hist`` indexing work on it unchanged. The ``variation`` axis is a non-growth ``StrCategory``
 whose categories are your labels in sorted order, so two runs of the same program give you the
 same axis in the same order.
-``graphed.labels`` reports them nominal-first, which is the order you usually want to read.
+``graphed.systematics.labels`` reports them nominal-first, which is the order you usually want to
+read.
 
 
 What folds onto the axis and what stays a sibling

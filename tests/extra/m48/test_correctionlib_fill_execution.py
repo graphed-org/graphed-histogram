@@ -155,9 +155,9 @@ def _eager_reference() -> dict[str, np.ndarray]:
     session, _source, _h, observable, btag = _record()
     v = np.asarray(ak.to_numpy(ak.Array(session.materialize(observable))), dtype="float64")
     out: dict[str, np.ndarray] = {}
-    for label in graphed.labels(btag):
+    for label in graphed.systematics.labels(btag):
         w = np.asarray(
-            ak.to_numpy(ak.Array(session.materialize(graphed.universe(btag, label)))),
+            ak.to_numpy(ak.Array(session.materialize(graphed.systematics.universe(btag, label)))),
             dtype="float64",
         )
         counts, _ = np.histogram(
@@ -200,7 +200,7 @@ def test_the_process_pool_agrees_with_the_sequential_run() -> None:
     """
     pool = pytest.importorskip("graphed_exec_local").ProcessPoolExecutor
     seq = _run(SequentialRunner())["ht"]
-    par = _run(pool(max_workers=2))["ht"]
+    par = _run(pool(workers=2))["ht"]
     assert sorted(par) == sorted(seq)
     for label in seq:
         assert np.allclose(_values(par[label]), _values(seq[label]), rtol=1e-12, atol=0)
