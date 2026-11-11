@@ -79,26 +79,41 @@ def test_a_histogram_with_no_fills_comes_back_empty_without_a_warning() -> None:
     assert not isinstance(filled, gh.Histogram)
 
 
-def test_materialize_reads_no_storage_of_the_deferred_histogram(
+def test_materialize_builds_no_result_from_the_deferred_histograms_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Its one read of a deferred histogram's storage is the outside-counts emptiness check."""
     source, _ = _source(Session(AwkwardBackend()))
     h = hist_graphed.Hist.new.Reg(4, 0.0, 4.0, name="x").Double().fill(source.x)
     unfilled = hist_graphed.Hist.new.Reg(4, 0.0, 4.0, name="x").Double()
-    real_view, real_init = bh.Histogram.view, hist.Hist.__init__
+    real_view, real_sum, real_empty = bh.Histogram.view, bh.Histogram.sum, bh.Histogram.empty
+    real_init = hist.Hist.__init__
+    checked: set[int] = set()
 
     def view(self: Any, *args: Any, **kwargs: Any) -> Any:
         assert not isinstance(self, gh.Histogram)
         return real_view(self, *args, **kwargs)
+
+    def total(self: Any, *args: Any, **kwargs: Any) -> Any:
+        assert not isinstance(self, gh.Histogram)
+        return real_sum(self, *args, **kwargs)
+
+    def empty(self: Any, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(self, gh.Histogram):
+            checked.add(id(self))
+        return real_empty(self, *args, **kwargs)
 
     def init(self: Any, *args: Any, **kwargs: Any) -> None:
         assert not (args and isinstance(args[0], gh.Histogram))
         real_init(self, *args, **kwargs)
 
     monkeypatch.setattr(bh.Histogram, "view", view)
+    monkeypatch.setattr(bh.Histogram, "sum", total)
+    monkeypatch.setattr(bh.Histogram, "empty", empty)
     monkeypatch.setattr(hist.Hist, "__init__", init)
-    filled, empty = graphed.materialize([h, unfilled])
-    assert (filled.sum(), empty.sum()) == (3.0, 0.0)
+    filled, empty_ = graphed.materialize([h, unfilled])
+    assert checked == {id(h), id(unfilled)}
+    assert (real_sum(filled), real_sum(empty_)) == (3.0, 0.0)
 
 
 def test_a_failing_fill_raises_at_the_users_line() -> None:
