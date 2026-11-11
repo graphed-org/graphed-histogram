@@ -63,7 +63,7 @@ Fitting and plotting are `hist`, scipy and matplotlib code on `filled`, as they 
 ## Your first deferred histogram
 
 The same file, through a plan a runner executes: this is how a fill runs over a whole dataset, a
-chunk per task. A runner hands back the class you instantiated; here a
+chunk per task. A runner hands back the in-memory class your histogram extends; here a
 `boost_histogram.Histogram`.
 
 ```python
