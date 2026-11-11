@@ -27,6 +27,7 @@ from typing import Any, TypeVar, overload
 import boost_histogram as bh
 import graphed
 from graphed import Array, GraphedError, Varied, aggregate_plan, collate
+from graphed.aggregate import fold_of
 from graphed.core import DurablePlanV2, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
 from graphed.execute import CompiledGraph, Key, external_key
@@ -39,11 +40,13 @@ from graphed.systematics import (
     reindex_to,
     unify_contexts,
 )
+from graphed.write import PartWrite
 
 from ._chunked import Kind, dense
 from ._combine import (
+    PATHS,
     Layout,
-    _add_groups,
+    _AddGroups,
     _dense_slots,
     _GroupReduce,
     _GroupZero,
@@ -84,12 +87,12 @@ from ._spec import content_hash, spec_of
 for _obj in (
     FillEvaluator,
     HistogramForm,
+    _AddGroups,
     _GroupReduce,
     _GroupZero,
     _SumFills,
     _WeightGuard,
     _ZeroHist,
-    _add_groups,
     _dense_slots,
     add_histograms,
 ):
@@ -742,6 +745,10 @@ def _slots(name: str, hist: Histogram) -> Layout:
     )
 
 
+#: one whole-dataset reduction among a plan's outputs: its slot key and its Array
+_Scalar = tuple[SlotKey, Array]
+
+
 @dataclass
 class HistogramPieces:
     """The histogram half of one plan, for a plan composing these fills with outputs of its own.
@@ -762,6 +769,7 @@ class HistogramPieces:
     #: per histserv-backed slot: its key, spec and context
     backing: tuple[tuple[SlotKey, str, Any], ...]
     served: bool = False
+    scalars: tuple[_Scalar, ...] = ()
     #: makes each slot the dense histogram of its class, on the head once the run is combined
     finalize: Callable[[dict[SlotKey, Any]], dict[SlotKey, Any]] = _dense_slots
 
@@ -776,7 +784,7 @@ class HistogramPieces:
                 "one plan, so build fresh pieces for another"
             )
         self.reduce.positions = _positions(compiled, self.fill_nodes)
-        return _variation_labels(self.items, compiled)
+        return _variation_labels(self.items, compiled, self.scalars)
 
     @overload
     def serve(self, plan: Plan[V]) -> Plan[V]: ...
@@ -810,6 +818,15 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     )
     if not items:
         raise ValueError("plan() needs at least one histogram")
+    return _pieces(items)
+
+
+def _pieces(
+    items: tuple[tuple[str, Histogram], ...],
+    scalars: tuple[_Scalar, ...] = (),
+    writes: tuple[str, ...] = (),
+) -> HistogramPieces:
+    """Return the pieces of ``items``, with ``scalars`` and ``writes`` slots beside theirs."""
     if any(not h.staged_fills() for _, h in items):
         raise ValueError("every histogram must have at least one staged fill before planning")
     layout = tuple(slot for name, hist in items for slot in _slots(name, hist))
@@ -831,14 +848,23 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
         for key, _ids, _spec in _slots(name, h)
     )
     kinds = tuple((key, _kind(h)) for name, h in items for key, _ids, _spec in _slots(name, h))
+    folds = (*((key, fold_of(array)) for key, array in scalars), *((w, PATHS) for w in writes))
     return HistogramPieces(
-        fill_nodes=tuple(n for _, h in items for n in h.fill_nodes()),
-        reduce=_GroupReduce(layout, backed, dense=dense, kinds=kinds),
-        combine=_add_groups,
-        empty=_GroupZero(layout, backed, dense, kinds),
+        fill_nodes=(*(n for _, h in items for n in h.fill_nodes()), *(a for _, a in scalars)),
+        reduce=_GroupReduce(
+            layout,
+            backed,
+            dense=dense,
+            kinds=kinds,
+            scalars=tuple((key, array.node_id) for key, array in scalars),
+            writes=writes,
+        ),
+        combine=_AddGroups(folds),
+        empty=_GroupZero(layout, backed, dense, kinds, folds),
         externals=evaluators,
         items=items,
         backing=backing,
+        scalars=scalars,
     )
 
 
@@ -846,9 +872,33 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
 _Path = tuple[Any, ...]
 
 
-def _leaves(histograms: Any, path: _Path = ()) -> list[tuple[_Path, Histogram]]:
-    """Return each histogram in a nesting of mappings, with its path, in mapping order."""
+#: what :func:`plan` takes as one output: a histogram, or a whole-dataset reduction (an Array or a
+#: ``Varied`` of them)
+_Output = Histogram | Array | Varied
+
+_TAKES = "gh.plan takes histograms and whole-dataset reductions"
+
+
+def _universes(output: Array | Varied) -> dict[str | None, Array]:
+    """Return a reduction's Array per label, under ``None`` when it is not varied."""
+    if isinstance(output, Array):
+        return {None: output}
+    return {
+        label: graphed.systematics.universe(output, label)
+        for label in graphed.systematics.labels(output)
+    }
+
+
+def _leaves(histograms: Any, path: _Path = ()) -> list[tuple[_Path, _Output]]:
+    """Return each output in a nesting of mappings, with its path, in mapping order."""
     if isinstance(histograms, Histogram):
+        return [(path, histograms)]
+    if isinstance(histograms, (Array, Varied)):
+        for array in _universes(histograms).values():
+            try:
+                fold_of(array)
+            except TypeError as err:
+                raise TypeError(f"{_TAKES}; output {_named(path)!r} {err}") from None
         return [(path, histograms)]
     if isinstance(histograms, Mapping):
         for key in histograms:
@@ -860,15 +910,19 @@ def _leaves(histograms: Any, path: _Path = ()) -> list[tuple[_Path, Histogram]]:
     if isinstance(histograms, Iterable) and not path:
         return _leaves({str(i): h for i, h in enumerate(histograms)})
     held = _named(path) or "the argument"
-    raise TypeError(f"gh.plan takes histograms; {held} is {type(histograms).__name__}")
+    raise TypeError(f"{_TAKES}; {held} is {type(histograms).__name__}")
 
 
 def _named(path: _Path) -> str:
     return "/".join(map(str, path))
 
 
-def _session_of(h: Histogram) -> Any:
-    return h.fill_nodes()[0].session if h.staged_fills() else None
+def _session_of(output: _Output | PartWrite) -> Any:
+    if isinstance(output, PartWrite):
+        return output.array.session
+    if isinstance(output, Histogram):
+        return output.fill_nodes()[0].session if output.staged_fills() else None
+    return next(iter(_universes(output).values())).session
 
 
 @dataclass(frozen=True)
@@ -896,14 +950,23 @@ class _Nested:
 
 
 def _one_plan(
-    histograms: Mapping[str, Histogram],
+    outputs: Mapping[str, _Output | PartWrite],
     *,
     finalize: Callable[[Any], Any] | None = None,
     **kwargs: Any,
 ) -> Plan[Any] | DurablePlanV2:
-    p = pieces(histograms)
+    writes = {name: w for name, w in outputs.items() if isinstance(w, PartWrite)}
+    scalars = tuple(
+        (name if label is None else (name, label), array)
+        for name, output in outputs.items()
+        if isinstance(output, (Array, Varied))
+        for label, array in _universes(output).items()
+    )
+    hists = tuple((name, h) for name, h in outputs.items() if isinstance(h, Histogram))
+    p = _pieces(hists, scalars, tuple(writes))
     built = aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
         *p.fill_nodes,
+        writes=tuple(writes.values()),
         reduce=p.reduce,
         combine=p.combine,
         empty=p.empty,
@@ -922,6 +985,7 @@ def plan(
     events_per_task: int | None = None,
     backend: Callable[[], Any] | str | None = None,
     partitions: Sequence[Partition] | None = None,
+    writes: Mapping[str, PartWrite] | None = None,
 ) -> Plan[Any] | DurablePlanV2:
     """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
 
@@ -931,13 +995,19 @@ def plan(
     ``compute(dict_of_hists)`` analogue. ``histograms`` is a histogram, a mapping or sequence of
     them, or mappings nested to any depth.
 
+    An output may also be a whole-dataset reduction (``sum``, ``count``, ``count_nonzero``,
+    ``any``, ``all``, ``min`` or ``max`` with no axis, per :func:`graphed.aggregate.fold_of`),
+    read in the same pass; any other array raises a ``TypeError`` naming the rule. ``writes``
+    maps names to :class:`graphed.write.PartWrite` (``parquet_write(...)``), each writing one part
+    per task from the same read, its result the list of part paths.
+
     ``run(plan).value`` comes back in the nesting that went in, each output a histogram or a
-    ``{label: histogram}``. Over several Sessions, a coffea fileset's for one, each Session is one
-    plan, collated (:func:`graphed.collate`) into one with the sum of their tasks, so
-    ``partitions`` needs one Session, and a dataset with no tasks is absent. ``steps_per_file``
-    overrides the source's own setting (``None`` keeps it); ``events_per_task`` instead cuts each
-    file into tasks of that many entries. Column projection covers the union of all histograms'
-    fills.
+    value, or a ``{label: ...}`` of them for a varied one, and each write under its name. Over
+    several Sessions, a coffea fileset's for one, each Session is one plan, collated
+    (:func:`graphed.collate`) into one with the sum of their tasks, so ``partitions`` needs one
+    Session, and a dataset with no tasks is absent. ``steps_per_file`` overrides the source's own
+    setting (``None`` keeps it); ``events_per_task`` instead cuts each file into tasks of that many
+    entries. Column projection covers the union of all outputs' columns.
 
     Histserv-backed histograms are served, in a flat mapping over one Session, and their servers
     are in ``plan.services``. That value stays slot-keyed, a bare output name or
@@ -948,11 +1018,24 @@ def plan(
     ``SubmitRunner``. Every output then reads past the join, in one Session, and neither
     ``partitions``, ``events_per_task`` nor histserv applies.
     """
-    leaves = _leaves(histograms)
+    outputs = _leaves(histograms)
+    if not outputs:
+        raise ValueError("gh.plan needs at least one histogram or reduction")
+    for name, w in (writes or {}).items():
+        if not isinstance(w, PartWrite):
+            raise TypeError(
+                f"gh.plan(writes=) takes PartWrite values; {name!r} is {type(w).__name__}"
+            )
+    if writes and any(path == () for path, _ in outputs):
+        raise TypeError("gh.plan(writes=) names its results, so pass the outputs as a mapping")
+    for path, _ in outputs:
+        if writes and path[0] in writes:
+            raise ValueError(f"gh.plan: {path[0]!r} names both an output and a write")
+    leaves = [*outputs, *(((name,), w) for name, w in (writes or {}).items())]
     flat = {_named(path): h for path, h in leaves}
     if len(flat) != len(leaves):
         raise ValueError("gh.plan: two outputs have the same '/'-joined name")
-    by_session: dict[Any, dict[str, Histogram]] = {}
+    by_session: dict[Any, dict[str, _Output | PartWrite]] = {}
     for name, h in flat.items():
         by_session.setdefault(_session_of(h), {})[name] = h
     kwargs: dict[str, Any] = {
@@ -962,7 +1045,11 @@ def plan(
         "partitions": partitions,
     }
     paths = tuple(path for path, _ in leaves)
-    served = [name for name, h in flat.items() if h.recording().histserv is not None]
+    served = [
+        name
+        for name, h in flat.items()
+        if isinstance(h, Histogram) and h.recording().histserv is not None
+    ]
     if served:
         if len(by_session) > 1 or any(len(path) != 1 for path in paths):
             raise TypeError(
@@ -995,7 +1082,9 @@ def _cone(node: Array) -> set[int]:
 
 
 def _variation_labels(
-    items: Sequence[tuple[str, Histogram]], compiled: CompiledGraph
+    items: Sequence[tuple[str, Histogram]],
+    compiled: CompiledGraph,
+    scalars: Sequence[_Scalar] = (),
 ) -> tuple[tuple[Key, tuple[tuple[str, ...], Any]], ...] | None:
     """Which labels' universes reach each node of the compiled reduced store.
 
@@ -1010,16 +1099,24 @@ def _variation_labels(
     both the key enumeration and the frame source; nothing here computes either.
     """
     node_map = compiled.correspondence.node_map
+    universes = [
+        (label, per_label.get(label, per_label["nominal"]))
+        for _name, hist in items
+        for label in _output_labels(hist)
+        for per_label in hist.recording().label_maps
+    ]
+    # a varied reduction's universe is keyed (output, label)
+    universes += [
+        (label, array)
+        for key, array in scalars
+        if isinstance(key, tuple) and (label := key[1]) is not None
+    ]
     reached: dict[Key, set[str]] = {}
-    for _name, hist in items:
-        for label in _output_labels(hist):
-            if label == "nominal":
-                continue
-            for per_label in hist.recording().label_maps:
-                node = per_label.get(label, per_label["nominal"])
-                for nid in _cone(node):
-                    # total on this cone: every node feeding a MARKED fill survives DCE
-                    reached.setdefault(node_map[nid], set()).add(label)
+    for label, node in universes:
+        if label != "nominal":
+            for nid in _cone(node):
+                # total on this cone: every node feeding a MARKED output survives DCE
+                reached.setdefault(node_map[nid], set()).add(label)
     if not reached:  # the predicate is over the LABELS, hence over the compiled program
         return None
     return tuple(

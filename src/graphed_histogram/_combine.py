@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import operator
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -11,6 +12,7 @@ from typing import Any
 import boost_histogram as bh
 import numpy as np
 from graphed import Array, GraphedError
+from graphed.aggregate import Fold
 from graphed.core import GraphStore
 from graphed.execute import CompiledGraph
 
@@ -171,7 +173,8 @@ class _GroupReduce:
     Each slot sums its own fills, each read at its compiled position (``positions``, set by
     ``pieces.on_compiled``). A ``backed`` slot's sum is shipped to its histserv server and its
     value is the receipt; a ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's
-    class.
+    class. Each ``scalars`` slot is its reduction's chunk value, read the same way, and each
+    ``writes`` slot lists this chunk's part path, which the plan's values end with.
     """
 
     layout: Layout
@@ -179,6 +182,9 @@ class _GroupReduce:
     positions: dict[int, int] = field(default_factory=dict)
     dense: tuple[SlotKey, ...] = ()
     kinds: tuple[tuple[SlotKey, Kind], ...] = ()
+    #: per whole-dataset reduction slot: its key and its record node id
+    scalars: tuple[tuple[SlotKey, int], ...] = ()
+    writes: tuple[SlotKey, ...] = ()
 
     def output_summaries(self) -> list[str]:
         """Describe each output for a plan's repr, counting the labels that are slots of it."""
@@ -189,6 +195,11 @@ class _GroupReduce:
         return [
             _summary(name, slots[0][1], kinds.get(slots[0][0], BH), len(slots))
             for name, slots in outputs.items()
+        ] + [
+            f"{name} (reduction)"
+            for name in dict.fromkeys(
+                key[0] if isinstance(key, tuple) else key for key, _ in self.scalars
+            )
         ]
 
     def __call__(self, fills: list[object]) -> dict[SlotKey, Any]:
@@ -207,6 +218,9 @@ class _GroupReduce:
                 else out[key]
                 for key, _ids, spec in self.layout
             }
+        out.update((key, fills[self.positions[nid]]) for key, nid in self.scalars)
+        paths = fills[len(fills) - len(self.writes) :]
+        out.update((key, [path]) for key, path in zip(self.writes, paths, strict=True))
         return out
 
     def resolve_services(self, value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
@@ -217,15 +231,33 @@ class _GroupReduce:
         }
 
 
-def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
+#: a write slot's fold: its part paths, in combine order
+PATHS = Fold(operator.add, [])
+
+#: per slot that is not a histogram, a reduction's or a write's: its key and its fold
+Folds = tuple[tuple[SlotKey, Fold], ...]
+
+
+@dataclass(frozen=True)
+class _AddGroups:
     """Add two slot groups key-wise: the group plan's combine.
 
-    Histograms add through :func:`add_histograms`, and receipts by their own ``+``.
+    A ``folds`` slot folds by its :class:`~graphed.aggregate.Fold`; histograms add through
+    :func:`add_histograms`, and receipts by their own ``+``.
     """
-    return {
-        key: a[key] + b[key] if isinstance(a[key], Receipt) else add_histograms(a[key], b[key])
-        for key in a
-    }
+
+    folds: Folds = ()
+
+    def __call__(self, a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
+        folds = dict(self.folds)
+        return {
+            key: folds[key](a[key], b[key])
+            if key in folds
+            else a[key] + b[key]
+            if isinstance(a[key], Receipt)
+            else add_histograms(a[key], b[key])
+            for key in a
+        }
 
 
 @dataclass(frozen=True)
@@ -234,6 +266,7 @@ class _GroupZero:
     backed: tuple[SlotKey, ...] = ()
     dense: tuple[SlotKey, ...] = ()
     kinds: tuple[tuple[SlotKey, Kind], ...] = ()
+    folds: Folds = ()
 
     def __call__(self) -> dict[SlotKey, Any]:
         kinds = dict(self.kinds)
@@ -244,7 +277,10 @@ class _GroupZero:
                 return Receipt(spec, kind=kind)
             return as_kind(zero_of(spec), kind) if key in self.dense else empty(spec, kind)
 
-        return {key: zero(key, spec) for key, _ids, spec in self.layout}
+        return {
+            **{key: zero(key, spec) for key, _ids, spec in self.layout},
+            **{key: fold.empty for key, fold in self.folds},
+        }
 
 
 def _dense_slots(value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:

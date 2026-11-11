@@ -932,6 +932,17 @@ rounding, and integer and exact sums agree exactly.
 Composing histograms with other outputs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+A whole-dataset reduction or a skim needs none of what follows: ``gh.plan`` takes them beside the
+histograms, in the same read, each result under its own name:
+
+.. code-block:: python
+
+    plan = gh.plan(
+        {"x": h, "sumw": gak.sum(events.weight, axis=None)},
+        writes={"skim": parquet_write(events[events.x > 2], "out/skim", name=lambda p: f"{p.blind_step}.parquet")},
+    )
+    out = SequentialRunner().run(plan).value  # out["sumw"] is a float, out["skim"] the part paths
+
 ``gh.plan`` is built from ``gh.boost.pieces``, which you can use yourself to put your histograms in
 one plan with outputs of your own — here an event count. Mark your outputs first and the fills after,
 hand the histogram half of the values to ``pieces.reduce`` and ``pieces.finalize``, and serve the
