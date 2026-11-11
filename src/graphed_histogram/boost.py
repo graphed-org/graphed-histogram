@@ -26,7 +26,7 @@ from typing import Any, TypeVar, overload
 
 import boost_histogram as bh
 import graphed
-from graphed import Array, GraphedError, Varied, aggregate_plan, collate
+from graphed import Array, GraphedError, PlanPieces, Varied, aggregate_plan, collate
 from graphed.aggregate import fold_of
 from graphed.core import DurablePlanV2, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
@@ -682,6 +682,39 @@ class Histogram(bh.Histogram):
             partitions=partitions,
             on_compiled=on_compiled,
             finalize=dense,
+        )
+
+    def __graphed_pieces__(self) -> PlanPieces:
+        """Return this histogram's share of the plan :func:`graphed.materialize` runs it in.
+
+        Its result is a new histogram, as a run builds it, and this one stays un-run: what
+        :func:`unpack` gives for it, the in-memory class filled, or for a varied one
+        ``{label: histogram}``. With no fills it is that class, empty.
+        """
+        if self._histserv is not None:
+            raise GraphedError(
+                "graphed.materialize runs no servers, so it cannot fill this histserv-backed "
+                "histogram: run the analysis to fill it, through graphed_histogram.plan({name: "
+                "hist}) on an executor that starts them"
+            )
+        if not self._fill_nodes:
+            return PlanPieces(
+                outputs=(),
+                reduce=dense,
+                combine=add_histograms,
+                empty=_ZeroHist(self._spec, True, _kind(self)),
+                finalize=dense,
+                on_compiled=lambda _: None,
+            )
+        p = pieces({"filled": self})
+        return PlanPieces(
+            outputs=p.fill_nodes,
+            reduce=p.reduce,
+            combine=p.combine,
+            empty=p.empty,
+            finalize=lambda value: unpack(value)["filled"],
+            on_compiled=p.on_compiled,
+            externals=p.externals,
         )
 
 
