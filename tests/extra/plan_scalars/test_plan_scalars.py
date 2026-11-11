@@ -21,8 +21,8 @@ import graphed_histogram as gh
 
 RUNNERS: dict[str, Any] = {
     "sequential": SequentialRunner,
-    "thread": lambda: ThreadExecutor(max_workers=2),
-    "process": lambda: ProcessPoolExecutor(max_workers=2),
+    "thread": lambda: ThreadExecutor(workers=2),
+    "process": lambda: ProcessPoolExecutor(workers=2),
 }
 
 

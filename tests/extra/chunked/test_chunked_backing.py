@@ -92,8 +92,8 @@ def _hists(dense: bool) -> dict[str, gh.boost.Histogram]:
 
 RUNNERS: dict[str, Callable[[], Any]] = {
     "sequential": SequentialRunner,
-    "process": lambda: ProcessPoolExecutor(max_workers=2, comms=None),
-    "peer-ipc": lambda: ProcessPoolExecutor(max_workers=3, comms="ipc"),
+    "process": lambda: ProcessPoolExecutor(workers=2, comms=None),
+    "peer-ipc": lambda: ProcessPoolExecutor(workers=3, comms="ipc"),
 }
 
 

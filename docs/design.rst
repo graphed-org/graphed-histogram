@@ -331,7 +331,7 @@ worker would otherwise rewrite underneath the run.
     if __name__ == "__main__":
         ak.to_parquet(EVENTS, "jets.parquet")
         plan = gh.plan({"jet_pt": staged()}, backend="graphed.awkward:AwkwardBackend")
-        parallel = ProcessPoolExecutor(max_workers=3).run(plan).value["jet_pt"]
+        parallel = ProcessPoolExecutor(workers=3).run(plan).value["jet_pt"]
         serial = SequentialRunner().run(plan).value["jet_pt"]
         print(parallel.view()["value"])
         print(parallel.view()["variance"])
