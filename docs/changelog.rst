@@ -4,28 +4,55 @@ What changed
 Unreleased
 ----------
 
-Requires ``graphed`` with ``graphed.PlanPieces``.
-
 Added
 ~~~~~
 
-* ``graphed.materialize(h)`` takes a deferred histogram (``gh.Histogram``, ``hist.graphed.Hist``)
-  and returns a new filled histogram, as a runner does: the class you instantiated, or
-  ``{label: histogram}`` for a varied one, in one read of each source with the call's other
-  results. ``h`` itself stays un-run. A histogram with no fills comes back empty, and an in-memory
-  source, which has no plan, fills too. A histserv-backed histogram needs a plan on an executor
-  that starts its servers, so ``materialize`` raises naming that.
+* ``gh.plan`` takes a histogram, a sequence, or mappings nested to any depth, over any number of
+  Sessions, and ``run(plan).value`` comes back in that nesting: a coffea fileset's
+  ``{"DY": {"zmass": h}, ...}`` is one plan with the sum of the tasks, with no ``graphed.collate`` or
+  ``gh.unpack``. An output is a histogram or a ``{label: histogram}``. ``gh.label_listing`` takes
+  nested mappings, and ``gh.unpack`` recurses into a collated value and unpacks an unpacked one to
+  itself. ``gh.plan`` now also names its outputs in ``repr(plan)``, on a graphed whose plans show
+  them.
+* ``h.plan()`` and ``gh.plan()`` run over a ``graphed.join``, keyed or positional, with several
+  outputs past the join, in any nesting. A plan over a join runs on ``SequentialRunner`` and
+  ``SubmitRunner``; it cannot be collated with other Sessions. Both are annotated
+  ``Plan | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process``, or passes the plan
+  to a runner typed for ``Plan`` alone, such as ``ProcessPoolExecutor``, narrows with
+  ``isinstance(plan, graphed.core.Plan)``.
 * Reading a histogram with staged fills warns, at your line: ``gh.UnrunHistogramWarning``, a
   ``UserWarning`` that the standard warning filter turns into an error. That covers every read of
   its bins and what builds on them (``h[...]``, ``project``, arithmetic, ``==``, ``hist.Hist(h)``),
   none of which is recorded into the run (:ref:`reading-before-it-runs`).
 * ``repr(h)`` and ``str(h)`` end in ``# N staged fills, not run`` while ``h`` has staged fills.
+* ``graphed_histogram.__version__``, read from the installed package.
+
+Changed
+~~~~~~~
+
+* ``dir(graphed_histogram)`` is ``__all__``, so tab completion shows the public names only.
+* ``run(gh.plan({...})).value`` is ``{name: histogram}`` or ``{name: {label: histogram}}``, so
+  ``value["met"]["nominal"]`` replaces ``value[("met", "nominal")]``. Code that calls ``gh.unpack``
+  keeps working. A histserv-backed plan keeps the slot keys, for every output in it, and
+  ``gh.unpack`` reads those as before. A tuple key in the mapping refuses, as ``gh.unpack`` would
+  read it as ``(output, label)``: nest the mapping instead.
 
 Fixed
 ~~~~~
 
+* A fill the recorded types rule out raises ``GraphedTypeError`` at the fill line, naming the axis
+  and the type, before any data is read: a record on an axis, a weight, the ambient weight or
+  ``sample=``, and, in any variation, axes or ``sample=`` at different list depths
+  (``fill(met=ev.MET_pt, njet=ev.Jet_pt)``, which paired the wrong values silently when the counts
+  happened to match). A jagged value alone still fills flattened.
+* **Behavior change:** ``fill(a=gak.flatten(x), b=jagged)`` filled on 0.0.7 and now raises. A
+  flattened column and a per-event one have the same recorded type, so it cannot be told from the
+  mistake above. Flatten every jagged axis.
 * ``copy.copy(h)`` and ``h.copy(deep=False)`` no longer share what ``h`` recorded, so a fill on the
   copy stages on the copy alone.
+* ``h.copy()`` and ``copy.deepcopy(h)`` work on a histogram with staged fills, which raised
+  ``cannot pickle 'builtins.GraphStore' object``. The copy shares the recorded graph and any
+  histserv context, and owns its storage, axes and list of fills.
 * ``gh.plan`` and ``h.plan()`` keep the partitioning chosen at read time: ``steps_per_file`` now
   defaults to ``None``, the source's own setting, as in ``graphed.aggregate_plan``, so
   ``from_parquet(..., steps_per_file=3)`` gives three tasks without repeating it on the plan. An

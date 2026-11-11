@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import json
+import math
+import operator
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
 import boost_histogram as bh
 import numpy as np
-from graphed import Array, CompiledGraph, GraphedError
+from graphed import Array, GraphedError
+from graphed.aggregate import Fold
 from graphed.core import GraphStore
+from graphed.execute import CompiledGraph
 
 from ._chunked import BH, Chunked, Kind, Partial, as_kind, dense, empty
 from ._histserv import Receipt, SlotKey, _ship
-from ._spec import zero_of
+from ._spec import _make_axis, zero_of
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,14 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
     the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
     merge chunked; any other pair is made dense first.
+
+    >>> a = bh.Histogram(bh.axis.Regular(3, 0, 3)).fill([0.5, 1.5])
+    >>> gh.add_histograms(a, bh.Histogram(bh.axis.Regular(3, 0, 3)).fill([1.5])).values().tolist()
+    [1.0, 2.0, 0.0]
+    >>> grew_up = bh.Histogram(bh.axis.Regular(1, 0, 1, growth=True)).fill([2.5])
+    >>> grew_down = bh.Histogram(bh.axis.Regular(1, 0, 1, growth=True)).fill([-0.5])
+    >>> gh.add_histograms(grew_up, grew_down).axes[0].edges.tolist()
+    [-1.0, 0.0, 1.0, 2.0, 3.0]
     """
     merged = a.merged(b) if isinstance(a, Chunked) else None
     if merged is not None:
@@ -127,6 +140,10 @@ class _SumFills:
     dense: bool = False
     kind: Kind = BH
 
+    def output_summaries(self) -> list[str]:
+        """Describe this histogram for a plan's repr."""
+        return [_summary("", self.spec, self.kind, 1)]
+
     def __call__(self, fills: list[object]) -> Partial:
         """Sum the fills into this slot's partial, as ``kind``.
 
@@ -141,6 +158,17 @@ class _SumFills:
         return total
 
 
+def _summary(name: str, spec: str, kind: Kind, labels: int) -> str:
+    """Say what one output is: ``mass (Hist, 120 bins, 3 labels)``."""
+    axes = [_make_axis(axis) for axis in json.loads(spec)["axes"]]
+    bins = math.prod(max(axis.size, 1) for axis in axes)
+    grows = "+" if any(axis.traits.growth for axis in axes) else ""
+    shape = f"{kind[0].__name__}, {bins}{grows} bin{'' if bins == 1 and not grows else 's'}"
+    if labels > 1:
+        shape += f", {labels} labels"
+    return f"{name} ({shape})" if name else shape
+
+
 #: the slot layout: per slot, its key, the RECORD ids of the fills it sums (one per staged fill, so
 #: an id interned twice repeats), and its spec
 Layout = tuple[tuple[SlotKey, tuple[int, ...], str], ...]
@@ -153,7 +181,8 @@ class _GroupReduce:
     Each slot sums its own fills, each read at its compiled position (``positions``, set by
     ``pieces.on_compiled``). A ``backed`` slot's sum is shipped to its histserv server and its
     value is the receipt; a ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's
-    class.
+    class. Each ``scalars`` slot is its reduction's chunk value, read the same way, and each
+    ``writes`` slot lists this chunk's part path, which the plan's values end with.
     """
 
     layout: Layout
@@ -161,6 +190,25 @@ class _GroupReduce:
     positions: dict[int, int] = field(default_factory=dict)
     dense: tuple[SlotKey, ...] = ()
     kinds: tuple[tuple[SlotKey, Kind], ...] = ()
+    #: per whole-dataset reduction slot: its key and its record node id
+    scalars: tuple[tuple[SlotKey, int], ...] = ()
+    writes: tuple[SlotKey, ...] = ()
+
+    def output_summaries(self) -> list[str]:
+        """Describe each output for a plan's repr, counting the labels that are slots of it."""
+        kinds = dict(self.kinds)
+        outputs: dict[str, list[tuple[SlotKey, str]]] = {}
+        for key, _ids, spec in self.layout:
+            outputs.setdefault(key[0] if isinstance(key, tuple) else key, []).append((key, spec))
+        return [
+            _summary(name, slots[0][1], kinds.get(slots[0][0], BH), len(slots))
+            for name, slots in outputs.items()
+        ] + [
+            f"{name} (reduction)"
+            for name in dict.fromkeys(
+                key[0] if isinstance(key, tuple) else key for key, _ in self.scalars
+            )
+        ]
 
     def __call__(self, fills: list[object]) -> dict[SlotKey, Any]:
         if not self.positions:
@@ -178,6 +226,9 @@ class _GroupReduce:
                 else out[key]
                 for key, _ids, spec in self.layout
             }
+        out.update((key, fills[self.positions[nid]]) for key, nid in self.scalars)
+        paths = fills[len(fills) - len(self.writes) :]
+        out.update((key, [path]) for key, path in zip(self.writes, paths, strict=True))
         return out
 
     def resolve_services(self, value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
@@ -188,15 +239,33 @@ class _GroupReduce:
         }
 
 
-def _add_groups(a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
+#: a write slot's fold: its part paths, in combine order
+PATHS = Fold(operator.add, [])
+
+#: per slot that is not a histogram, a reduction's or a write's: its key and its fold
+Folds = tuple[tuple[SlotKey, Fold], ...]
+
+
+@dataclass(frozen=True)
+class _AddGroups:
     """Add two slot groups key-wise: the group plan's combine.
 
-    Histograms add through :func:`add_histograms`, and receipts by their own ``+``.
+    A ``folds`` slot folds by its :class:`~graphed.aggregate.Fold`; histograms add through
+    :func:`add_histograms`, and receipts by their own ``+``.
     """
-    return {
-        key: a[key] + b[key] if isinstance(a[key], Receipt) else add_histograms(a[key], b[key])
-        for key in a
-    }
+
+    folds: Folds = ()
+
+    def __call__(self, a: dict[SlotKey, Any], b: dict[SlotKey, Any]) -> dict[SlotKey, Any]:
+        folds = dict(self.folds)
+        return {
+            key: folds[key](a[key], b[key])
+            if key in folds
+            else a[key] + b[key]
+            if isinstance(a[key], Receipt)
+            else add_histograms(a[key], b[key])
+            for key in a
+        }
 
 
 @dataclass(frozen=True)
@@ -205,6 +274,7 @@ class _GroupZero:
     backed: tuple[SlotKey, ...] = ()
     dense: tuple[SlotKey, ...] = ()
     kinds: tuple[tuple[SlotKey, Kind], ...] = ()
+    folds: Folds = ()
 
     def __call__(self) -> dict[SlotKey, Any]:
         kinds = dict(self.kinds)
@@ -215,7 +285,10 @@ class _GroupZero:
                 return Receipt(spec, kind=kind)
             return as_kind(zero_of(spec), kind) if key in self.dense else empty(spec, kind)
 
-        return {key: zero(key, spec) for key, _ids, spec in self.layout}
+        return {
+            **{key: zero(key, spec) for key, _ids, spec in self.layout},
+            **{key: fold.empty for key, fold in self.folds},
+        }
 
 
 def _dense_slots(value: dict[SlotKey, Any]) -> dict[SlotKey, Any]:

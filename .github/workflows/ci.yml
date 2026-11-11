@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # graphed#159 for graphed.PlanPieces, until the release that carries it.
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@47af00f0be7a42c0480da1d0d8f9fe237a250ce6"
+  # graphed#201 (aggregate_plan(events_per_task=)); moves to the graphed release that ships it.
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@5f8fe3943453ffb103b87da86983c575e80da537"
   # exec-local stays a separate package (used by the M23 process-executor integration tests);
   # 0.0.7 is the first release that applies Plan.finalize
   EXECLOCAL: "graphed-executors>=0.0.7"
@@ -113,5 +113,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: every needed job succeeded
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        # always(): without a status function GitHub adds success(), skipping this step once a needed job is cancelled
+        if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped'))
         run: exit 1

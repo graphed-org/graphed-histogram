@@ -21,7 +21,7 @@ Authority: `systematics-vary-plan.md` r33. Section references in the files are t
 | H12 | §6.3(1) the golden is committed already stripped | `test_variation_goldens.py::test_the_golden_carries_no_version_bytes_of_its_own` |
 | H12 | §6.3 params KEY SET against a literally spelled set | `test_variation_goldens.py::test_the_unvaried_single_weight_fill_records_exactly_these_params` |
 | H12 | §6.3 closing monkeypatch leg (per-side stripping) | `test_variation_goldens.py::test_the_comparison_survives_a_boost_histogram_version_bump` |
-| H3 | §6.1c flat slot-keyed plan value; bare key for an unreached output | `test_varied_result_shapes.py::test_the_plans_combined_value_is_the_flat_slot_keyed_mapping` |
+| H3 | §6.1c plan value keyed by output then label; bare histogram for an unreached output | `test_varied_result_shapes.py::test_the_plans_value_is_keyed_by_output_then_label` |
 | H3 | §6.1a unpacked shapes on a MIXED output set | `test_varied_result_shapes.py::test_unpacking_gives_a_label_mapping_for_the_varied_output_and_a_bare_hist_for_the_other` |
 | H3 | §6.1a absent labels absent, never duplicated from nominal | `test_varied_result_shapes.py::test_absent_labels_are_absent_and_never_duplicated_from_nominal` |
 | H3 | §2.2 `labels`/`universe`/`nominal` narrow both shapes uniformly | `test_varied_result_shapes.py::test_the_narrowing_helpers_answer_uniformly_on_both_shapes` |
@@ -34,7 +34,7 @@ Authority: `systematics-vary-plan.md` r33. Section references in the files are t
 | H5 | §7.2 optimizer-merged labels each read at their compiled position: `gh.plan` runs, `unpack` gives `nominal` and `sig_up`, `sig_up`'s flow view equals `nominal`'s bit for bit | `test_optimizer_merge_guard.py::test_a_varied_program_whose_labels_the_optimizer_merges_fills_every_label` |
 | H5 | §7.2 the merge is real (the merged read's instrument) | `test_optimizer_merge_guard.py::test_the_optimizer_merge_is_real_before_the_guard_is_asserted` |
 | H5 | §7.2 scope: an unmerged varied program plans normally | `test_optimizer_merge_guard.py::test_a_varied_program_the_optimizer_does_not_merge_plans_normally` |
-| H5 | §1.2/§7.2 record-time dedup — both keys off ONE evaluated fill | `test_optimizer_merge_guard.py::test_a_record_time_dedup_keeps_both_keys_off_one_evaluated_fill` |
+| H5 | §1.2/§7.2 record-time dedup — both labels off ONE evaluated fill | `test_optimizer_merge_guard.py::test_a_record_time_dedup_keeps_both_labels_off_one_evaluated_fill` |
 | H6 | §6.1d ambient fill on a per-object value: value labels ∪ ambient labels | `test_ambient_object_fills.py::test_a_per_object_fill_carries_the_value_labels_UNION_the_ambient_labels` |
 | H6 | §6.1d manual-broadcast reference, ambient AND explicit factor | `test_ambient_object_fills.py::test_every_labels_contents_equal_the_manual_broadcast_reference` |
 | H6 | §6.3(2) contexted-but-unvaried fill + seam-recorded witness | `test_ambient_object_fills.py::test_a_contexted_but_unvaried_fill_broadcasts_and_records_the_seam` |
@@ -67,7 +67,7 @@ Authority: `systematics-vary-plan.md` r33. Section references in the files are t
 |---|---|
 | `graphed_histogram.unpack(value)` | `dict[str, bh.Histogram \| dict[str, bh.Histogram]]` over the executed plan value alone |
 | `graphed_histogram.fill_nodes_by_label(h)` | `dict[str, Array]`, label order per §2.4 (nominal first) |
-| `graphed_histogram.plan(...)` value | flat `{output: hist}` for an output no variation reaches, `{(output, label): hist}` for a varied sibling output |
+| `graphed_histogram.plan(...)` value | `{output: hist}` for an output no variation reaches, `{output: {label: hist}}` for a varied sibling output |
 | `Histogram.fill(..., unweighted=True)` | suppresses the ambient weight AND every explicit `weight=[…]` factor |
 | the `.plan()` refusal; an optimizer-merged fill | `.plan()`: `graphed.GraphedError` naming `graphed_histogram.plan`; a merged fill is read once per marked fill, never refused |
 | §6.1d's execution-time length messages | ambient offender: contains `ambient` + `pass the value unflattened`; explicit offender: contains `weight[<i>]` for the offending index + `pass the value unflattened`; loose-value offender: contains `value[<i>]` and NEITHER of the other two |

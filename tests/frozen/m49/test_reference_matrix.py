@@ -21,7 +21,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from graphed.core.execution import SequentialRunner
+from graphed.core.execution import Plan, SequentialRunner
 from graphed_corpus import fingerprint
 from graphed_corpus.histograms import bin_values
 from m49_hist_fixtures import MATRIX, N_PARTITIONS, REFERENCES, matrix_program
@@ -39,6 +39,7 @@ def _run() -> dict[str, Any]:
     if not _RUN:
         _session, hists, source = matrix_program()
         plan = gh.plan(hists, steps_per_file=N_PARTITIONS)
+        assert isinstance(plan, Plan)
         _RUN.update(
             unpacked=gh.unpack(SequentialRunner().run(plan).value),
             source=source,

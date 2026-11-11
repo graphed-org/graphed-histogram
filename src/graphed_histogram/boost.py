@@ -19,23 +19,34 @@ from __future__ import annotations
 
 import copy
 import warnings
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, overload
 
 import boost_histogram as bh
 import graphed
-from graphed import Array, CompiledGraph, GraphedError, PlanPieces, Varied, aggregate_plan
-from graphed.core import Partition, PayloadDescriptor
+from graphed import Array, GraphedError, PlanPieces, Varied, aggregate_plan, collate
+from graphed.aggregate import fold_of
+from graphed.core import DurablePlanV2, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
-from graphed.execute import Key, external_key
+from graphed.execute import CompiledGraph, Key, external_key
 from graphed.provenance import capture
+from graphed.systematics import (
+    ScalarFactor,
+    broadcast_like,
+    context_of,
+    member_of,
+    reindex_to,
+    unify_contexts,
+)
+from graphed.write import PartWrite
 
 from ._chunked import Kind, dense
 from ._combine import (
+    PATHS,
     Layout,
-    _add_groups,
+    _AddGroups,
     _dense_slots,
     _GroupReduce,
     _GroupZero,
@@ -57,8 +68,11 @@ from ._fill import (
     _fill_chash,
     _fill_params,
     _fold_labels,
+    _lifted,
     _mixed_row_spaces,
+    _node_factors,
     _WeightGuard,
+    check_fill_types,
 )
 from ._fill import (
     FillEvaluator as FillEvaluator,
@@ -73,12 +87,12 @@ from ._spec import content_hash, spec_of
 for _obj in (
     FillEvaluator,
     HistogramForm,
+    _AddGroups,
     _GroupReduce,
     _GroupZero,
     _SumFills,
     _WeightGuard,
     _ZeroHist,
-    _add_groups,
     _dense_slots,
     add_histograms,
 ):
@@ -238,6 +252,11 @@ class Histogram(bh.Histogram):
         for name in ("_fill_nodes", "_evaluators", "_partials", "_label_maps", "_fill_specs"):
             self.__dict__[name] = copy.copy(self.__dict__[name])
 
+    def __deepcopy__(self, memo: Any) -> Any:
+        """Copy storage, axes and fill lists; the recorded nodes stay on the session's graph."""
+        memo.update((id(item), item) for item in (self._histserv, *self._fill_nodes))
+        return super().__deepcopy__(memo)
+
     @classmethod
     def _export_bh_(cls, target: bh.Histogram) -> None:
         if not isinstance(target, Histogram):
@@ -280,6 +299,12 @@ class Histogram(bh.Histogram):
         a shifted axis coordinate its own name does not leaves that group and joins the node of the
         member it names (still `1 + |S|` nodes). The MODE is a property of the histogram — fixed by
         the first fill and remembered; a later fill in the OTHER mode is a hard error.
+
+        >>> h = gh.boost.Histogram(bh.axis.Regular(3, 0, 3), storage=bh.storage.Weight())
+        >>> h.fill(events.x, weight=[events.w, 2.0]) is h  # weights multiply; nothing is read yet
+        True
+        >>> h.staged_fills()
+        1
         """
         del threads  # parallelism belongs to the executor, not the fill
         values, all_weights, weights, recorded_sample = self._checked_operands(
@@ -287,12 +312,16 @@ class Histogram(bh.Histogram):
         )
 
         given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
-        ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
-        ambient = None if unweighted or ctx is None else graphed.weight(ctx)
-        axes = [graphed.reindex_to(value, ctx) for value in values]
+        ctx = unify_contexts(*(context_of(value) for value in given))
+        ambient = None if unweighted or ctx is None else graphed.systematics.weight(ctx)
+        check_fill_types(self.axes, args, ambient, weights, recorded_sample)
+        # lifting records nodes, so it waits until every refusal has had its say
+        all_weights = _lifted(all_weights, values)
+        weights = _node_factors(all_weights)
+        axes = [reindex_to(value, ctx) for value in values]
         # the ambient one already is
-        factors = [graphed.reindex_to(value, ctx) for value in weights]
-        sampled = None if recorded_sample is None else graphed.reindex_to(recorded_sample, ctx)
+        factors = [reindex_to(value, ctx) for value in weights]
+        sampled = None if recorded_sample is None else reindex_to(recorded_sample, ctx)
 
         applied: list[Operand] = ([] if ambient is None else [ambient]) + factors
         labels = _fold_labels([*axes, *applied, *([] if sampled is None else [sampled])])
@@ -308,13 +337,13 @@ class Histogram(bh.Histogram):
                 args, ([] if ambient is None else [ambient]) + all_weights, sample
             ),
         )
-        session = graphed.member_of(axes[0], "nominal").session
+        session = member_of(axes[0], "nominal").session
         # a fill whose factors already share the value's row space and carries neither a context
         # handle nor a `Varied` input records exactly as it did before variations existed: no
         # broadcast step, one node, the same graph as before
         broadcast = (
             ctx is not None
-            or any(isinstance(value, Varied) for value in given)
+            or any(isinstance(value, Varied) for value in (*given, *weights))
             or _mixed_row_spaces(session, axes[0], applied)
         )
 
@@ -358,11 +387,11 @@ class Histogram(bh.Histogram):
         # weight= accepts a SEQUENCE of multiplicative factors (genWeight x SFs ...); each is
         # a real graph input and evaluation multiplies them elementwise
         all_weights = _factor_list(weight)
-        if not all(isinstance(w, (Array, Varied, *_SCALARS)) for w in all_weights):
+        if not all(isinstance(w, (Array, Varied, ScalarFactor, *_SCALARS)) for w in all_weights):
             raise TypeError("weights must be graphed Arrays or scalar constants")
         if sample is not None and not isinstance(sample, (Array, Varied, *_SCALARS)):
             raise TypeError("sample= must be a graphed Array or a scalar constant")
-        weights = [w for w in all_weights if not isinstance(w, _SCALARS)]
+        weights = _node_factors(all_weights)
         recorded_sample = None if isinstance(sample, _SCALARS) else sample
 
         if self._fill_specs and variation_axis != self._axis_mode:
@@ -401,16 +430,16 @@ class Histogram(bh.Histogram):
         params = _fill_params(self._spec, low.shape, len(low.axes))
         per_label: dict[str, Array] = {}
         for label in low.labels:
-            inputs: list[Array] = [graphed.member_of(value, label) for value in low.axes]
+            inputs: list[Array] = [member_of(value, label) for value in low.axes]
             value = inputs[0]
             for (coordinate, message), factor in zip(low.blame, low.applied, strict=True):
-                narrowed = graphed.member_of(factor, label)
+                narrowed = member_of(factor, label)
                 if low.broadcast:
                     guarded = self._guard(low.session, narrowed, value, coordinate, message)
-                    narrowed = graphed.broadcast_like(value, guarded)
+                    narrowed = broadcast_like(value, guarded)
                 inputs.append(narrowed)
             if low.sampled is not None:
-                inputs.append(graphed.member_of(low.sampled, label))
+                inputs.append(member_of(low.sampled, label))
             per_label[label] = low.session.record_external(
                 "histogram.fill",
                 evaluator,
@@ -486,7 +515,7 @@ class Histogram(bh.Histogram):
         fixed = [*low.axes, *([] if low.sampled is None else [low.sampled])]
         groups: dict[tuple[int, ...], list[str]] = {}
         for label in low.labels:
-            key = tuple(graphed.member_of(operand, label).node_id for operand in fixed)
+            key = tuple(member_of(operand, label).node_id for operand in fixed)
             groups.setdefault(key, []).append(label)
 
         axis_spec = _declare_axis_spec(self, sorted(low.labels))
@@ -511,17 +540,17 @@ class Histogram(bh.Histogram):
         loop). The evaluator writes each label's scalar category on the variation axis; its
         content hash folds `node_labels` in so the node owns its evaluator.
         """
-        value_members = [graphed.member_of(operand, carrier) for operand in low.axes]
+        value_members = [member_of(operand, carrier) for operand in low.axes]
         value = value_members[0]
         inputs: list[Array] = list(value_members)
         if low.sampled is not None:
-            inputs.append(graphed.member_of(low.sampled, carrier))
+            inputs.append(member_of(low.sampled, carrier))
         for label in node_labels:
             for (coordinate, message), factor in zip(low.blame, low.applied, strict=True):
-                narrowed = graphed.member_of(factor, label)
+                narrowed = member_of(factor, label)
                 if low.broadcast:
                     guarded = self._guard(low.session, narrowed, value, coordinate, message)
-                    narrowed = graphed.broadcast_like(value, guarded)
+                    narrowed = broadcast_like(value, guarded)
                 inputs.append(narrowed)
         evaluator = replace(low.shape, spec=axis_spec, variation=tuple(node_labels))
         chash = _fill_chash(
@@ -589,18 +618,29 @@ class Histogram(bh.Histogram):
         self,
         *,
         steps_per_file: int | None = None,
+        events_per_task: int | None = None,
         backend: Callable[[], Any] | str | None = None,
         partitions: Sequence[Partition] | None = None,
-    ) -> Plan[bh.Histogram]:
+    ) -> Plan[bh.Histogram] | DurablePlanV2:
         """Build a plan: one fill task per partition, combined by :func:`add_histograms`.
 
         Run it later with any runner. Thin specialization of :func:`graphed.aggregate_plan` — this
         histogram's fills are the outputs, summed per partition and added across them; ``backend``
         is each worker's evaluation backend (factory/class or ``"module:attr"`` import ref for
         behavior-carrying backends, which do not pickle); ``steps_per_file`` overrides the source's
-        own setting (``None`` keeps it); ``partitions`` lets the caller shape partitioning itself.
-        For several histograms that share a sub-graph, plan them together with :func:`plan` so the
-        shared work runs ONCE.
+        own setting (``None`` keeps it); ``events_per_task`` instead cuts each file into tasks of
+        that many entries; ``partitions`` lets the caller shape partitioning itself.
+        Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, with no ``tasks`` or
+        ``process``: the fills run per join destination, and ``partitions`` and
+        ``events_per_task`` are refused. For several histograms that share a sub-graph, plan them
+        together with :func:`plan` so the shared work runs ONCE.
+
+        The run's value is the filled histogram, of the class this one extends:
+
+        >>> h = gh.boost.Histogram(bh.axis.Regular(3, 0, 3), storage=bh.storage.Int64())
+        >>> plan = h.fill(events.x).plan()
+        >>> SequentialRunner().run(plan).value.values().tolist()
+        [1, 2, 1]
         """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
@@ -638,6 +678,7 @@ class Histogram(bh.Histogram):
             externals=dict(self._partials),
             backend=backend,
             steps_per_file=steps_per_file,
+            events_per_task=events_per_task,
             partitions=partitions,
             on_compiled=on_compiled,
             finalize=dense,
@@ -750,6 +791,10 @@ def _slots(name: str, hist: Histogram) -> Layout:
     )
 
 
+#: one whole-dataset reduction among a plan's outputs: its slot key and its Array
+_Scalar = tuple[SlotKey, Array]
+
+
 @dataclass
 class HistogramPieces:
     """The histogram half of one plan, for a plan composing these fills with outputs of its own.
@@ -770,6 +815,7 @@ class HistogramPieces:
     #: per histserv-backed slot: its key, spec and context
     backing: tuple[tuple[SlotKey, str, Any], ...]
     served: bool = False
+    scalars: tuple[_Scalar, ...] = ()
     #: makes each slot the dense histogram of its class, on the head once the run is combined
     finalize: Callable[[dict[SlotKey, Any]], dict[SlotKey, Any]] = _dense_slots
 
@@ -784,13 +830,18 @@ class HistogramPieces:
                 "one plan, so build fresh pieces for another"
             )
         self.reduce.positions = _positions(compiled, self.fill_nodes)
-        return _variation_labels(self.items, compiled)
+        return _variation_labels(self.items, compiled, self.scalars)
 
-    def serve(self, plan: Plan[V]) -> Plan[V]:
+    @overload
+    def serve(self, plan: Plan[V]) -> Plan[V]: ...
+    @overload
+    def serve(self, plan: DurablePlanV2) -> DurablePlanV2: ...
+    def serve(self, plan: Plan[V] | DurablePlanV2) -> Plan[V] | DurablePlanV2:
         """Return ``plan`` with its histserv-backed slots served.
 
         The slots are sized, packed onto servers and declared in ``plan.services``; ``plan`` itself
-        comes back when no slot is backed.
+        comes back when no slot is backed. A backed slot refuses a plan with ``next_tasks`` or over
+        a join, which has no tasks to size by.
         """
         if not self.backing:
             return plan
@@ -813,6 +864,15 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
     )
     if not items:
         raise ValueError("plan() needs at least one histogram")
+    return _pieces(items)
+
+
+def _pieces(
+    items: tuple[tuple[str, Histogram], ...],
+    scalars: tuple[_Scalar, ...] = (),
+    writes: tuple[str, ...] = (),
+) -> HistogramPieces:
+    """Return the pieces of ``items``, with ``scalars`` and ``writes`` slots beside theirs."""
     if any(not h.staged_fills() for _, h in items):
         raise ValueError("every histogram must have at least one staged fill before planning")
     layout = tuple(slot for name, hist in items for slot in _slots(name, hist))
@@ -834,51 +894,232 @@ def pieces(histograms: Mapping[str, Histogram] | Sequence[Histogram]) -> Histogr
         for key, _ids, _spec in _slots(name, h)
     )
     kinds = tuple((key, _kind(h)) for name, h in items for key, _ids, _spec in _slots(name, h))
+    folds = (*((key, fold_of(array)) for key, array in scalars), *((w, PATHS) for w in writes))
     return HistogramPieces(
-        fill_nodes=tuple(n for _, h in items for n in h.fill_nodes()),
-        reduce=_GroupReduce(layout, backed, dense=dense, kinds=kinds),
-        combine=_add_groups,
-        empty=_GroupZero(layout, backed, dense, kinds),
+        fill_nodes=(*(n for _, h in items for n in h.fill_nodes()), *(a for _, a in scalars)),
+        reduce=_GroupReduce(
+            layout,
+            backed,
+            dense=dense,
+            kinds=kinds,
+            scalars=tuple((key, array.node_id) for key, array in scalars),
+            writes=writes,
+        ),
+        combine=_AddGroups(folds),
+        empty=_GroupZero(layout, backed, dense, kinds, folds),
         externals=evaluators,
         items=items,
         backing=backing,
+        scalars=scalars,
     )
 
 
+#: where one output sits in what the caller passed to :func:`plan`: the mapping keys down to it
+_Path = tuple[Any, ...]
+
+
+#: what :func:`plan` takes as one output: a histogram, or a whole-dataset reduction (an Array or a
+#: ``Varied`` of them)
+_Output = Histogram | Array | Varied
+
+_TAKES = "gh.plan takes histograms and whole-dataset reductions"
+
+
+def _universes(output: Array | Varied) -> dict[str | None, Array]:
+    """Return a reduction's Array per label, under ``None`` when it is not varied."""
+    if isinstance(output, Array):
+        return {None: output}
+    return {
+        label: graphed.systematics.universe(output, label)
+        for label in graphed.systematics.labels(output)
+    }
+
+
+def _leaves(histograms: Any, path: _Path = ()) -> list[tuple[_Path, _Output]]:
+    """Return each output in a nesting of mappings, with its path, in mapping order."""
+    if isinstance(histograms, Histogram):
+        return [(path, histograms)]
+    if isinstance(histograms, (Array, Varied)):
+        for array in _universes(histograms).values():
+            try:
+                fold_of(array)
+            except TypeError as err:
+                raise TypeError(f"{_TAKES}; output {_named(path)!r} {err}") from None
+        return [(path, histograms)]
+    if isinstance(histograms, Mapping):
+        for key in histograms:
+            if isinstance(key, tuple):  # :func:`unpack` reads a tuple as (output, label)
+                raise TypeError(
+                    f"gh.plan takes no tuple keys; nest the mapping instead of {key!r}"
+                )
+        return [leaf for key, value in histograms.items() for leaf in _leaves(value, (*path, key))]
+    if isinstance(histograms, Iterable) and not path:
+        return _leaves({str(i): h for i, h in enumerate(histograms)})
+    held = _named(path) or "the argument"
+    raise TypeError(f"{_TAKES}; {held} is {type(histograms).__name__}")
+
+
+def _named(path: _Path) -> str:
+    return "/".join(map(str, path))
+
+
+def _session_of(output: _Output | PartWrite) -> Any:
+    if isinstance(output, PartWrite):
+        return output.array.session
+    if isinstance(output, Histogram):
+        return output.fill_nodes()[0].session if output.staged_fills() else None
+    return next(iter(_universes(output).values())).session
+
+
+@dataclass(frozen=True)
+class _Nested:
+    """A plan's finalize: its value in the shape the caller passed to :func:`plan`."""
+
+    paths: tuple[_Path, ...]
+    collated: bool = False
+
+    def __call__(self, value: Mapping[Any, Any]) -> Any:
+        slots = (
+            {k: v for part in value.values() for k, v in part.items()} if self.collated else value
+        )
+        results = unpack(slots)
+        if self.paths == ((),):
+            return next(iter(results.values()))
+        out: dict[Any, Any] = {}
+        for path in self.paths:
+            if _named(path) in results:
+                node = out
+                for key in path[:-1]:
+                    node = node.setdefault(key, {})
+                node[path[-1]] = results[_named(path)]
+        return out
+
+
+def _one_plan(
+    outputs: Mapping[str, _Output | PartWrite],
+    *,
+    finalize: Callable[[Any], Any] | None = None,
+    **kwargs: Any,
+) -> Plan[Any] | DurablePlanV2:
+    writes = {name: w for name, w in outputs.items() if isinstance(w, PartWrite)}
+    scalars = tuple(
+        (name if label is None else (name, label), array)
+        for name, output in outputs.items()
+        if isinstance(output, (Array, Varied))
+        for label, array in _universes(output).items()
+    )
+    hists = tuple((name, h) for name, h in outputs.items() if isinstance(h, Histogram))
+    p = _pieces(hists, scalars, tuple(writes))
+    built = aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
+        *p.fill_nodes,
+        writes=tuple(writes.values()),
+        reduce=p.reduce,
+        combine=p.combine,
+        empty=p.empty,
+        externals=p.externals,
+        on_compiled=p.on_compiled,
+        finalize=finalize or p.finalize,
+        **kwargs,
+    )
+    return p.serve(built)
+
+
 def plan(
-    histograms: Mapping[str, Histogram] | Sequence[Histogram],
+    histograms: Any,
     *,
     steps_per_file: int | None = None,
+    events_per_task: int | None = None,
     backend: Callable[[], Any] | str | None = None,
     partitions: Sequence[Partition] | None = None,
-) -> Plan[dict[SlotKey, Any]]:
+    writes: Mapping[str, PartWrite] | None = None,
+) -> Plan[Any] | DurablePlanV2:
     """One plan that aggregates SEVERAL deferred histograms sharing a source in a SINGLE pass.
 
     All their fills compile into ONE IR, so a sub-graph feeding multiple histograms (e.g. a trijet
     selection feeding both a pT and a b-tag histogram) is read and evaluated ONCE — not once per
     histogram as separate ``Histogram.plan()`` calls would. The dask-histogram
-    ``compute(dict_of_hists)`` analogue; ``run(plan).value`` is a flat slot-keyed mapping — a bare
-    output name for an output no variation reaches, ``(output, label)`` for a varied one — which
-    :func:`graphed_histogram.unpack` turns into the user-facing per-output shape.
-    ``steps_per_file`` overrides the source's own setting (``None`` keeps it). Column projection
-    covers the union of all histograms' fills. Histserv-backed histograms are served: their
-    servers are in ``plan.services``.
+    ``compute(dict_of_hists)`` analogue. ``histograms`` is a histogram, a mapping or sequence of
+    them, or mappings nested to any depth.
+
+    An output may also be a whole-dataset reduction (``sum``, ``count``, ``count_nonzero``,
+    ``any``, ``all``, ``min`` or ``max`` with no axis, per :func:`graphed.aggregate.fold_of`),
+    read in the same pass; any other array raises a ``TypeError`` naming the rule. ``writes``
+    maps names to :class:`graphed.write.PartWrite` (``parquet_write(...)``), each writing one part
+    per task from the same read, its result the list of part paths.
+
+    ``run(plan).value`` comes back in the nesting that went in, each output a histogram or a
+    value, or a ``{label: ...}`` of them for a varied one, and each write under its name. Over
+    several Sessions, a coffea fileset's for one, each Session is one plan, collated
+    (:func:`graphed.collate`) into one with the sum of their tasks, so ``partitions`` needs one
+    Session, and a dataset with no tasks is absent. ``steps_per_file`` overrides the source's own
+    setting (``None`` keeps it); ``events_per_task`` instead cuts each file into tasks of that many
+    entries. Column projection covers the union of all outputs' columns.
+
+    Histserv-backed histograms are served, in a flat mapping over one Session, and their servers
+    are in ``plan.services``. That value stays slot-keyed, a bare output name or
+    ``(output, label)`` for a varied one, and :func:`graphed_histogram.unpack` turns it into the
+    same shape, reading any receipts.
+
+    Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, for ``SequentialRunner`` or
+    ``SubmitRunner``. Every output then reads past the join, in one Session, and neither
+    ``partitions``, ``events_per_task`` nor histserv applies.
+
+    >>> w = graphed.vary(events.w, "jes", up=events.w * 1.5)
+    >>> met = hg.Hist.new.Reg(3, 0, 3, name="x").Weight().fill(x=events.x, weight=w)
+    >>> sumw, n = gak.sum(w, axis=None), gak.count(events.x, axis=None)
+    >>> plan = gh.plan({"met": met, "sumw": sumw, "n": n})
+    >>> out = SequentialRunner().run(plan).value
+    >>> {label: h.sum().value for label, h in out["met"].items()}
+    {'nominal': 5.0, 'jes_up': 7.5}
+    >>> {label: float(v) for label, v in out["sumw"].items()}, int(out["n"])
+    ({'nominal': 5.0, 'jes_up': 7.5}, 4)
     """
-    p = pieces(histograms)
-    return p.serve(
-        aggregate_plan(  # the shared engine: one IR, read+evaluate once, reduce per slot
-            *p.fill_nodes,
-            reduce=p.reduce,
-            combine=p.combine,
-            empty=p.empty,
-            externals=p.externals,
-            backend=backend,
-            steps_per_file=steps_per_file,
-            partitions=partitions,
-            on_compiled=p.on_compiled,
-            finalize=p.finalize,
-        )
-    )
+    outputs = _leaves(histograms)
+    if not outputs:
+        raise ValueError("gh.plan needs at least one histogram or reduction")
+    for name, w in (writes or {}).items():
+        if not isinstance(w, PartWrite):
+            raise TypeError(
+                f"gh.plan(writes=) takes PartWrite values; {name!r} is {type(w).__name__}"
+            )
+    if writes and any(path == () for path, _ in outputs):
+        raise TypeError("gh.plan(writes=) names its results, so pass the outputs as a mapping")
+    for path, _ in outputs:
+        if writes and path[0] in writes:
+            raise ValueError(f"gh.plan: {path[0]!r} names both an output and a write")
+    leaves = [*outputs, *(((name,), w) for name, w in (writes or {}).items())]
+    flat = {_named(path): h for path, h in leaves}
+    if len(flat) != len(leaves):
+        raise ValueError("gh.plan: two outputs have the same '/'-joined name")
+    by_session: dict[Any, dict[str, _Output | PartWrite]] = {}
+    for name, h in flat.items():
+        by_session.setdefault(_session_of(h), {})[name] = h
+    kwargs: dict[str, Any] = {
+        "steps_per_file": steps_per_file,
+        "events_per_task": events_per_task,
+        "backend": backend,
+        "partitions": partitions,
+    }
+    paths = tuple(path for path, _ in leaves)
+    served = [
+        name
+        for name, h in flat.items()
+        if isinstance(h, Histogram) and h.recording().histserv is not None
+    ]
+    if served:
+        if len(by_session) > 1 or any(len(path) != 1 for path in paths):
+            raise TypeError(
+                f"histserv-backed output {served[0]!r} needs a flat mapping over one Session, "
+                "whose receipts graphed_histogram.unpack reads"
+            )
+        return _one_plan(flat, **kwargs)
+    if len(by_session) < 2:
+        return _one_plan(flat, finalize=_Nested(paths), **kwargs)
+    if partitions is not None:
+        raise TypeError("gh.plan(partitions=) names one source's tasks, and these are several")
+    groups = {next(iter(group)): group for group in by_session.values()}
+    collated = collate({name: _one_plan(group, **kwargs) for name, group in groups.items()})
+    return replace(collated, finalize=_Nested(paths, collated=True))
 
 
 def _cone(node: Array) -> set[int]:
@@ -897,7 +1138,9 @@ def _cone(node: Array) -> set[int]:
 
 
 def _variation_labels(
-    items: Sequence[tuple[str, Histogram]], compiled: CompiledGraph
+    items: Sequence[tuple[str, Histogram]],
+    compiled: CompiledGraph,
+    scalars: Sequence[_Scalar] = (),
 ) -> tuple[tuple[Key, tuple[tuple[str, ...], Any]], ...] | None:
     """Which labels' universes reach each node of the compiled reduced store.
 
@@ -912,16 +1155,24 @@ def _variation_labels(
     both the key enumeration and the frame source; nothing here computes either.
     """
     node_map = compiled.correspondence.node_map
+    universes = [
+        (label, per_label.get(label, per_label["nominal"]))
+        for _name, hist in items
+        for label in _output_labels(hist)
+        for per_label in hist.recording().label_maps
+    ]
+    # a varied reduction's universe is keyed (output, label)
+    universes += [
+        (label, array)
+        for key, array in scalars
+        if isinstance(key, tuple) and (label := key[1]) is not None
+    ]
     reached: dict[Key, set[str]] = {}
-    for _name, hist in items:
-        for label in _output_labels(hist):
-            if label == "nominal":
-                continue
-            for per_label in hist.recording().label_maps:
-                node = per_label.get(label, per_label["nominal"])
-                for nid in _cone(node):
-                    # total on this cone: every node feeding a MARKED fill survives DCE
-                    reached.setdefault(node_map[nid], set()).add(label)
+    for label, node in universes:
+        if label != "nominal":
+            for nid in _cone(node):
+                # total on this cone: every node feeding a MARKED output survives DCE
+                reached.setdefault(node_map[nid], set()).add(label)
     if not reached:  # the predicate is over the LABELS, hence over the compiled program
         return None
     return tuple(
@@ -930,19 +1181,29 @@ def _variation_labels(
     )
 
 
-def unpack(value: Mapping[SlotKey, Any]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
-    """Unpack the executed plan's flat slot-keyed value into the per-output shape.
+def unpack(value: Mapping[Any, Any]) -> dict[str, bh.Histogram | dict[str, bh.Histogram]]:
+    """Unpack a slot-keyed value, a served plan's or ``pieces``', into the per-output shape.
 
     The shape is decided by the KEY FORM, which is total and per output — a bare output name is
     that output's bare histogram, ``(output, label)`` keys gather into ``{label: hist}``, and
     ``(output, None)`` is the axis-mode histogram, which carries its variations on an axis
     rather than in the mapping. A varied sibling output always carries at least two labels, so no
     output's shape is ambiguous, in a mixed plan exactly as in a single-mode one.
-    ``graphed.labels``/``universe``/``nominal`` read both shapes uniformly. A histserv receipt
-    unpacks to its server histogram's snapshot, which stays on the server.
+    ``graphed.systematics.labels``/``universe``/``nominal`` read both shapes uniformly. A
+    histserv receipt unpacks to its server histogram's snapshot, which stays on the server.
+
+    A collated ``{dataset: value}`` unpacks per dataset, and an unpacked value unpacks to itself.
+
+    >>> a = bh.Histogram(bh.axis.Regular(2, 0, 2))
+    >>> out = gh.unpack({("met", "nominal"): a, ("met", "jes_up"): a, "n": a})
+    >>> {name: list(v) if isinstance(v, dict) else type(v).__name__ for name, v in out.items()}
+    {'met': ['nominal', 'jes_up'], 'n': 'Histogram'}
     """
     out: dict[str, Any] = {}
     for key, held in value.items():
+        if isinstance(held, Mapping):
+            out[key] = unpack(held)
+            continue
         hist = held.snapshot() if isinstance(held, Receipt) else dense(held)
         if not isinstance(key, tuple):
             out[key] = hist
@@ -966,19 +1227,25 @@ def dense_backed(h: H) -> H:
     return h
 
 
-def label_listing(histograms: Mapping[str, Histogram]) -> dict[str, list[str]]:
-    """List each output's variation labels: the plan-level ``{output: [labels]}`` listing.
+def label_listing(histograms: Mapping[Any, Any]) -> dict[Any, Any]:
+    """List each output's variation labels, before anything runs.
 
-    Each output maps to its variation labels in FOLD order (nominal first, then vary-tag insertion
-    order); an unvaried output maps to ``["nominal"]``.
+    Each output maps to its labels, nominal first, then each ``graphed.vary`` label as it was
+    declared; an unvaried output maps to ``["nominal"]``. Nested mappings list in the same nesting.
+    A histogram filled with ``variation_axis=True`` lists the same labels its variation axis
+    holds, though the axis orders its categories its own way.
 
-    MODE-INDEPENDENT: an axis-mode output lists the SAME labels as its sibling twin, because both
-    modes populate ``_label_maps`` with the same fold-ordered set. The labels come from the fill's
-    DECLARED label set the builder holds (``_output_labels``), NOT from the ``(output, None)`` slot
-    key — which carries no label, so a key-reading listing would answer ``[None]``/``[]`` for an
-    axis-mode output.
+    >>> w = graphed.vary(events.w, "jes", up=events.w * 1.1, down=events.w * 0.9)
+    >>> met = hg.Hist.new.Reg(3, 0, 3, name="x").Weight().fill(x=events.x, weight=w)
+    >>> n = hg.Hist.new.Reg(3, 0, 3, name="x").Int64().fill(x=events.x)
+    >>> gh.label_listing({"met": met, "n": n})
+    {'met': ['nominal', 'jes_up', 'jes_down'], 'n': ['nominal']}
     """
-    return {name: list(_output_labels(hist)) for name, hist in histograms.items()}
+    # declared labels, not slot keys: an axis-mode output's ``(output, None)`` key carries none
+    return {
+        name: label_listing(h) if isinstance(h, Mapping) else list(_output_labels(h))
+        for name, h in histograms.items()
+    }
 
 
 def factory(

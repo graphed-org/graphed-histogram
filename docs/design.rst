@@ -40,7 +40,7 @@ that can hand a dataset out in slices; here a parquet file, in real work your RO
     met_pt.fill(events.MET.pt)
 
     plan = gh.plan({"jet_pt": jet_pt, "met_pt": met_pt})
-    out = gh.unpack(SequentialRunner().run(plan).value)
+    out = SequentialRunner().run(plan).value
     print(out["jet_pt"].view())
     print(out["met_pt"].view())
     print(out["jet_pt"].sum())
@@ -243,20 +243,17 @@ typed before a byte moves.
     wide.fill(selected)
 
     value = SequentialRunner().run(gh.plan({"lead": lead, "wide": wide}, steps_per_file=3)).value
-    print(sorted(value))
-    print(gh.unpack(value)["lead"].view(), gh.unpack(value)["wide"].view())
+    print(value["lead"].view(), value["wide"].view())
     print(len(source.reads), "partition reads for 2 histograms")
 
 Printed output::
 
-    ['lead', 'wide']
     [4 4 0 0] [8 0]
     3 partition reads for 2 histograms
 
-Three partitions, three reads — for both histograms together. The run's value is a flat mapping,
-which ``gh.unpack`` turns into the shape you want: ``{name: histogram}`` here, and
-``{name: {label: histogram}}`` once variations are involved. Unpack it and index by the names you
-planned with; the flat keys are the plan's business, not yours.
+Three partitions, three reads — for both histograms together. The run's value has the shape you
+planned with: ``{name: histogram}`` here, and ``{name: {label: histogram}}`` once variations are
+involved.
 
 If you only ever have one histogram, ``h.plan(...)`` skips the naming and gives you the histogram
 directly. It refuses fills that carry variations, because summing them into one histogram would
@@ -334,8 +331,8 @@ worker would otherwise rewrite underneath the run.
     if __name__ == "__main__":
         ak.to_parquet(EVENTS, "jets.parquet")
         plan = gh.plan({"jet_pt": staged()}, backend="graphed.awkward:AwkwardBackend")
-        parallel = gh.unpack(ProcessPoolExecutor(max_workers=3).run(plan).value)["jet_pt"]
-        serial = gh.unpack(SequentialRunner().run(plan).value)["jet_pt"]
+        parallel = ProcessPoolExecutor(max_workers=3).run(plan).value["jet_pt"]
+        serial = SequentialRunner().run(plan).value["jet_pt"]
         print(parallel.view()["value"])
         print(parallel.view()["variance"])
         print((parallel.view() == serial.view()).all())
@@ -406,13 +403,13 @@ boost axis constructors take no ``name=`` keyword, so the name is an attribute y
         return h
 
     def run(h):
-        return gh.unpack(SequentialRunner().run(gh.plan({"h": h})).value)["h"]
+        return SequentialRunner().run(gh.plan({"h": h})).value["h"]
 
     one = run(staged(variation_axis=True))
     print([type(ax).__name__ for ax in one.axes])
-    print(graphed.labels(one))
-    print(graphed.nominal(one).view()["value"])
-    print(graphed.universe(one, "sf_up").view()["value"])
+    print(graphed.systematics.labels(one))
+    print(graphed.systematics.nominal(one).view()["value"])
+    print(graphed.systematics.universe(one, "sf_up").view()["value"])
 
     many = run(staged(variation_axis=False))
     print(sorted(many))
@@ -430,8 +427,8 @@ Printed output::
 On fixed axes the two modes agree bin for bin: the nominal slice of the axis-mode histogram and
 the ``nominal`` entry of the sibling-mode mapping are the same numbers (on growth axes they agree
 label by label at equal category and bin edge, as :ref:`growth-axes` details). What differs is
-the container, and ``graphed.labels`` / ``graphed.nominal`` / ``graphed.universe`` read both
-shapes the same way — in axis mode they slice the axis away, in sibling mode they index the
+the container, and ``graphed.systematics.labels`` / ``nominal`` / ``universe`` read both shapes
+the same way — in axis mode they slice the axis away, in sibling mode they index the
 mapping.
 
 The axis-mode result is an ordinary ``bh.Histogram`` with one extra axis, so nothing downstream
@@ -439,7 +436,8 @@ needs a special case: it merges with ``gh.add_histograms`` like any other, and p
 ``hist`` indexing work on it unchanged. The ``variation`` axis is a non-growth ``StrCategory``
 whose categories are your labels in sorted order, so two runs of the same program give you the
 same axis in the same order.
-``graphed.labels`` reports them nominal-first, which is the order you usually want to read.
+``graphed.systematics.labels`` reports them nominal-first, which is the order you usually want to
+read.
 
 
 What folds onto the axis and what stays a sibling
@@ -777,9 +775,9 @@ its graph and its result do not change.
         )
         return h.fill(events.channel, events.met, weight=events.w)
 
-    out = gh.unpack(SequentialRunner().run(
+    out = SequentialRunner().run(
         gh.plan({"chunked": met(), "dense": gh.dense_backed(met())})
-    ).value)
+    ).value
     chunked = out["chunked"]
     print(chunked == out["dense"], type(chunked) is bh.Histogram)
     print(chunked.values(flow=True)[2])  # "emu" is undeclared: the overflow bin
@@ -934,6 +932,17 @@ rounding, and integer and exact sums agree exactly.
 Composing histograms with other outputs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+A whole-dataset reduction or a skim needs none of what follows: ``gh.plan`` takes them beside the
+histograms, in the same read, each result under its own name:
+
+.. code-block:: python
+
+    plan = gh.plan(
+        {"x": h, "sumw": gak.sum(events.weight, axis=None)},
+        writes={"skim": parquet_write(events[events.x > 2], "out/skim", name=lambda p: f"{p.blind_step}.parquet")},
+    )
+    out = SequentialRunner().run(plan).value  # out["sumw"] is a float, out["skim"] the part paths
+
 ``gh.plan`` is built from ``gh.boost.pieces``, which you can use yourself to put your histograms in
 one plan with outputs of your own — here an event count. Mark your outputs first and the fills after,
 hand the histogram half of the values to ``pieces.reduce`` and ``pieces.finalize``, and serve the
@@ -995,9 +1004,9 @@ tree shape. On fixed axes ``Int64`` counts are exact everywhere (on growth axes,
 non-finite exceptions in :ref:`growth-axes`). If you need bit-identical floats across machines,
 keep the runner family and the partitioning fixed.
 
-**Two datasets in one plan.** Every fill in a plan must record into the same session, and a
-session plans against exactly one partitioned source. Run the datasets separately and add the
-results with ``gh.add_histograms``.
+**One histogram filled from two datasets.** ``gh.plan`` collates histograms from several datasets,
+but every fill of one histogram records into one session. Fill one histogram per dataset and add
+the results with ``gh.add_histograms``.
 
 **Behaviors carried automatically to workers.** Pass ``backend="module:attr"`` when your backend
 carries behaviors; there is no default that recovers them from the recording session.

@@ -58,7 +58,7 @@ through uproot's ``uproot.graphed`` works the same way, with ``steps_per_file`` 
    jets.fill(evt.jet_pt)                      # ragged values flatten at fill time
 
    plan = gh.plan({"met": met, "jet_pt": jets})
-   out = gh.unpack(SequentialRunner().run(plan).value)
+   out = SequentialRunner().run(plan).value
 
    print(out["met"].values())
    print(out["jet_pt"].values())
@@ -71,9 +71,8 @@ through uproot's ``uproot.graphed`` works the same way, with ``steps_per_file`` 
 Three lines carry the whole idea. ``met.fill(evt.met)`` records and returns the histogram —
 fills accumulate, and ``met`` keeps its eager axes, storage and (empty) views throughout.
 ``gh.plan({...})`` compiles every staged fill of every named histogram into one graph, so
-the four chunks are each read once and both histograms are filled in the same pass.
-``gh.unpack`` turns the runner's result into the ``{name: histogram}`` mapping you asked
-for.
+the four chunks are each read once and both histograms are filled in the same pass, and the
+value is the ``{name: histogram}`` mapping you asked for.
 
 There is no ``.compute()``
 --------------------------
@@ -103,7 +102,7 @@ pool, a dask cluster or a parsl pool changes no analysis code:
        jets.fill(evt.jet_pt)
 
        plan = gh.plan({"met": met, "jet_pt": jets})
-       out = gh.unpack(ProcessPoolExecutor(max_workers=2).run(plan).value)
+       out = ProcessPoolExecutor(max_workers=2).run(plan).value
        print(out["met"].values())
        print(out["jet_pt"].values())
 

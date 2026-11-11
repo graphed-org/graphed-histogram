@@ -34,7 +34,7 @@ import pytest
 from graphed import Array, Session
 from graphed.awkward import AwkwardBackend, AwkwardForm, gak
 from graphed.core import Partition
-from graphed.core.execution import SequentialRunner, WorkerResources
+from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed_corpus import fingerprint, make_events
 from graphed_corpus.histograms import bin_values
 
@@ -154,6 +154,7 @@ def _matrix() -> tuple[dict[str, Any], CorpusEvents, int]:
     hists["ttgamma"] = h
 
     plan = gh.plan(hists, steps_per_file=N_PARTITIONS)
+    assert isinstance(plan, Plan)
     unpacked = gh.unpack(SequentialRunner().run(plan).value)
     return unpacked, source, len(plan.tasks)
 

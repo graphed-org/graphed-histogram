@@ -6,12 +6,14 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, NoReturn
 
 import boost_histogram as bh
 import graphed
 import numpy as np
-from graphed import GraphedError, Varied
+from graphed import Array, GraphedError, GraphedTypeError, Varied
+from graphed.provenance import capture
+from graphed.systematics import ScalarFactor, context_of, member_of
 
 from ._chunked import Partial, dense, empty
 from ._spec import content_hash, spec_of
@@ -65,8 +67,8 @@ class FillEvaluator:
     nominal's, a joint label onto the shifted member its point names.
 
     Attributes:
-        constants: scalar fill values recorded in place of inputs, as :func:`_constants` encodes
-            them (None keeps old pickles valid); boost broadcasts each one, as an eager fill does
+        constants: scalar fill values recorded in place of inputs, as JSON by slot (None keeps
+            old pickles valid); boost broadcasts each one, as an eager fill does
         partial: return the chunked partial, which only a plan reads, rather than the dense
             histogram
     """
@@ -182,6 +184,11 @@ def _depth(form: object) -> int | None:
     return ndim if isinstance(ndim, int) and ndim > 0 else None
 
 
+def _is_record(form: object) -> bool:
+    tt = getattr(form, "tt", None)  # the awkward form's typetracer
+    return bool(getattr(tt if tt is not None else form, "fields", None))
+
+
 def _option_anywhere(layout_form: object) -> bool:
     """Tell whether an awkward layout form carries a missing value at any level.
 
@@ -228,15 +235,59 @@ def _mixed_row_spaces(session: Any, value: Operand, applied: Sequence[Operand]) 
     """
     if getattr(session.backend, "broadcast_like", None) is None:
         return False
-    value_form = session.form(graphed.member_of(value, "nominal"))
+    value_form = session.form(member_of(value, "nominal"))
     depth = _depth(value_form)
     if depth is None or _drops_rows(value_form):
         return False
     for factor in applied:
-        other = _depth(session.form(graphed.member_of(factor, "nominal")))
+        other = _depth(session.form(member_of(factor, "nominal")))
         if other is not None and other < depth:
             return True
     return False
+
+
+def _form_of(operand: Operand, label: str) -> Any:
+    member = member_of(operand, label)
+    return member.session.form(member)
+
+
+def _refuse(detail: str) -> NoReturn:
+    raise GraphedTypeError("histogram.fill", capture(), detail)
+
+
+def check_fill_types(
+    axes: Sequence[Any],
+    args: Sequence[Operand],
+    ambient: Operand | None,
+    weights: Sequence[Operand],
+    sample: Operand | None,
+) -> None:
+    """Refuse what the recorded types rule out; lengths are only knowable at run time.
+
+    Axes and ``sample=`` flatten independently, so they must share a list depth, in each label's
+    own members. A factor may be deeper: one per-object entry per event lines up.
+    """
+    columns = [
+        (f"axis {axis.__dict__.get('name') or i!r}", arg)
+        for i, (axis, arg) in enumerate(zip(axes, args, strict=True))
+        if not isinstance(arg, _SCALARS)
+    ]
+    if sample is not None:
+        columns.append(("sample", sample))
+    factors = [] if ambient is None else [("ambient weight", ambient)]
+    factors += [("weight", weight) for weight in weights]
+    for label in _fold_labels([operand for _, operand in (*columns, *factors)]):
+        forms = [(role, _form_of(operand, label)) for role, operand in columns]
+        for role, form in (*forms, *((r, _form_of(f, label)) for r, f in factors)):
+            if _is_record(form):
+                _refuse(f"{role} got a record ({form.describe()!r}); pick a field")
+        by_depth = {depth: entry for entry in forms if (depth := _depth(entry[1]))}
+        if len(by_depth) > 1:
+            (flat, flat_form), (deep, deep_form) = by_depth[min(by_depth)], by_depth[max(by_depth)]
+            _refuse(
+                f"{deep} needs one value per entry of {flat} ({flat_form.describe()!r}); "
+                f"got {deep_form.describe()!r}; flatten it or pick one per entry"
+            )
 
 
 def _rows(values: object) -> int | None:
@@ -288,6 +339,39 @@ class _WeightGuard:
         raise GraphedError(self.message)
 
 
+def _node_factors(factors: Sequence[Any]) -> list[Any]:
+    """Return the weight factors that are graph inputs: neither constants nor flat factors."""
+    return [factor for factor in factors if not isinstance(factor, (ScalarFactor, *_SCALARS))]
+
+
+def _ones(values: Sequence[Operand]) -> Any:
+    """Return ones shaped like the first value that has numbers; a refused record adds no node."""
+    for value in values:
+        try:
+            return member_of(value, "nominal") ** 0
+        except GraphedTypeError:  # a string axis has no power
+            continue
+    _refuse("a flat factor on weight= needs a numeric value or an array weight to multiply into")
+
+
+def _lifted(factors: list[Any], values: Sequence[Operand]) -> list[Any]:
+    """Multiply each scalar factor into the first array factor, or into ones when there is none.
+
+    A `ScalarFactor` holds no node, so it can only reach the fill through an array.
+    """
+    flat = [factor for factor in factors if isinstance(factor, ScalarFactor)]
+    if not flat:
+        return factors
+    rest = [factor for factor in factors if not isinstance(factor, ScalarFactor)]
+    arrays = [i for i, factor in enumerate(rest) if isinstance(factor, (Array, Varied))]
+    if not arrays:
+        arrays = [0]
+        rest.insert(0, _ones(values))
+    for factor in flat:
+        rest[arrays[0]] = rest[arrays[0]] * factor
+    return rest
+
+
 def _factor_list(weight: Operand | Sequence[Operand] | None) -> list[Operand]:
     if weight is None:
         return []
@@ -305,7 +389,7 @@ def _fold_labels(operands: Sequence[Operand]) -> tuple[str, ...]:
     out: dict[str, None] = {"nominal": None}
     for operand in operands:
         if isinstance(operand, Varied):
-            for label in graphed.labels(operand):
+            for label in graphed.systematics.labels(operand):
                 out.setdefault(label, None)
     return tuple(out)
 
@@ -325,7 +409,7 @@ def _blame(
     that blame: the guard compares each factor against the fill's FIRST value, so a loose value at
     any other axis position is not what the comparison is about.
     """
-    if ctx is not None and graphed.context_of(args[0]) is None:
+    if ctx is not None and context_of(args[0]) is None:
         return (("value[0]", _LOOSE_ROWS.format(index=0)),) * (int(has_ambient) + n_factors)
     ambient = (("ambient", _AMBIENT_ROWS),) if has_ambient else ()
     return ambient + tuple(

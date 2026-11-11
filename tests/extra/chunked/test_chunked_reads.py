@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from chunked_census import Events, take
 from graphed.awkward import AwkwardBackend, AwkwardForm
-from graphed.core.execution import LocalResources, SequentialRunner
+from graphed.core.execution import LocalResources, Plan, SequentialRunner
 from graphed_exec_local import ProcessPoolExecutor
 
 import graphed_histogram as gh
@@ -92,10 +92,12 @@ def test_only_the_heads_finalize_densifies_once_per_slot(runner: str) -> None:
     out = gh.unpack(pickle.loads(pickle.dumps(value)))
     assert take() == []
     assert all(type(h) in (bh.Histogram, hist.Hist) for h in _leaves(out))
-    assert [graphed.labels(v) for v in out.values()] == [("nominal", "sf_up")] * 2 + [("nominal",)]
+    assert [graphed.systematics.labels(v) for v in out.values()] == [("nominal", "sf_up")] * 2 + [
+        ("nominal",)
+    ]
     axis: Any = out["axis"]
-    assert _bytes(graphed.universe(axis, "sf_up")) == _bytes(axis[{2: 1}])
-    assert _bytes(graphed.nominal(out["sibling"])) == _bytes(out["sibling"]["nominal"])
+    assert _bytes(graphed.systematics.universe(axis, "sf_up")) == _bytes(axis[{2: 1}])
+    assert _bytes(graphed.systematics.nominal(out["sibling"])) == _bytes(out["sibling"]["nominal"])
 
 
 def _bh(cls: type, storage: str) -> Any:
@@ -148,6 +150,7 @@ def _typed(ev: Any) -> dict[str, tuple[Any, Any]]:
 def test_the_run_value_is_the_instantiated_class(runner: str) -> None:
     typed = _typed(_events())
     plan = gh.plan({k: v[0] for k, v in typed.items()}, steps_per_file=3)
+    assert isinstance(plan, Plan)
     partial = plan.process(plan.tasks[0].partition, LocalResources())
     assert sorted(k for k, v in partial.items() if type(v) is Chunked) == sorted(
         k for k in typed if k.endswith("Weight-chunked")

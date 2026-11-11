@@ -6,6 +6,20 @@ description — so identical fills collapse to one, and nothing in graphed or in
 needs an opinion about histograms. ``plan()`` exports the plan any runner aggregates, one fill
 task per chunk combined by :func:`add_histograms`. ``session.materialize(node)`` evaluates a single
 fill on the spot, for a source that has no chunks to hand out.
+
+The examples in this package's docstrings start from four events in a parquet file:
+
+>>> import awkward as ak
+>>> import boost_histogram as bh
+>>> import graphed
+>>> import graphed_histogram as gh
+>>> import hist.graphed as hg
+>>> from graphed.awkward import from_parquet, gak
+>>> from graphed.core.execution import SequentialRunner
+>>> table = ak.to_parquet(
+...     ak.Array({"x": [0.5, 1.5, 1.5, 2.5], "w": [1.0, 2.0, 1.0, 1.0]}), "events.parquet"
+... )
+>>> events = from_parquet("events", "events.parquet", steps_per_file=2)
 """
 
 from __future__ import annotations
@@ -15,6 +29,7 @@ from collections.abc import Callable
 import boost_histogram as bh
 
 from . import boost
+from ._fill import _VERSION
 from ._spec import content_hash, zero_of
 from ._spec import spec_of as _spec_of_hist
 from .boost import (
@@ -32,6 +47,8 @@ from .boost import (
     plan,
     unpack,
 )
+
+__version__ = _VERSION
 
 
 def spec_of(hist: object) -> str:
@@ -55,6 +72,7 @@ __all__ = [
     "FillEvaluator",
     "Histogram",
     "UnrunHistogramWarning",
+    "__version__",
     "add_histograms",
     "boost",
     "content_hash",
@@ -71,3 +89,7 @@ __all__ = [
     "unpack",
     "zero_of",
 ]
+
+
+def __dir__() -> list[str]:
+    return __all__

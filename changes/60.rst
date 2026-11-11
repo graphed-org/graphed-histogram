@@ -1,0 +1,4 @@
+.. under: Added
+
+* ``weight=`` takes a flat ``graphed.vary(1.0, "lumi", up=1.025, down=0.975)`` factor, alone or in
+  a list. It multiplies into the first array factor, or into ones when there is none (graphed#180).

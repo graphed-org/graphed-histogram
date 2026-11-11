@@ -11,6 +11,7 @@ import boost_histogram as bh
 import graphed
 import pytest
 from graphed import GraphedError, aggregate_plan
+from graphed.core.execution import Plan
 from graphed.services import ServiceSpec
 
 sys.path.append(str(Path(__file__).resolve().parents[2] / "frozen" / "m69b"))
@@ -42,6 +43,7 @@ def test_slots_are_sized_by_flow_extents_with_one_chunk_per_axis_label(path: str
     plan = gh.plan(
         {"a": histserv.backed(axis, ctx), "s": histserv.backed(sibling, ctx)}, steps_per_file=3
     )
+    assert isinstance(plan, Plan)
     slots = [Slot(3, 16 * 3 * 2, 3)] + [Slot(1, 8 * 4, 3)] * 3
     ((_name, size, got, count),) = ctx.servers()
     assert (size, count) == (1024, 4) and len(plan.tasks) == 3
@@ -56,7 +58,9 @@ def test_a_refused_serve_opens_no_server(path: str) -> None:
     _session, ev = events(path)
     hist = gh.boost.Histogram(bh.axis.Regular(8, 0.0, 1.0), storage=bh.storage.Double())
     hist.fill(ev.x)
-    part = gh.plan({"u": hist}, steps_per_file=3).tasks[0].partition
+    plan = gh.plan({"u": hist}, steps_per_file=3)
+    assert isinstance(plan, Plan)
+    part = plan.tasks[0].partition
     with pytest.raises(GraphedError):
         gh.plan({"h": histserv.backed(hist, ctx)}, partitions=[part, part])
     assert ctx.servers() == ()

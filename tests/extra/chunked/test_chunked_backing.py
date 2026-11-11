@@ -19,7 +19,7 @@ import pytest
 from chunked_census import take
 from graphed.awkward import AwkwardBackend, AwkwardForm
 from graphed.core import Partition
-from graphed.core.execution import LocalResources, SequentialRunner, WorkerResources
+from graphed.core.execution import LocalResources, Plan, SequentialRunner, WorkerResources
 from graphed_exec_local import ProcessPoolExecutor
 
 import graphed_histogram as gh
@@ -131,6 +131,7 @@ def test_chunked_and_dense_backings_agree_byte_for_byte(runner: str) -> None:
 
 def test_a_partial_ships_chunked_and_densifies_into_first_seen_order() -> None:
     plan = gh.plan(_hists(False), steps_per_file=4)
+    assert isinstance(plan, Plan)
     partial = plan.process(plan.tasks[0].partition, LocalResources())
     shipped = pickle.loads(pickle.dumps(partial[("growth", "nominal")]))
     assert type(shipped) is Chunked and len(shipped.chunked) == 2
@@ -149,6 +150,7 @@ def test_a_sparse_partial_pickles_its_filled_slices_only() -> None:
         storage=bh.storage.Weight(),
     ).fill(ev.x, "d7", weight=ev.w)
     plan = gh.plan({"h": h}, steps_per_file=4)
+    assert isinstance(plan, Plan)
     partial = plan.process(plan.tasks[0].partition, LocalResources())["h"]
     size = len(pickle.dumps(partial))
     assert type(partial) is Chunked and size * 10 < len(pickle.dumps(dense(partial)))
