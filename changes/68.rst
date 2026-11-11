@@ -1,0 +1,5 @@
+.. under: Changed
+
+* The README opens with a quick look: a ROOT file in, a ``hist.Hist`` out with
+  ``graphed.materialize(h)``, plotted, in this process. Its install line adds ``hist[plot]>=2.12``,
+  the first ``hist`` with ``hist.graphed`` (#68).

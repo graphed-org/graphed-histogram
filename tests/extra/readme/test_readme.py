@@ -27,6 +27,8 @@ def test_every_block_prints_what_the_readme_shows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    # MPLBACKEND is read only at matplotlib's import, which may predate this test
+    pytest.importorskip("matplotlib").use("Agg")
     namespace: dict[str, object] = {"__name__": "__main__"}
     assert BLOCKS
     for i, block in enumerate(BLOCKS):
