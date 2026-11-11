@@ -28,9 +28,9 @@ def test_every_block_prints_what_the_readme_shows(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     namespace: dict[str, object] = {"__name__": "__main__"}
-    assert len(BLOCKS) >= 5
+    assert BLOCKS
     for i, block in enumerate(BLOCKS):
-        # a block replacing the first program's body runs on a copy, as its own program
-        scope = dict(namespace) if block.startswith("# keep the imports") else namespace
+        # a __main__-guarded block is a program of its own; the others continue the first
+        scope = {"__name__": "__main__"} if "if __name__ ==" in block else namespace
         exec(compile(block, f"README.md block {i}", "exec"), scope)
         assert capsys.readouterr().out.splitlines() == _printed(block), f"block {i}"

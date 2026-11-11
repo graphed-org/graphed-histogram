@@ -52,6 +52,14 @@ changing the runner family or the partitioning can change the last bits.
 For bit-for-bit comparisons between runs, keep the runner configuration fixed, or compare an
 ``Int64`` count alongside the weighted result.
 
+One histogram reads one dataset
+-------------------------------
+
+``gh.plan`` collates histograms recorded over several datasets into one plan, but every fill of
+one histogram must record into the same session: filling one histogram from two datasets raises
+``TypeError``. Fill one per dataset and add the results
+(``gh.add_histograms(results["2017"]["pt"], results["2018"]["pt"])``).
+
 Backend behaviors are not carried to workers
 --------------------------------------------
 
