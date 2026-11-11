@@ -170,8 +170,8 @@ Printed output::
 
 ``from_awkward`` wraps an array that is already in memory, which is all you need to look at what
 was recorded. It has no chunks to hand out, though, so it cannot be planned: evaluate one of its
-fills with ``session.materialize(node)`` — the last line above — and use a chunked source like
-``from_parquet`` when you want ``.plan()``.
+fills with ``session.materialize(node)`` — the last line above — or fill the whole histogram with
+``graphed.materialize(h)``, and use a chunked source like ``from_parquet`` when you want ``.plan()``.
 
 Two fills, one evaluation — and the result still counts both, because the histogram remembers it
 asked for that step twice. You get the deduplication without changing what your program means.

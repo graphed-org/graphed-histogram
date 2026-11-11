@@ -714,7 +714,7 @@ class Histogram(bh.Histogram):
             reduce=p.reduce,
             combine=p.combine,
             empty=p.empty,
-            finalize=lambda value: unpack(p.finalize(value))["filled"],
+            finalize=lambda value: unpack(value)["filled"],
             on_compiled=p.on_compiled,
             externals=p.externals,
         )
