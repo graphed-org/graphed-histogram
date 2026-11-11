@@ -1,0 +1,7 @@
+.. under: Added
+
+* ``gh.plan`` takes whole-dataset reductions beside histograms, ``{"h": h, "sumw": gak.sum(w,
+  axis=None)}``, each back under its name as its value, or ``{label: value}`` for a varied one, from
+  the same read. ``gh.plan(..., writes={"skim": parquet_write(...)})`` writes a skim in that pass, and
+  ``out["skim"]`` is its part paths. Any other array raises a ``TypeError`` naming the rule, in
+  place of an ``AttributeError``.
