@@ -24,20 +24,18 @@ pip install "graphed-executors[dask]"              # or [parsl] for a cluster
 
 Building `graphed` from source (no wheel for your platform) needs a Rust toolchain.
 
-## Your first deferred histogram
+## A quick look
 
-A complete program: a ROOT file in, a filled `boost_histogram.Histogram` out. The only new
-ingredient over eager boost-histogram is a *source*, the object that hands your dataset out in
-chunks so workers each fill their piece. Here it is `uproot.graphed` (uproot 5.7.7 or later), which
-reads a `TTree` the way `uproot.dask` does; `graphed.awkward.from_parquet` is the parquet one.
+A ROOT file in, a `hist.Hist` out, in this process. `uproot.graphed` (uproot 5.7.7 or later)
+records the file's events the way `uproot.dask` does, `.fill()` records the fill, and
+`graphed.materialize` runs it, reading only the branches the fill uses:
 
 ```python
 import awkward as ak
-import boost_histogram as bh
-import graphed_histogram as gh
+import graphed
 import numpy as np
 import uproot
-from graphed.core.execution import SequentialRunner
+from hist.graphed import Hist
 
 with uproot.recreate("events.root") as f:  # stand in for your dataset
     f.mktree("Events", {"Jet_pt": "var * float64", "MET_pt": "float64",
@@ -51,6 +49,27 @@ with uproot.recreate("events.root") as f:  # stand in for your dataset
     })
 
 events = uproot.graphed("events.root:Events")  # reads the file's form, no events
+h = Hist.new.Reg(4, 0, 100, name="pt", label="jet $p_T$ [GeV]").Int64().fill(pt=events.Jet_pt)
+
+filled = graphed.materialize(h)  # a new, filled hist.Hist; h itself stays un-run
+print(type(filled).__name__, filled.values())
+# Hist [3 4 3 1]
+artists = filled.plot()
+```
+
+Fitting and plotting are `hist`, scipy and matplotlib code on `filled`, as they would be on any
+`hist.Hist`.
+
+## Your first deferred histogram
+
+The same file, through a plan a runner executes: this is how a fill runs over a whole dataset, a
+chunk per task. A runner hands back the class you instantiated; here a
+`boost_histogram.Histogram`.
+
+```python
+import boost_histogram as bh
+import graphed_histogram as gh
+from graphed.core.execution import SequentialRunner
 
 h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
 h.fill(events.Jet_pt)                      # records the fill; nothing is read yet
@@ -90,7 +109,7 @@ There is **no `.compute()`**. You export a plan and run it — and every runner 
 same plan:
 
 ```python
-# keep the imports from the first program, and replace everything after them with this;
+# keep the imports from the two programs above, and replace everything after them with this;
 # needs graphed-executors. A process pool spawns its workers and each re-imports your file,
 # so anything with an effect goes under a __main__ guard: writing the file, staging the
 # fill, running. Otherwise a re-importing worker rewrites the very file the run is reading.

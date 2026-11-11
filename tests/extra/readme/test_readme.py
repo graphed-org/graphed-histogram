@@ -27,6 +27,7 @@ def test_every_block_prints_what_the_readme_shows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MPLBACKEND", "Agg")
     namespace: dict[str, object] = {"__name__": "__main__"}
     assert len(BLOCKS) >= 5
     for i, block in enumerate(BLOCKS):
