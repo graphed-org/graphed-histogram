@@ -17,7 +17,7 @@ Deferred [boost-histogram](https://github.com/scikit-hep/boost-histogram) /
 ## Install
 
 ```bash
-pip install "graphed[awkward]" graphed-histogram "uproot>=5.7.7"  # ROOT events + deferred fills
+pip install "graphed[awkward]" graphed-histogram "uproot>=5.7.7" "hist[plot]>=2.12"  # ROOT events + deferred fills
 pip install graphed-executors                      # process-pool runners
 pip install "graphed-executors[dask]"              # or [parsl] for a cluster
 ```
@@ -54,7 +54,7 @@ h = Hist.new.Reg(4, 0, 100, name="pt", label="jet $p_T$ [GeV]").Int64().fill(pt=
 filled = graphed.materialize(h)  # a new, filled hist.Hist; h itself stays un-run
 print(type(filled).__name__, filled.values())
 # Hist [3 4 3 1]
-artists = filled.plot()
+filled.plot()
 ```
 
 Fitting and plotting are `hist`, scipy and matplotlib code on `filled`, as they would be on any
@@ -86,12 +86,9 @@ time, exactly as an eager `fill(ak.flatten(...))` would.
 
 ## Results in this process: `graphed.materialize`
 
-A runner is for the full dataset. To look at a value while you write the analysis,
-`graphed.materialize` evaluates anything recorded, here in this process, reading only the columns
-it uses:
+`graphed.materialize` evaluates any recorded value, not only a histogram:
 
 ```python
-import graphed
 from graphed.awkward import gak
 
 print(graphed.materialize(gak.sum(events.genWeight, axis=None)))
