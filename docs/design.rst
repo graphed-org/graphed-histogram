@@ -407,9 +407,9 @@ boost axis constructors take no ``name=`` keyword, so the name is an attribute y
 
     one = run(staged(variation_axis=True))
     print([type(ax).__name__ for ax in one.axes])
-    print(graphed.labels(one))
-    print(graphed.nominal(one).view()["value"])
-    print(graphed.universe(one, "sf_up").view()["value"])
+    print(graphed.systematics.labels(one))
+    print(graphed.systematics.nominal(one).view()["value"])
+    print(graphed.systematics.universe(one, "sf_up").view()["value"])
 
     many = run(staged(variation_axis=False))
     print(sorted(many))
@@ -427,8 +427,8 @@ Printed output::
 On fixed axes the two modes agree bin for bin: the nominal slice of the axis-mode histogram and
 the ``nominal`` entry of the sibling-mode mapping are the same numbers (on growth axes they agree
 label by label at equal category and bin edge, as :ref:`growth-axes` details). What differs is
-the container, and ``graphed.labels`` / ``graphed.nominal`` / ``graphed.universe`` read both
-shapes the same way — in axis mode they slice the axis away, in sibling mode they index the
+the container, and ``graphed.systematics.labels`` / ``nominal`` / ``universe`` read both shapes
+the same way — in axis mode they slice the axis away, in sibling mode they index the
 mapping.
 
 The axis-mode result is an ordinary ``bh.Histogram`` with one extra axis, so nothing downstream
@@ -436,7 +436,8 @@ needs a special case: it merges with ``gh.add_histograms`` like any other, and p
 ``hist`` indexing work on it unchanged. The ``variation`` axis is a non-growth ``StrCategory``
 whose categories are your labels in sorted order, so two runs of the same program give you the
 same axis in the same order.
-``graphed.labels`` reports them nominal-first, which is the order you usually want to read.
+``graphed.systematics.labels`` reports them nominal-first, which is the order you usually want to
+read.
 
 
 What folds onto the axis and what stays a sibling

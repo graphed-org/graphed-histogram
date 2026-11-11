@@ -10,8 +10,9 @@ from typing import Any
 
 import boost_histogram as bh
 import numpy as np
-from graphed import Array, CompiledGraph, GraphedError
+from graphed import Array, GraphedError
 from graphed.core import GraphStore
+from graphed.execute import CompiledGraph
 
 from ._chunked import BH, Chunked, Kind, Partial, as_kind, dense, empty
 from ._histserv import Receipt, SlotKey, _ship

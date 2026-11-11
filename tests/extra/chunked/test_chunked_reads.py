@@ -92,10 +92,12 @@ def test_only_the_heads_finalize_densifies_once_per_slot(runner: str) -> None:
     out = gh.unpack(pickle.loads(pickle.dumps(value)))
     assert take() == []
     assert all(type(h) in (bh.Histogram, hist.Hist) for h in _leaves(out))
-    assert [graphed.labels(v) for v in out.values()] == [("nominal", "sf_up")] * 2 + [("nominal",)]
+    assert [graphed.systematics.labels(v) for v in out.values()] == [("nominal", "sf_up")] * 2 + [
+        ("nominal",)
+    ]
     axis: Any = out["axis"]
-    assert _bytes(graphed.universe(axis, "sf_up")) == _bytes(axis[{2: 1}])
-    assert _bytes(graphed.nominal(out["sibling"])) == _bytes(out["sibling"]["nominal"])
+    assert _bytes(graphed.systematics.universe(axis, "sf_up")) == _bytes(axis[{2: 1}])
+    assert _bytes(graphed.systematics.nominal(out["sibling"])) == _bytes(out["sibling"]["nominal"])
 
 
 def _bh(cls: type, storage: str) -> Any:

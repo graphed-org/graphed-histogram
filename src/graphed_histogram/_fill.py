@@ -235,19 +235,19 @@ def _mixed_row_spaces(session: Any, value: Operand, applied: Sequence[Operand]) 
     """
     if getattr(session.backend, "broadcast_like", None) is None:
         return False
-    value_form = session.form(graphed.member_of(value, "nominal"))
+    value_form = session.form(graphed.systematics.member_of(value, "nominal"))
     depth = _depth(value_form)
     if depth is None or _drops_rows(value_form):
         return False
     for factor in applied:
-        other = _depth(session.form(graphed.member_of(factor, "nominal")))
+        other = _depth(session.form(graphed.systematics.member_of(factor, "nominal")))
         if other is not None and other < depth:
             return True
     return False
 
 
 def _form_of(operand: Operand, label: str) -> Any:
-    member = graphed.member_of(operand, label)
+    member = graphed.systematics.member_of(operand, label)
     return member.session.form(member)
 
 
@@ -348,7 +348,7 @@ def _ones(values: Sequence[Operand]) -> Any:
     """Return ones shaped like the first value that has numbers; a refused record adds no node."""
     for value in values:
         try:
-            return graphed.member_of(value, "nominal") ** 0
+            return graphed.systematics.member_of(value, "nominal") ** 0
         except GraphedTypeError:  # a string axis has no power
             continue
     _refuse("a flat factor on weight= needs a numeric value or an array weight to multiply into")
@@ -389,7 +389,7 @@ def _fold_labels(operands: Sequence[Operand]) -> tuple[str, ...]:
     out: dict[str, None] = {"nominal": None}
     for operand in operands:
         if isinstance(operand, Varied):
-            for label in graphed.labels(operand):
+            for label in graphed.systematics.labels(operand):
                 out.setdefault(label, None)
     return tuple(out)
 
@@ -409,7 +409,7 @@ def _blame(
     that blame: the guard compares each factor against the fill's FIRST value, so a loose value at
     any other axis position is not what the comparison is about.
     """
-    if ctx is not None and graphed.context_of(args[0]) is None:
+    if ctx is not None and graphed.systematics.context_of(args[0]) is None:
         return (("value[0]", _LOOSE_ROWS.format(index=0)),) * (int(has_ambient) + n_factors)
     ambient = (("ambient", _AMBIENT_ROWS),) if has_ambient else ()
     return ambient + tuple(

@@ -26,10 +26,10 @@ from typing import Any, TypeVar, overload
 
 import boost_histogram as bh
 import graphed
-from graphed import Array, CompiledGraph, GraphedError, Varied, aggregate_plan, collate
+from graphed import Array, GraphedError, Varied, aggregate_plan, collate
 from graphed.core import DurablePlanV2, Partition, PayloadDescriptor
 from graphed.core.execution import Plan
-from graphed.execute import Key, external_key
+from graphed.execute import CompiledGraph, Key, external_key
 from graphed.provenance import capture
 from graphed.systematics import ScalarFactor
 
@@ -296,16 +296,22 @@ class Histogram(bh.Histogram):
         )
 
         given = [*values, *weights, *([] if recorded_sample is None else [recorded_sample])]
-        ctx = graphed.unify_contexts(*(graphed.context_of(value) for value in given))
-        ambient = None if unweighted or ctx is None else graphed.weight(ctx)
+        ctx = graphed.systematics.unify_contexts(
+            *(graphed.systematics.context_of(value) for value in given)
+        )
+        ambient = None if unweighted or ctx is None else graphed.systematics.weight(ctx)
         check_fill_types(self.axes, args, ambient, weights, recorded_sample)
         # lifting records nodes, so it waits until every refusal has had its say
         all_weights = _lifted(all_weights, values)
         weights = _node_factors(all_weights)
-        axes = [graphed.reindex_to(value, ctx) for value in values]
+        axes = [graphed.systematics.reindex_to(value, ctx) for value in values]
         # the ambient one already is
-        factors = [graphed.reindex_to(value, ctx) for value in weights]
-        sampled = None if recorded_sample is None else graphed.reindex_to(recorded_sample, ctx)
+        factors = [graphed.systematics.reindex_to(value, ctx) for value in weights]
+        sampled = (
+            None
+            if recorded_sample is None
+            else graphed.systematics.reindex_to(recorded_sample, ctx)
+        )
 
         applied: list[Operand] = ([] if ambient is None else [ambient]) + factors
         labels = _fold_labels([*axes, *applied, *([] if sampled is None else [sampled])])
@@ -321,7 +327,7 @@ class Histogram(bh.Histogram):
                 args, ([] if ambient is None else [ambient]) + all_weights, sample
             ),
         )
-        session = graphed.member_of(axes[0], "nominal").session
+        session = graphed.systematics.member_of(axes[0], "nominal").session
         # a fill whose factors already share the value's row space and carries neither a context
         # handle nor a `Varied` input records exactly as it did before variations existed: no
         # broadcast step, one node, the same graph as before
@@ -414,16 +420,18 @@ class Histogram(bh.Histogram):
         params = _fill_params(self._spec, low.shape, len(low.axes))
         per_label: dict[str, Array] = {}
         for label in low.labels:
-            inputs: list[Array] = [graphed.member_of(value, label) for value in low.axes]
+            inputs: list[Array] = [
+                graphed.systematics.member_of(value, label) for value in low.axes
+            ]
             value = inputs[0]
             for (coordinate, message), factor in zip(low.blame, low.applied, strict=True):
-                narrowed = graphed.member_of(factor, label)
+                narrowed = graphed.systematics.member_of(factor, label)
                 if low.broadcast:
                     guarded = self._guard(low.session, narrowed, value, coordinate, message)
-                    narrowed = graphed.broadcast_like(value, guarded)
+                    narrowed = graphed.systematics.broadcast_like(value, guarded)
                 inputs.append(narrowed)
             if low.sampled is not None:
-                inputs.append(graphed.member_of(low.sampled, label))
+                inputs.append(graphed.systematics.member_of(low.sampled, label))
             per_label[label] = low.session.record_external(
                 "histogram.fill",
                 evaluator,
@@ -499,7 +507,7 @@ class Histogram(bh.Histogram):
         fixed = [*low.axes, *([] if low.sampled is None else [low.sampled])]
         groups: dict[tuple[int, ...], list[str]] = {}
         for label in low.labels:
-            key = tuple(graphed.member_of(operand, label).node_id for operand in fixed)
+            key = tuple(graphed.systematics.member_of(operand, label).node_id for operand in fixed)
             groups.setdefault(key, []).append(label)
 
         axis_spec = _declare_axis_spec(self, sorted(low.labels))
@@ -524,17 +532,17 @@ class Histogram(bh.Histogram):
         loop). The evaluator writes each label's scalar category on the variation axis; its
         content hash folds `node_labels` in so the node owns its evaluator.
         """
-        value_members = [graphed.member_of(operand, carrier) for operand in low.axes]
+        value_members = [graphed.systematics.member_of(operand, carrier) for operand in low.axes]
         value = value_members[0]
         inputs: list[Array] = list(value_members)
         if low.sampled is not None:
-            inputs.append(graphed.member_of(low.sampled, carrier))
+            inputs.append(graphed.systematics.member_of(low.sampled, carrier))
         for label in node_labels:
             for (coordinate, message), factor in zip(low.blame, low.applied, strict=True):
-                narrowed = graphed.member_of(factor, label)
+                narrowed = graphed.systematics.member_of(factor, label)
                 if low.broadcast:
                     guarded = self._guard(low.session, narrowed, value, coordinate, message)
-                    narrowed = graphed.broadcast_like(value, guarded)
+                    narrowed = graphed.systematics.broadcast_like(value, guarded)
                 inputs.append(narrowed)
         evaluator = replace(low.shape, spec=axis_spec, variation=tuple(node_labels))
         chash = _fill_chash(
@@ -1029,8 +1037,8 @@ def unpack(value: Mapping[Any, Any]) -> dict[str, bh.Histogram | dict[str, bh.Hi
     ``(output, None)`` is the axis-mode histogram, which carries its variations on an axis
     rather than in the mapping. A varied sibling output always carries at least two labels, so no
     output's shape is ambiguous, in a mixed plan exactly as in a single-mode one.
-    ``graphed.labels``/``universe``/``nominal`` read both shapes uniformly. A histserv receipt
-    unpacks to its server histogram's snapshot, which stays on the server.
+    ``graphed.systematics.labels``/``universe``/``nominal`` read both shapes uniformly. A
+    histserv receipt unpacks to its server histogram's snapshot, which stays on the server.
 
     A collated ``{dataset: value}`` unpacks per dataset, and an unpacked value unpacks to itself.
     """
