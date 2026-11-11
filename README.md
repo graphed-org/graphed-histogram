@@ -17,7 +17,7 @@ Deferred [boost-histogram](https://github.com/scikit-hep/boost-histogram) /
 ## Install
 
 ```bash
-pip install "graphed[awkward]" graphed-histogram   # awkward events + deferred fills
+pip install "graphed[awkward]" graphed-histogram "uproot>=5.7.7"  # ROOT events + deferred fills
 pip install graphed-executors                      # process-pool runners
 pip install "graphed-executors[dask]"              # or [parsl] for a cluster
 ```
@@ -109,10 +109,12 @@ There is **no `.compute()`**. You export a plan and run it — and every runner 
 same plan:
 
 ```python
-# keep the imports from the two programs above, and replace everything after them with this;
-# needs graphed-executors. A process pool spawns its workers and each re-imports your file,
-# so anything with an effect goes under a __main__ guard: writing the file, staging the
-# fill, running. Otherwise a re-importing worker rewrites the very file the run is reading.
+# needs graphed-executors. Each worker re-imports this file, so everything with an effect
+# goes under the __main__ guard, or a worker would rewrite the file the run is reading.
+import awkward as ak
+import boost_histogram as bh
+import graphed_histogram as gh
+import uproot
 from graphed_executors.local import ProcessPoolExecutor
 
 if __name__ == "__main__":
@@ -169,8 +171,8 @@ The [variations walkthrough](docs/design.rst) covers the choice.
 
 ## Several datasets, one plan
 
-Each dataset is its own source, and `gh.plan` takes them nested, the way a coffea fileset is: one
-plan with the sum of their tasks, and a result in the same nesting.
+Each dataset is its own source, and `gh.plan` takes histograms of several in one call: one plan
+with the sum of their tasks, its result in the nesting you passed, such as a coffea fileset's.
 
 ```python
 import shutil
@@ -197,6 +199,9 @@ plan = graphed.collate({name: met(ev).plan(steps_per_file=2) for name, ev in fil
 print(SequentialRunner().run(plan).value["dy"].values())
 # [3 2 1 0]
 ```
+
+One histogram still fills from one dataset: filling one histogram from both raises `TypeError`, so
+add the per-dataset results with `gh.add_histograms`.
 
 ## Which entry point do I want?
 
