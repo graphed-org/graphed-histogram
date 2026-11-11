@@ -1,0 +1,6 @@
+.. under: Changed
+
+* The README reads a ROOT file first (``uproot.graphed``, uproot 5.7.7 or later), teaches
+  ``graphed.materialize`` for values in this process, and shows several datasets in one plan with
+  ``gh.plan`` and its ``graphed.collate`` form; "Two datasets in one plan" is no longer listed as
+  unsupported. Every python block in it runs in the test suite.

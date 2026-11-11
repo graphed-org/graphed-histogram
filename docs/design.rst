@@ -1003,9 +1003,9 @@ tree shape. On fixed axes ``Int64`` counts are exact everywhere (on growth axes,
 non-finite exceptions in :ref:`growth-axes`). If you need bit-identical floats across machines,
 keep the runner family and the partitioning fixed.
 
-**Two datasets in one plan.** Every fill in a plan must record into the same session, and a
-session plans against exactly one partitioned source. Run the datasets separately and add the
-results with ``gh.add_histograms``.
+**One histogram filled from two datasets.** ``gh.plan`` collates histograms from several datasets,
+but every fill of one histogram records into one session. Fill one histogram per dataset and add
+the results with ``gh.add_histograms``.
 
 **Behaviors carried automatically to workers.** Pass ``backend="module:attr"`` when your backend
 carries behaviors; there is no default that recovers them from the recording session.

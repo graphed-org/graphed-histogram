@@ -36,6 +36,8 @@ dev = [
   "graphed-executors",
   # hist 2.12 is the first with hist.graphed; uhi 1.0 the first with uhi.io.json
   "hist>=2.12",
+  # README's ROOT examples (tests/extra/readme); 5.7.7 is the first with uproot.graphed
+  "uproot>=5.7.7",
   "uhi>=1.0",
   # parquet-reading tests: awkward's arrow->form conversion calls to_pandas_dtype (the
   # graphed-awkward dev-extra precedent)

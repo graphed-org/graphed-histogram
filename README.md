@@ -17,7 +17,7 @@ Deferred [boost-histogram](https://github.com/scikit-hep/boost-histogram) /
 ## Install
 
 ```bash
-pip install "graphed[awkward]" graphed-histogram   # awkward events + deferred fills
+pip install "graphed[awkward]" graphed-histogram "uproot>=5.7.7"  # ROOT events + deferred fills
 pip install graphed-executors                      # process-pool runners
 pip install "graphed-executors[dask]"              # or [parsl] for a cluster
 ```
@@ -26,36 +26,36 @@ Building `graphed` from source (no wheel for your platform) needs a Rust toolcha
 
 ## Your first deferred histogram
 
-A complete program: awkward events in, a filled `boost_histogram.Histogram` out. The only
-new ingredient over eager boost-histogram is a *source* — the object that hands your dataset
-out in chunks, so workers each fill their piece. Here it is a parquet file; a ROOT file read
-through uproot's `uproot.graphed` works the same way, with `steps_per_file` set on the plan:
-`gh.plan({...}, steps_per_file=4)`.
+A complete program: a ROOT file in, a filled `boost_histogram.Histogram` out. The only new
+ingredient over eager boost-histogram is a *source*, the object that hands your dataset out in
+chunks so workers each fill their piece. Here it is `uproot.graphed` (uproot 5.7.7 or later), which
+reads a `TTree` the way `uproot.dask` does; `graphed.awkward.from_parquet` is the parquet one.
 
 ```python
 import awkward as ak
 import boost_histogram as bh
 import graphed_histogram as gh
-from graphed import Session
-from graphed.awkward import AwkwardBackend, from_parquet
+import numpy as np
+import uproot
 from graphed.core.execution import SequentialRunner
 
-events = ak.Array({
-    "Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
-                                   [80.0], [15.0, 45.0], [70.0, 10.0]])}),
-    "MET": ak.zip({"pt": [10.0, 40.0, 70.0, 120.0, 30.0, 90.0]}),
-    "genweight": [1.0, 1.0, -1.0, 1.0, 1.0, 1.0],
-    "pu_sf": [0.9, 1.1, 1.0, 0.95, 1.05, 1.0],
-})
-ak.to_parquet(events, "events.parquet")    # stand in for your dataset
+with uproot.recreate("events.root") as f:  # stand in for your dataset
+    f.mktree("Events", {"Jet_pt": "var * float64", "MET_pt": "float64",
+                        "genWeight": "float64", "pu_sf": "float64"})
+    f["Events"].extend({
+        "Jet_pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
+                            [80.0], [15.0, 45.0], [70.0, 10.0]]),
+        "MET_pt": np.array([10.0, 40.0, 70.0, 120.0, 30.0, 90.0]),
+        "genWeight": np.array([1.0, 1.0, -1.0, 1.0, 1.0, 1.0]),
+        "pu_sf": np.array([0.9, 1.1, 1.0, 0.95, 1.05, 1.0]),
+    })
 
-s = Session(AwkwardBackend())
-evt = from_parquet("events", "events.parquet", steps_per_file=2, session=s)
+events = uproot.graphed("events.root:Events")  # reads the file's form, no events
 
 h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
-h.fill(evt.Jet.pt)                         # records the fill; nothing is read yet
+h.fill(events.Jet_pt)                      # records the fill; nothing is read yet
 
-plan = h.plan()                            # 2 chunks -> 2 fill tasks + a combine
+plan = h.plan(steps_per_file=2)            # 2 chunks -> 2 fill tasks + a combine
 result = SequentialRunner().run(plan).value
 print(result.values())
 # [3 4 3 1]
@@ -65,29 +65,50 @@ print(result.values())
 that `.fill()` stages work and evaluation belongs to a runner. Ragged values flatten at fill
 time, exactly as an eager `fill(ak.flatten(...))` would.
 
+## Results in this process: `graphed.materialize`
+
+A runner is for the full dataset. To look at a value while you write the analysis,
+`graphed.materialize` evaluates anything recorded, here in this process, reading only the columns
+it uses:
+
+```python
+import graphed
+from graphed.awkward import gak
+
+print(graphed.materialize(gak.sum(events.genWeight, axis=None)))
+# 4.0
+print(graphed.materialize(events.MET_pt[events.MET_pt > 50.0]).tolist())
+# [70.0, 120.0, 90.0]
+```
+
+It takes a nesting of them too, `graphed.materialize({"n": ..., "met": ...})`, and evaluates them
+in one read.
+
 ## The one thing that's different
 
 There is **no `.compute()`**. You export a plan and run it — and every runner accepts the
 same plan:
 
 ```python
-# keep the imports and `events` from the program above, and replace everything after
-# them with this — needs graphed-executors. A process pool spawns its workers and each
-# re-imports your file, so anything with an effect goes under a __main__ guard: writing
-# the file, staging the fill, running. Otherwise a re-importing worker rewrites the very
-# file the run is reading.
+# needs graphed-executors. Each worker re-imports this file, so everything with an effect
+# goes under the __main__ guard, or a worker would rewrite the file the run is reading.
+import awkward as ak
+import boost_histogram as bh
+import graphed_histogram as gh
+import uproot
 from graphed_executors.local import ProcessPoolExecutor
 
 if __name__ == "__main__":
-    ak.to_parquet(events, "events.parquet")
+    with uproot.recreate("jets.root") as f:
+        f.mktree("Events", {"Jet_pt": "var * float64"})
+        f["Events"].extend({"Jet_pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
+                                                [80.0], [15.0, 45.0], [70.0, 10.0]])})
 
-    s = Session(AwkwardBackend())
-    evt = from_parquet("events", "events.parquet", steps_per_file=2, session=s)
-
+    events = uproot.graphed("jets.root:Events")
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
-    h.fill(evt.Jet.pt)
+    h.fill(events.Jet_pt)
 
-    result = ProcessPoolExecutor(max_workers=2).run(h.plan()).value
+    result = ProcessPoolExecutor(max_workers=2).run(h.plan(steps_per_file=2)).value
     print(result.values())
     # [3 4 3 1]
 ```
@@ -103,9 +124,9 @@ HEP event weights arrive as several factors. `weight=` takes a **list** of per-e
 and multiplies them elementwise — no pre-multiplying in your own code:
 
 ```python
-# continuing from the first example (same evt)
+# continuing from the first example (same events)
 hmet = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Weight())
-hmet.fill(evt.MET.pt, weight=[evt.genweight, evt.pu_sf])
+hmet.fill(events.MET_pt, weight=[events.genWeight, events.pu_sf])
 ```
 
 A single array (`weight=w`) works as before.
@@ -117,7 +138,7 @@ graph, so a selection feeding several histograms is read and evaluated once, and
 columns any fill touches are read off disk.
 
 ```python
-plan = gh.plan({"met": hmet, "jet_pt": h})
+plan = gh.plan({"met": hmet, "jet_pt": h}, steps_per_file=2)
 out = SequentialRunner().run(plan).value   # {name: histogram}
 print(out["jet_pt"].values())
 # [3 4 3 1]
@@ -128,6 +149,40 @@ If your fills carry systematic variations (via `graphed.vary`), each name maps t
 histogram with a `variation` axis rather than one histogram per label.
 `gh.label_listing(...)` shows which labels reach which histogram before you run anything.
 The [variations walkthrough](docs/design.rst) covers the choice.
+
+## Several datasets, one plan
+
+Each dataset is its own source, and `gh.plan` takes histograms of several in one call: one plan
+with the sum of their tasks, its result in the nesting you passed, such as a coffea fileset's.
+
+```python
+import shutil
+
+shutil.copy("events.root", "ttbar.root")  # a second dataset
+
+def met(events):
+    h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 200.0), storage=bh.storage.Int64())
+    return h.fill(events.MET_pt)
+
+fileset = {"dy": uproot.graphed("events.root:Events"),
+           "ttbar": uproot.graphed("ttbar.root:Events")}
+plan = gh.plan({name: {"met": met(ev)} for name, ev in fileset.items()}, steps_per_file=2)
+out = SequentialRunner().run(plan).value   # {dataset: {name: histogram}}
+print(len(plan.tasks), out["ttbar"]["met"].values())
+# 4 [3 2 1 0]
+```
+
+That is `graphed.collate` underneath, which joins any plans, one per dataset, into one, its value a
+result per dataset:
+
+```python
+plan = graphed.collate({name: met(ev).plan(steps_per_file=2) for name, ev in fileset.items()})
+print(SequentialRunner().run(plan).value["dy"].values())
+# [3 2 1 0]
+```
+
+One histogram still fills from one dataset: filling one histogram from both raises `TypeError`, so
+add the per-dataset results with `gh.add_histograms`.
 
 ## Which entry point do I want?
 
@@ -181,9 +236,6 @@ Beyond those, the toolbox splits by task:
   grow ([Growth axes](docs/design.rst#growth-axes)).
 - **dask-style `persist` / `to_delayed`.** A plan is a live object your script builds, not
   a file format — rebuild it from the script and hand it to whichever runner you have.
-- **Two datasets in one plan.** A plan reads one chunked dataset: every fill in it records
-  into the same session, and that session has exactly one partitioned source. Run a plan
-  per dataset and add the results with `gh.add_histograms`.
 
 ## Next
 
