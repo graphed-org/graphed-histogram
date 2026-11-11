@@ -1,0 +1,6 @@
+.. under: Changed
+
+* ``h.plan()``, ``gh.plan`` and ``graphed.materialize`` refuse a deferred histogram that holds counts
+  no ``.fill()`` recorded (``h + eager``, ``h += eager``, a write to ``h.view()``), since a run
+  builds its result from zero and would drop them. Add them to the result with
+  ``gh.add_histograms(result, counts)`` instead.

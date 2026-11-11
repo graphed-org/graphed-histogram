@@ -79,6 +79,9 @@ That covers every read of the bins (``values``, ``variances``, ``counts``, ``vie
 still does what it always did, which is the point of the second half of the message: ``h * 2`` and
 ``h[2:5]`` read the empty storage, and running ``h`` afterwards gives the histogram you filled, not
 a doubled or sliced one. Scale and slice the result instead.
+Counts put into ``h`` itself, by ``h + eager``, ``h += eager`` or a write to ``h.view()``, are
+refused when ``h`` is planned or materialized, because a run builds its result from zero: add them
+to the result with ``gh.add_histograms(result, counts)``.
 
 A few uses stay silent. ``eager += h``, and ``==`` or ``!=`` between a ``hist.Hist`` and a plain
 ``gh.boost.Histogram``, reach no code here. ``h.sort(axis)``, ``h.expand_cats()`` and

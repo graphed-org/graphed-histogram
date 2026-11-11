@@ -642,6 +642,7 @@ class Histogram(bh.Histogram):
         >>> SequentialRunner().run(plan).value.values().tolist()
         [1, 2, 1]
         """
+        _refuse_outside_counts(self)
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
         if self._histserv is not None:
@@ -691,6 +692,7 @@ class Histogram(bh.Histogram):
         :func:`unpack` gives for it, the in-memory class filled, or for a varied one
         ``{label: histogram}``. With no fills it is that class, empty.
         """
+        _refuse_outside_counts(self)
         if self._histserv is not None:
             raise GraphedError(
                 "graphed.materialize runs no servers, so it cannot fill this histserv-backed "
@@ -715,6 +717,18 @@ class Histogram(bh.Histogram):
             finalize=lambda value: unpack(value)["filled"],
             on_compiled=p.on_compiled,
             externals=p.externals,
+        )
+
+
+def _refuse_outside_counts(h: Histogram, name: str | None = None) -> None:
+    """Raise if ``h`` has counts no fill recorded (``+``, ``+=``, view writes): runs lose them."""
+    if not bh.Histogram.empty(h, flow=True):
+        which = "this histogram" if name is None else f"histogram {name!r}"
+        raise ValueError(
+            f"{which} holds counts that no .fill() recorded (sum "
+            f"{bh.Histogram.sum(h, flow=True)}), and a run builds its result from zero, so they "
+            "would be lost: plan a histogram that has only fills, then add the counts to the "
+            "result with gh.add_histograms(result, counts), or fill them"
         )
 
 
@@ -873,6 +887,8 @@ def _pieces(
     writes: tuple[str, ...] = (),
 ) -> HistogramPieces:
     """Return the pieces of ``items``, with ``scalars`` and ``writes`` slots beside theirs."""
+    for name, h in items:
+        _refuse_outside_counts(h, name)
     if any(not h.staged_fills() for _, h in items):
         raise ValueError("every histogram must have at least one staged fill before planning")
     layout = tuple(slot for name, hist in items for slot in _slots(name, hist))
