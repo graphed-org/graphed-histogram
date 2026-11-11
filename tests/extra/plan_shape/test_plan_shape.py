@@ -22,8 +22,8 @@ from graphed_histogram import _combine
 
 RUNNERS: dict[str, Any] = {
     "sequential": SequentialRunner,
-    "thread": lambda: ThreadExecutor(max_workers=2),
-    "process": lambda: ProcessPoolExecutor(max_workers=2),
+    "thread": lambda: ThreadExecutor(workers=2),
+    "process": lambda: ProcessPoolExecutor(workers=2),
 }
 
 

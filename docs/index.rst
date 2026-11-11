@@ -102,7 +102,7 @@ pool, a dask cluster or a parsl pool changes no analysis code:
        jets.fill(evt.jet_pt)
 
        plan = gh.plan({"met": met, "jet_pt": jets})
-       out = ProcessPoolExecutor(max_workers=2).run(plan).value
+       out = ProcessPoolExecutor(workers=2).run(plan).value
        print(out["met"].values())
        print(out["jet_pt"].values())
 

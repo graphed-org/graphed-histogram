@@ -200,7 +200,7 @@ def test_the_process_pool_agrees_with_the_sequential_run() -> None:
     """
     pool = pytest.importorskip("graphed_exec_local").ProcessPoolExecutor
     seq = _run(SequentialRunner())["ht"]
-    par = _run(pool(max_workers=2))["ht"]
+    par = _run(pool(workers=2))["ht"]
     assert sorted(par) == sorted(seq)
     for label in seq:
         assert np.allclose(_values(par[label]), _values(seq[label]), rtol=1e-12, atol=0)

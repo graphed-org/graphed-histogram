@@ -32,8 +32,8 @@ EVENTS = ak.zip(
 X, W, C = (np.asarray(EVENTS[k]) for k in ("x", "w", "c"))
 RUNNERS: dict[str, Callable[[], Any]] = {
     "sequential": SequentialRunner,
-    "process": lambda: ProcessPoolExecutor(max_workers=2, comms=None),
-    "peer-ipc": lambda: ProcessPoolExecutor(max_workers=3, comms="ipc"),
+    "process": lambda: ProcessPoolExecutor(workers=2, comms=None),
+    "peer-ipc": lambda: ProcessPoolExecutor(workers=3, comms="ipc"),
 }
 
 

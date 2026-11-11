@@ -108,7 +108,7 @@ if __name__ == "__main__":
     h = gh.boost.Histogram(bh.axis.Regular(4, 0.0, 100.0), storage=bh.storage.Int64())
     h.fill(events.Jet_pt)
 
-    result = ProcessPoolExecutor(max_workers=2).run(h.plan(steps_per_file=2)).value
+    result = ProcessPoolExecutor(workers=2).run(h.plan(steps_per_file=2)).value
     print(result.values())
     # [3 4 3 1]
 ```
