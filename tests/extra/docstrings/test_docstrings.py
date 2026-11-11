@@ -14,16 +14,8 @@ import pytest
 import graphed_histogram as gh
 from graphed_histogram import histserv
 
-EXAMPLED = [
-    gh.plan,
-    gh.unpack,
-    gh.label_listing,
-    gh.add_histograms,
-    gh.Histogram.fill,
-    gh.Histogram.plan,
-]
 _FLAGS = doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE
-_PRIVATE = re.compile(r"(?<![\w.])_[A-Za-z]\w*")
+_PRIVATE = re.compile(r"(?<!\w)_[A-Za-z]\w*")
 
 
 def _run(obj: Any, globs: dict[str, Any]) -> doctest.TestResults:
@@ -32,6 +24,33 @@ def _run(obj: Any, globs: dict[str, Any]) -> doctest.TestResults:
         test.globs = globs  # the package docstring's setup carries into each example
         runner.run(test, clear_globs=False)
     return runner.summarize(verbose=False)
+
+
+def _public() -> Iterator[tuple[str, Any]]:
+    for module in (gh, gh.boost, histserv):
+        yield module.__name__, module
+        for name in getattr(module, "__all__", [n for n in vars(module) if n[0] != "_"]):
+            obj = getattr(module, name)
+            if getattr(obj, "__module__", "").startswith("graphed_histogram"):
+                yield f"{module.__name__}.{name}", obj
+                if inspect.isclass(obj):
+                    for attr, member in vars(obj).items():
+                        # a data attribute's __doc__ is its type's, not this package's
+                        if attr[0] != "_" and member.__doc__ not in (None, type(member).__doc__):
+                            yield f"{module.__name__}.{name}.{attr}", member
+
+
+EXAMPLED = list(
+    {
+        id(obj): obj for _, obj in _public() if obj is not gh and ">>>" in (obj.__doc__ or "")
+    }.values()
+)
+
+
+def test_each_named_entry_point_has_an_example() -> None:
+    named = [gh.plan, gh.unpack, gh.label_listing, gh.add_histograms]
+    named += [gh.Histogram.fill, gh.Histogram.plan]
+    assert all(any(obj is e for e in EXAMPLED) for obj in named)
 
 
 @pytest.mark.parametrize("obj", EXAMPLED, ids=lambda obj: obj.__qualname__)
@@ -45,19 +64,6 @@ def test_the_example_runs(obj: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert result.failed == 0
 
 
-def _public() -> Iterator[tuple[str, Any]]:
-    for module in (gh, gh.boost, histserv):
-        yield module.__name__, module
-        for name in getattr(module, "__all__", [n for n in vars(module) if n[0] != "_"]):
-            obj = getattr(module, name)
-            if getattr(obj, "__module__", "").startswith("graphed_histogram"):
-                yield f"{module.__name__}.{name}", obj
-                if inspect.isclass(obj):
-                    for attr, member in vars(obj).items():
-                        if attr[0] != "_" and member.__doc__:
-                            yield f"{module.__name__}.{name}.{attr}", member
-
-
 def test_no_public_docstring_names_a_private_name() -> None:
     named = {
         (where, found)
@@ -68,7 +74,8 @@ def test_no_public_docstring_names_a_private_name() -> None:
 
 
 def test_the_scan_sees_a_private_name() -> None:
-    assert _PRIVATE.findall("reads ``_label_maps`` and _x, not __init__ or gh._y") == [
+    assert _PRIVATE.findall("reads ``_label_maps``, _x and gh._y, not __init__") == [
         "_label_maps",
         "_x",
+        "_y",
     ]

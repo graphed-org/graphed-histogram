@@ -294,7 +294,7 @@ class Histogram(bh.Histogram):
         the first fill and remembered; a later fill in the OTHER mode is a hard error.
 
         >>> h = gh.boost.Histogram(bh.axis.Regular(3, 0, 3), storage=bh.storage.Weight())
-        >>> h.fill(events.x, weight=[events.w, 2.0]) is h  # records the fill, reads nothing
+        >>> h.fill(events.x, weight=[events.w, 2.0]) is h  # weights multiply; nothing is read yet
         True
         >>> h.staged_fills()
         1
@@ -1187,10 +1187,10 @@ def dense_backed(h: H) -> H:
 def label_listing(histograms: Mapping[Any, Any]) -> dict[Any, Any]:
     """List each output's variation labels, before anything runs.
 
-    Each output maps to its labels in the order a run gives them (nominal first, then each
-    ``graphed.vary`` label as it was declared); an unvaried output maps to ``["nominal"]``. Nested
-    mappings list in the same nesting. A histogram filled with ``variation_axis=True`` lists the
-    labels of its variation axis.
+    Each output maps to its labels, nominal first, then each ``graphed.vary`` label as it was
+    declared; an unvaried output maps to ``["nominal"]``. Nested mappings list in the same nesting.
+    A histogram filled with ``variation_axis=True`` lists the same labels its variation axis
+    holds, though the axis orders its categories its own way.
 
     >>> w = graphed.vary(events.w, "jes", up=events.w * 1.1, down=events.w * 0.9)
     >>> met = hg.Hist.new.Reg(3, 0, 3, name="x").Weight().fill(x=events.x, weight=w)
@@ -1198,6 +1198,7 @@ def label_listing(histograms: Mapping[Any, Any]) -> dict[Any, Any]:
     >>> gh.label_listing({"met": met, "n": n})
     {'met': ['nominal', 'jes_up', 'jes_down'], 'n': ['nominal']}
     """
+    # declared labels, not slot keys: an axis-mode output's ``(output, None)`` key carries none
     return {
         name: label_listing(h) if isinstance(h, Mapping) else list(_output_labels(h))
         for name, h in histograms.items()
