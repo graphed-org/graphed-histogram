@@ -4,6 +4,8 @@ What changed
 Unreleased
 ----------
 
+Requires ``graphed`` with ``graphed.PlanPieces``.
+
 Added
 ~~~~~
 
@@ -20,6 +22,12 @@ Added
   ``Plan | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process``, or passes the plan
   to a runner typed for ``Plan`` alone, such as ``ProcessPoolExecutor``, narrows with
   ``isinstance(plan, graphed.core.Plan)``.
+* ``graphed.materialize(h)`` takes a deferred histogram (``gh.Histogram``, ``hist.graphed.Hist``)
+  and returns a new filled histogram, as a runner does: the class you instantiated, or
+  ``{label: histogram}`` for a varied one, in one read of each source with the call's other
+  results. ``h`` itself stays un-run. A histogram with no fills comes back empty, and an in-memory
+  source, which has no plan, fills too. A histserv-backed histogram needs a plan on an executor
+  that starts its servers, so ``materialize`` raises naming that.
 * Reading a histogram with staged fills warns, at your line: ``gh.UnrunHistogramWarning``, a
   ``UserWarning`` that the standard warning filter turns into an error. That covers every read of
   its bins and what builds on them (``h[...]``, ``project``, arithmetic, ``==``, ``hist.Hist(h)``),
