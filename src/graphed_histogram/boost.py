@@ -292,6 +292,12 @@ class Histogram(bh.Histogram):
         a shifted axis coordinate its own name does not leaves that group and joins the node of the
         member it names (still `1 + |S|` nodes). The MODE is a property of the histogram — fixed by
         the first fill and remembered; a later fill in the OTHER mode is a hard error.
+
+        >>> h = gh.boost.Histogram(bh.axis.Regular(3, 0, 3), storage=bh.storage.Weight())
+        >>> h.fill(events.x, weight=[events.w, 2.0]) is h  # weights multiply; nothing is read yet
+        True
+        >>> h.staged_fills()
+        1
         """
         del threads  # parallelism belongs to the executor, not the fill
         values, all_weights, weights, recorded_sample = self._checked_operands(
@@ -621,6 +627,13 @@ class Histogram(bh.Histogram):
         ``process``: the fills run per join destination, and ``partitions`` and
         ``events_per_task`` are refused. For several histograms that share a sub-graph, plan them
         together with :func:`plan` so the shared work runs ONCE.
+
+        The run's value is the filled histogram, of the class this one extends:
+
+        >>> h = gh.boost.Histogram(bh.axis.Regular(3, 0, 3), storage=bh.storage.Int64())
+        >>> plan = h.fill(events.x).plan()
+        >>> SequentialRunner().run(plan).value.values().tolist()
+        [1, 2, 1]
         """
         if not self._fill_nodes:
             raise ValueError("nothing staged: call .fill(...) before computing")
@@ -1007,6 +1020,16 @@ def plan(
     Over a ``graphed.join`` the plan is the join's ``DurablePlanV2``, for ``SequentialRunner`` or
     ``SubmitRunner``. Every output then reads past the join, in one Session, and neither
     ``partitions``, ``events_per_task`` nor histserv applies.
+
+    >>> w = graphed.vary(events.w, "jes", up=events.w * 1.5)
+    >>> met = hg.Hist.new.Reg(3, 0, 3, name="x").Weight().fill(x=events.x, weight=w)
+    >>> sumw, n = gak.sum(w, axis=None), gak.count(events.x, axis=None)
+    >>> plan = gh.plan({"met": met, "sumw": sumw, "n": n})
+    >>> out = SequentialRunner().run(plan).value
+    >>> {label: h.sum().value for label, h in out["met"].items()}
+    {'nominal': 5.0, 'jes_up': 7.5}
+    >>> {label: float(v) for label, v in out["sumw"].items()}, int(out["n"])
+    ({'nominal': 5.0, 'jes_up': 7.5}, 4)
     """
     outputs = _leaves(histograms)
     if not outputs:
@@ -1127,6 +1150,11 @@ def unpack(value: Mapping[Any, Any]) -> dict[str, bh.Histogram | dict[str, bh.Hi
     unpacks to its server histogram's snapshot, which stays on the server.
 
     A collated ``{dataset: value}`` unpacks per dataset, and an unpacked value unpacks to itself.
+
+    >>> a = bh.Histogram(bh.axis.Regular(2, 0, 2))
+    >>> out = gh.unpack({("met", "nominal"): a, ("met", "jes_up"): a, "n": a})
+    >>> {name: list(v) if isinstance(v, dict) else type(v).__name__ for name, v in out.items()}
+    {'met': ['nominal', 'jes_up'], 'n': 'Histogram'}
     """
     out: dict[str, Any] = {}
     for key, held in value.items():
@@ -1157,17 +1185,20 @@ def dense_backed(h: H) -> H:
 
 
 def label_listing(histograms: Mapping[Any, Any]) -> dict[Any, Any]:
-    """List each output's variation labels: the plan-level ``{output: [labels]}`` listing.
+    """List each output's variation labels, before anything runs.
 
-    Each output maps to its variation labels in FOLD order (nominal first, then vary-tag insertion
-    order); an unvaried output maps to ``["nominal"]``. Nested mappings list in the same nesting.
+    Each output maps to its labels, nominal first, then each ``graphed.vary`` label as it was
+    declared; an unvaried output maps to ``["nominal"]``. Nested mappings list in the same nesting.
+    A histogram filled with ``variation_axis=True`` lists the same labels its variation axis
+    holds, though the axis orders its categories its own way.
 
-    MODE-INDEPENDENT: an axis-mode output lists the SAME labels as its sibling twin, because both
-    modes populate ``_label_maps`` with the same fold-ordered set. The labels come from the fill's
-    DECLARED label set the builder holds (``_output_labels``), NOT from the ``(output, None)`` slot
-    key — which carries no label, so a key-reading listing would answer ``[None]``/``[]`` for an
-    axis-mode output.
+    >>> w = graphed.vary(events.w, "jes", up=events.w * 1.1, down=events.w * 0.9)
+    >>> met = hg.Hist.new.Reg(3, 0, 3, name="x").Weight().fill(x=events.x, weight=w)
+    >>> n = hg.Hist.new.Reg(3, 0, 3, name="x").Int64().fill(x=events.x)
+    >>> gh.label_listing({"met": met, "n": n})
+    {'met': ['nominal', 'jes_up', 'jes_down'], 'n': ['nominal']}
     """
+    # declared labels, not slot keys: an axis-mode output's ``(output, None)`` key carries none
     return {
         name: label_listing(h) if isinstance(h, Mapping) else list(_output_labels(h))
         for name, h in histograms.items()

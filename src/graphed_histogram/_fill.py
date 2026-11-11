@@ -67,8 +67,8 @@ class FillEvaluator:
     nominal's, a joint label onto the shifted member its point names.
 
     Attributes:
-        constants: scalar fill values recorded in place of inputs, as :func:`_constants` encodes
-            them (None keeps old pickles valid); boost broadcasts each one, as an eager fill does
+        constants: scalar fill values recorded in place of inputs, as JSON by slot (None keeps
+            old pickles valid); boost broadcasts each one, as an eager fill does
         partial: return the chunked partial, which only a plan reads, rather than the dense
             histogram
     """

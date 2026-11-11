@@ -88,6 +88,14 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     changes. Growth categories come out as ``a``'s, then ``b``'s new ones, so ``a`` must hold
     the lower-keyed partitions (the docs' "Growth axes" section). Two chunked partials of one spec
     merge chunked; any other pair is made dense first.
+
+    >>> a = bh.Histogram(bh.axis.Regular(3, 0, 3)).fill([0.5, 1.5])
+    >>> gh.add_histograms(a, bh.Histogram(bh.axis.Regular(3, 0, 3)).fill([1.5])).values().tolist()
+    [1.0, 2.0, 0.0]
+    >>> grew_up = bh.Histogram(bh.axis.Regular(1, 0, 1, growth=True)).fill([2.5])
+    >>> grew_down = bh.Histogram(bh.axis.Regular(1, 0, 1, growth=True)).fill([-0.5])
+    >>> gh.add_histograms(grew_up, grew_down).axes[0].edges.tolist()
+    [-1.0, 0.0, 1.0, 2.0, 3.0]
     """
     merged = a.merged(b) if isinstance(a, Chunked) else None
     if merged is not None:
