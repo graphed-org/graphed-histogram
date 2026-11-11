@@ -155,9 +155,9 @@ def _eager_reference() -> dict[str, np.ndarray]:
     session, _source, _h, observable, btag = _record()
     v = np.asarray(ak.to_numpy(ak.Array(session.materialize(observable))), dtype="float64")
     out: dict[str, np.ndarray] = {}
-    for label in graphed.labels(btag):
+    for label in graphed.systematics.labels(btag):
         w = np.asarray(
-            ak.to_numpy(ak.Array(session.materialize(graphed.universe(btag, label)))),
+            ak.to_numpy(ak.Array(session.materialize(graphed.systematics.universe(btag, label)))),
             dtype="float64",
         )
         counts, _ = np.histogram(
