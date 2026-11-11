@@ -61,12 +61,19 @@ Fill it
 Run it
 ------
 
-``gh.plan(histograms, *, steps_per_file=None, backend=None, partitions=None)``
+``gh.plan(histograms, *, steps_per_file=None, events_per_task=None, backend=None, partitions=None, writes=None)``
    One plan for several histograms — ``gh.plan({"pt": h1, "mass": h2})`` — and the
    ``compute(dict_of_hists)`` analogue. All their fills compile into one graph, so a
    selection feeding both histograms is read and evaluated once, and only the columns some
    fill touches are read off disk. A plain sequence works too — ``gh.plan([h1, h2])`` —
    and names the results ``"0"``, ``"1"``, … by position.
+
+   An output may also be a whole-dataset reduction — ``gak.sum``, ``count``,
+   ``count_nonzero``, ``any``, ``all``, ``min`` or ``max`` with ``axis=None`` — whose result is
+   its value, or ``{label: value}`` for a ``graphed.vary``-ed one, as for a histogram. Any other
+   array raises a ``TypeError`` naming the rule it breaks: a per-event array has no one value,
+   and a mean of chunk means is not the dataset's mean. ``writes={"skim": parquet_write(...)}``
+   writes one part per task in the same read, and ``out["skim"]`` is the list of part paths.
 
    Everything after ``histograms`` is keyword-only. ``steps_per_file=`` sets how many chunks
    each file becomes; left out, the source's own setting applies
