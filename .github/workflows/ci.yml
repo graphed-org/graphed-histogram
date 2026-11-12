@@ -12,9 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # graphed#201 (events_per_task=) and #202 (skipped_error, which executors main imports); moves to the
-  # graphed release that ships them.
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@8a6907900cd0f67382f25efed0948f7597e69778"
+  # graphed 0.0.11 from PyPI.
+  GRAPHED: "graphed[awkward,numpy]==0.0.11"
   # exec-local stays a separate package (used by the M23 process-executor integration tests);
   # executors#111 (workers=); moves to the executors release that ships it.
   EXECLOCAL: "graphed-executors @ git+https://github.com/graphed-org/graphed-executors@ca950d7517c072d968c12b1b3cefb92b5be18d91"
