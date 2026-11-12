@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graphed-histogram"
-version = "0.0.7"
+version = "0.0.8"
 description = "Deferred boost-histogram/hist filling on graphed task graphs (the dask-histogram analogue)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,11 +17,11 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
-# graphed: the Plan + content-addressed task_id a fill records into. The 0.0.7 floor is
-# graphed.services, which histserv imports.
+# graphed: the Plan + content-addressed task_id a fill records into. The 0.0.11 floor is
+# graphed.systematics.ScalarFactor and graphed.PlanPieces.
 # hist 2.11: the first with hist.chunked, which holds the chunked partials; it needs
 # boost-histogram >=1.7 (and caps it below 1.9).
-dependencies = ["graphed>=0.0.10", "boost-histogram>=1.7", "numpy>=1.24", "hist>=2.11"]
+dependencies = ["graphed>=0.0.11", "boost-histogram>=1.7", "numpy>=1.24", "hist>=2.11"]
 
 [project.optional-dependencies]
 # the backends + corpus + exec-local exercise resume on a realistic HEP analysis end-to-end.

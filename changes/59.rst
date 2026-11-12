@@ -1,4 +1,0 @@
-.. under: Added
-
-* ``h.plan(events_per_task=N)`` and ``gh.plan(..., events_per_task=N)`` cut each file into tasks of
-  ``N`` entries, through ``graphed.aggregate_plan`` (graphed#201).

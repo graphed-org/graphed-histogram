@@ -1,8 +1,10 @@
 What changed
 ============
 
-Unreleased
-----------
+0.0.8
+-----
+
+Requires ``graphed`` 0.0.11 or later.
 
 Added
 ~~~~~
@@ -26,6 +28,22 @@ Added
   none of which is recorded into the run (:ref:`reading-before-it-runs`).
 * ``repr(h)`` and ``str(h)`` end in ``# N staged fills, not run`` while ``h`` has staged fills.
 * ``graphed_histogram.__version__``, read from the installed package.
+* ``graphed.materialize(h)`` takes a deferred histogram (``gh.Histogram``, ``hist.graphed.Hist``)
+  and returns a new filled histogram, as a runner does: the in-memory class it extends
+  (``bh.Histogram``, ``hist.Hist``), or ``{label: histogram}`` for a varied one, in one read of
+  each source with the call's other results. ``h`` itself stays un-run. A histogram with no fills
+  comes back empty, and an in-memory source, which has no plan, fills too. A histserv-backed
+  histogram needs a plan on an executor that starts its servers, so ``materialize`` raises naming
+  that.
+* ``h.plan(events_per_task=N)`` and ``gh.plan(..., events_per_task=N)`` cut each file into tasks of
+  ``N`` entries, through ``graphed.aggregate_plan`` (graphed#201).
+* ``weight=`` takes a flat ``graphed.vary(1.0, "lumi", up=1.025, down=0.975)`` factor, alone or in
+  a list. It multiplies into the first array factor, or into ones when there is none (graphed#180).
+* ``gh.plan`` takes whole-dataset reductions beside histograms, ``{"h": h, "sumw": gak.sum(w,
+  axis=None)}``, each back under its name as its value, or ``{label: value}`` for a varied one, from
+  the same read. ``gh.plan(..., writes={"skim": parquet_write(...)})`` writes a skim in that pass, and
+  ``out["skim"]`` is its part paths. Any other array raises a ``TypeError`` naming the rule, in
+  place of an ``AttributeError``.
 
 Changed
 ~~~~~~~
@@ -36,6 +54,20 @@ Changed
   keeps working. A histserv-backed plan keeps the slot keys, for every output in it, and
   ``gh.unpack`` reads those as before. A tuple key in the mapping refuses, as ``gh.unpack`` would
   read it as ``(output, label)``: nest the mapping instead.
+* The README reads a ROOT file first (``uproot.graphed``, uproot 5.7.7 or later), teaches
+  ``graphed.materialize`` for values in this process, and shows several datasets in one plan with
+  ``gh.plan`` and its ``graphed.collate`` form; "Two datasets in one plan" is no longer listed as
+  unsupported. Every python block in it runs in the test suite.
+* ``gh.plan``, ``gh.unpack``, ``gh.label_listing``, ``gh.add_histograms``, ``Histogram.fill`` and
+  ``Histogram.plan`` carry runnable examples, which the test suite runs, and no public docstring
+  names a private one.
+* ``h.plan()``, ``gh.plan`` and ``graphed.materialize`` refuse a deferred histogram that holds counts
+  no ``.fill()`` recorded (``h + eager``, ``h += eager``, a write to ``h.view()``), since a run
+  builds its result from zero and would drop them. Add them to the result with
+  ``gh.add_histograms(result, counts)`` instead.
+* The README opens with a quick look: a ROOT file in, a ``hist.Hist`` out with
+  ``graphed.materialize(h)``, plotted, in this process. Its install line adds ``hist[plot]>=2.12``,
+  the first ``hist`` with ``hist.graphed`` (#68).
 
 Fixed
 ~~~~~

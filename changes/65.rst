@@ -1,5 +1,0 @@
-.. under: Changed
-
-* ``gh.plan``, ``gh.unpack``, ``gh.label_listing``, ``gh.add_histograms``, ``Histogram.fill`` and
-  ``Histogram.plan`` carry runnable examples, which the test suite runs, and no public docstring
-  names a private one.
