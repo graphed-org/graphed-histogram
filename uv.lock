@@ -1216,15 +1216,15 @@ numpy = [
 
 [[package]]
 name = "graphed-executors"
-version = "0.0.7"
+version = "0.0.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "graphed" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/c9/29e66dd05d0e82475ab9ce824fb2ef2654451fba7ddcddc53c809c77a9d0/graphed_executors-0.0.7.tar.gz", hash = "sha256:bd2b8c6ce44bb542fb6e0d844388904c50a2a4323832ad086fdce544e18673f4", size = 3454168, upload-time = "2026-10-30T02:31:56.262Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/b5/1fb26b0e7d4aa84c31ead7278738088e1c1626602db9664fd1e2e4601f60/graphed_executors-0.0.8.tar.gz", hash = "sha256:1c8823417ba33cc48a343283dfcc3323ca320a40bab72d5bffd4e508ed441fef", size = 3498351, upload-time = "2026-11-12T21:37:33.241Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/16/d9b23d4facede8af903e8e16439dfd15c9115771adb852f4bf37b306d366/graphed_executors-0.0.7-py3-none-any.whl", hash = "sha256:5a95220a3d7fa0eebb079c07d5bd2a7631619de44ff54230f22ecfcf52d580f1", size = 257225, upload-time = "2026-10-30T02:31:54.798Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/57/0cae32b56d3232c5d079072fc97c1cfd1b503f74217059a22862d19d6973/graphed_executors-0.0.8-py3-none-any.whl", hash = "sha256:f0892fc5733ad40cef9573001500de45f86e15613a3f5796688c4a708172ab9b", size = 266721, upload-time = "2026-11-12T21:37:31.297Z" },
 ]
 
 [[package]]
