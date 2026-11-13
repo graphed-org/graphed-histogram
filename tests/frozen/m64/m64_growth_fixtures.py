@@ -59,6 +59,7 @@ class ArraySource:
 
     Partition `i` of `n` sleeps `(n - i) * dt` (or `(i + 1) * dt` reversed) and then writes
     `<stamp_dir>/<i>`; the stamp follows the sleep so it records completion, not key order.
+    With `dt` set and not reversed, partition 0 first waits for partition 1's stamp.
     """
 
     data: np.ndarray[Any, Any]
@@ -84,6 +85,15 @@ class ArraySource:
     ) -> np.ndarray[Any, Any]:
         i, n = partition.blind_step, partition.blind_n_steps
         assert i is not None and n is not None
+        if i == 0 and n > 1 and self.dt and not self.reversed:
+            # sleeps alone lose to staggered task starts; partition 1 runs in the first wave
+            deadline = time.monotonic() + 10 * n * self.dt
+            while (
+                not os.path.exists(os.path.join(self.stamp_dir, "1"))
+                and time.monotonic() < deadline
+            ):
+                time.sleep(self.dt / 10)
+        # after the wait, so partition 0's stamp trails partition 1's by more than a clock tick
         time.sleep(((i + 1) if self.reversed else (n - i)) * self.dt)
         with open(os.path.join(self.stamp_dir, str(i)), "w") as f:
             f.write(str(time.time_ns()))
