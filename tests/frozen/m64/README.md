@@ -10,7 +10,8 @@ Test Dispute at `.graphed/m64/disputes/<test_id>.md`.
 
 Fixtures live in `m64_growth_fixtures.py` (the `m64_` prefix keeps it from binding another
 milestone's helper; spawned workers import it). `ArraySource` sleeps `(n - i) * 0.1` s in
-partition `i` on the process runners, so completion order differs from key order; it stamps each
+partition `i` on the process runners (partition 0 first waits for partition 1's stamp), so
+completion order differs from key order; it stamps each
 partition's completion time and records whole-dataset loader calls as marker files in a stamp
 directory, so both are visible from every worker process. `reference(empty, chunks)` is D5's fold
 with `gh.add_histograms`. "All runners" = `SequentialRunner`, `ProcessExecutor(max_workers=2)`,
