@@ -7,13 +7,12 @@ import math
 import operator
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, TypeVar
 
 import boost_histogram as bh
 import numpy as np
 from graphed import Array, GraphedError
 from graphed.aggregate import Fold
-from graphed.core import GraphStore
 from graphed.execute import CompiledGraph
 
 from ._chunked import BH, Chunked, Kind, Partial, as_kind, dense, empty
@@ -109,15 +108,30 @@ def add_histograms(a: bh.Histogram, b: bh.Histogram) -> bh.Histogram:
     return a + b
 
 
-def _positions(compiled: CompiledGraph, nodes: Sequence[Array]) -> dict[int, int]:
-    """Return each marked fill's index among the values ``compiled`` evaluates to.
+_F = TypeVar("_F")
 
-    The optimizer may merge two marked fills into one output (``weight=[w]`` and
-    ``weight=[w * 1.0]``); reading each fill at its own position reads that output once per marked
-    fill, which is what filling twice means.
+
+def _per_output(obj: _F) -> _F:
+    """Mark a ``reduce`` or ``on_compiled`` as reading values by :func:`_positions` (graphed#228).
+
+    graphed refuses an unmarked graphed-histogram hook where outputs merge, since one from before
+    0.0.9 read compiled positions.
     """
-    order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
-    return {n.node_id: order[compiled.correspondence.node_map[n.node_id][0]] for n in nodes}
+    setattr(obj, "graphed_values_per_output", True)  # noqa: B010  # graphed's contract name
+    return obj
+
+
+def _positions(compiled: CompiledGraph, nodes: Sequence[Array]) -> dict[int, int]:
+    """Return each marked fill's index among the values ``reduce`` receives.
+
+    graphed hands ``reduce`` one value per output asked, so a fill is at its first index in
+    ``compiled.requested``: two marked fills the optimizer merges (``weight=[w]`` and
+    ``weight=[w * 1.0]``) each read the value, which is what filling twice means.
+    """
+    first: dict[int, int] = {}
+    for i, nid in enumerate(compiled.requested):
+        first.setdefault(nid, i)
+    return {n.node_id: first[n.node_id] for n in nodes}
 
 
 _NO_POSITIONS = (
@@ -126,12 +140,13 @@ _NO_POSITIONS = (
 )
 
 
+@_per_output
 @dataclass
 class _SumFills:
     """Reduce one partition's evaluated fills to a single histogram.
 
-    That is the sum of this histogram's staged fills, each read at its compiled position
-    (``positions``, set by the plan's hook).
+    That is the sum of this histogram's staged fills, each read at its position (``positions``,
+    set by the plan's hook).
     """
 
     spec: str
@@ -174,11 +189,12 @@ def _summary(name: str, spec: str, kind: Kind, labels: int) -> str:
 Layout = tuple[tuple[SlotKey, tuple[int, ...], str], ...]
 
 
+@_per_output
 @dataclass
 class _GroupReduce:
     """Reduce one partition's evaluated fills to ``{slot: histogram}``.
 
-    Each slot sums its own fills, each read at its compiled position (``positions``, set by
+    Each slot sums its own fills, each read at its position (``positions``, set by
     ``pieces.on_compiled``). A ``backed`` slot's sum is shipped to its histserv server and its
     value is the receipt; a ``dense`` slot sums dense; each slot's value is its ``kinds`` entry's
     class. Each ``scalars`` slot is its reduction's chunk value, read the same way, and each

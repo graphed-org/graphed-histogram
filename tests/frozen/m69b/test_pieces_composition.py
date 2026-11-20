@@ -1,5 +1,5 @@
-"""m69b histogram pieces: fills composed with another output in one plan, read at their compiled
-positions.
+"""m69b histogram pieces: fills composed with another output in one plan, read at their positions
+among the plan's outputs.
 """
 
 from __future__ import annotations
@@ -51,8 +51,7 @@ class Composed:
 
 
 def _position(compiled: CompiledGraph, node: Array) -> int:
-    order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
-    return order[compiled.correspondence.node_map[node.node_id][0]]
+    return compiled.requested.index(node.node_id)
 
 
 def compose(
