@@ -71,9 +71,11 @@ def test_no_second_implementation_of_the_fallback_rule_exists(tmp_path: Path) ->
     observable_ = observable(joint_context(events, select_joint=False))
     counts = gak.num(events.Jet, axis=1) * 1.0
     varied = graphed.vary(counts, "jer", up=counts * 2.0)
-    assert graphed.member_of(varied, "no_such_label") is graphed.nominal(varied)
-    assert graphed.member_of(varied, "jer_up") is not graphed.nominal(varied)
-    assert graphed.member_of(observable_, "no_such_label") is graphed.nominal(observable_)
+    nominal = graphed.nominal(varied).node_id
+    assert graphed.member_of(varied, "no_such_label").node_id == nominal
+    assert graphed.member_of(varied, "jer_up").node_id != nominal
+    fallback = graphed.member_of(observable_, "no_such_label").node_id
+    assert fallback == graphed.nominal(observable_).node_id
 
     root = Path(graphed_histogram.__file__).parent
     assert (root / "boost.py").exists(), f"{root} is not the graphed_histogram source tree"
