@@ -13,7 +13,7 @@ concurrency:
 
 env:
   # graphed 0.0.11 from PyPI.
-  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@0eba363ab6b772c630a084cc69c479b55ebeb634"
+  GRAPHED: "graphed[awkward,numpy] @ git+https://github.com/graphed-org/graphed@f0f71fa0bf844bd8f139c212562ea07bfb3ec3bb"
   # exec-local stays a separate package (used by the M23 process-executor integration tests);
   # 0.0.8 is the first release with workers= (executors#111).
   EXECLOCAL: "graphed-executors>=0.0.8"
