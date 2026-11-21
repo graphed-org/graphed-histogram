@@ -1,6 +1,19 @@
 What changed
 ============
 
+0.0.9 (unreleased)
+------------------
+
+Requires ``graphed`` 0.0.12 or later. At release, set that floor in ``pyproject.toml`` and pin CI's
+``GRAPHED`` back to the PyPI release.
+
+Fixed
+~~~~~
+
+* A plan whose fills the optimizer merges with another output reads each fill at its own position
+  among the plan's outputs (graphed#228). graphed 0.0.12 refuses such a plan with an older
+  graphed-histogram, naming the upgrade.
+
 0.0.8
 -----
 

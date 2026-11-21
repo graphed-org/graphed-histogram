@@ -50,6 +50,7 @@ from ._combine import (
     _dense_slots,
     _GroupReduce,
     _GroupZero,
+    _per_output,
     _positions,
     _SumFills,
     _ZeroHist,
@@ -667,6 +668,7 @@ class Histogram(bh.Histogram):
             self._spec, tuple(n.node_id for n in self._fill_nodes), dense=self._dense, kind=kind
         )
 
+        @_per_output
         def on_compiled(compiled: CompiledGraph) -> Any:
             reduce.positions = _positions(compiled, self._fill_nodes)
             return _variation_labels((("this histogram", self),), compiled)
@@ -816,7 +818,7 @@ class HistogramPieces:
     Mark the plan's own outputs, then ``fill_nodes``; hand ``reduce`` the whole value list and
     forward ``reduce.resolve_services`` and ``finalize``; pass ``combine``, ``empty`` and
     ``externals`` as they are and ``on_compiled=pieces.on_compiled``; then run ``serve(plan)``.
-    ``reduce`` reads each fill at its compiled position, which ``on_compiled`` records, so a pieces
+    ``reduce`` reads each fill at its position, which ``on_compiled`` records, so a pieces
     belongs to ONE plan.
     """
 
@@ -833,6 +835,7 @@ class HistogramPieces:
     #: makes each slot the dense histogram of its class, on the head once the run is combined
     finalize: Callable[[dict[SlotKey, Any]], dict[SlotKey, Any]] = _dense_slots
 
+    @_per_output
     def on_compiled(self, compiled: CompiledGraph) -> Any:
         """Record where each fill landed: the plan's ``aggregate_plan(on_compiled=)`` hook.
 
